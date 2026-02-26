@@ -1,0 +1,574 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Npgsql;
+using System.Data;
+using SahayataNidhi.Models.Entities;
+
+namespace SahayataNidhi.Controllers.Admin
+{
+    public partial class AdminController : Controller
+    {
+        [HttpPost]
+        public IActionResult ValidateOfficer(string email)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(email))
+                {
+                    return BadRequest(new { status = false, message = "email is required." });
+                }
+
+                var officer = dbcontext.Users.FirstOrDefault(u => u.Email == email);
+                if (officer == null)
+                {
+                    return NotFound(new { status = false, message = "Officer not found." });
+                }
+
+                var additionalDetails = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(officer.AdditionalDetails ?? "{}");
+                if (additionalDetails == null)
+                {
+                    return BadRequest(new { status = false, message = "Invalid officer details." });
+                }
+
+                bool currentValidate = additionalDetails.ContainsKey("Validate") ? additionalDetails["Validate"] : false;
+                additionalDetails["Validate"] = !currentValidate;
+
+                officer.AdditionalDetails = JsonConvert.SerializeObject(additionalDetails);
+                dbcontext.SaveChanges();
+
+                string currentDateTime = DateTime.Now.AddHours(5.5).ToString("dd MMM yyyy, hh:mm tt") + " IST";
+
+                return Json(new
+                {
+                    status = true,
+                    message = additionalDetails["Validate"] ? "Officer validated" : "Officer unvalidated",
+                    isValidated = additionalDetails["Validate"],
+                    updatedAt = currentDateTime
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating officer: {Username}", email);
+                return StatusCode(500, new { status = false, message = "An error occurred while validating the officer." });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult UpdateUserType(string username, string userType)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(userType))
+                {
+                    return BadRequest(new { status = false, message = "Username and userType are required." });
+                }
+
+                if (userType != "Admin" && userType != "Officer")
+                {
+                    return BadRequest(new { status = false, message = "Invalid userType. Must be 'Admin' or 'Officer'." });
+                }
+
+                var user = dbcontext.Users.FirstOrDefault(u => u.Username == username);
+                if (user == null)
+                {
+                    return NotFound(new { status = false, message = "User not found." });
+                }
+
+                user.UserType = userType;
+                dbcontext.SaveChanges();
+
+                string currentDateTime = DateTime.Now.AddHours(5.5)
+                    .ToString("dd MMM yyyy, hh:mm tt") + " IST";
+
+                return Json(new
+                {
+                    status = true,
+                    message = $"User type changed to {userType}",
+                    userType,
+                    updatedAt = currentDateTime
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating user type for {Username}", username);
+                return StatusCode(500, new { status = false, message = "An error occurred while updating user type." });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult AddAdmin([FromForm] IFormCollection form)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(form["name"]) || string.IsNullOrEmpty(form["username"]) ||
+                    string.IsNullOrEmpty(form["password"]) || string.IsNullOrEmpty(form["email"]) ||
+                    string.IsNullOrEmpty(form["mobileNumber"]) || string.IsNullOrEmpty(form["role"]))
+                {
+                    return Json(new { status = false, response = "Missing required fields" });
+                }
+
+                // Prepare parameters for PostgreSQL function
+                var fullName = form["name"].ToString();
+                var username = form["username"].ToString();
+                var password = form["password"].ToString();
+                var email = form["email"].ToString();
+                var mobileNumber = form["mobileNumber"].ToString();
+                var profile = "/assets/images/profile.jpg";
+                var userType = form["role"].ToString().Contains("Admin") ? "Admin" : "Officer";
+
+                var backupCodes = new
+                {
+                    unused = helper.GenerateUniqueRandomCodes(10, 8),
+                    used = Array.Empty<string>()
+                };
+                var backupCodesJson = JsonConvert.SerializeObject(backupCodes);
+
+                var additionalDetailsJson = form["AdditionalDetails"].ToString();
+                if (string.IsNullOrEmpty(additionalDetailsJson))
+                {
+                    return Json(new { status = false, response = "AdditionalDetails is required" });
+                }
+
+                dynamic additionalDetails = JsonConvert.DeserializeObject(additionalDetailsJson)!;
+                if (!string.IsNullOrEmpty(form["department"]))
+                {
+                    additionalDetails.Department = int.Parse(form["department"]!);
+                }
+                var additionalDetailsJsonFinal = JsonConvert.SerializeObject(additionalDetails);
+
+                var registeredDate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
+
+                // Call PostgreSQL function using FromSqlRaw
+                var result = dbcontext.Users.FromSqlRaw(
+                        "SELECT * FROM registeruser({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
+                        fullName, username, password, email, mobileNumber, profile, userType,
+                        backupCodesJson, (string)additionalDetailsJsonFinal, registeredDate)
+                    .ToList();
+
+                if (result.Count > 0)
+                {
+                    return Json(new { status = true, userId = result[0].UserId });
+                }
+                else
+                {
+                    return Json(new { status = false, response = "Registration failed." });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating admin");
+                return Json(new { status = false, response = $"Error creating admin: {ex.Message}" });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult AddDesignation()
+        {
+            try
+            {
+                var designation = Request.Form["Designation"].ToString();
+                var designationShort = Request.Form["DesignationShort"].ToString();
+                var accessLevel = Request.Form["AccessLevel"].ToString();
+                var departmentId = int.Parse(Request.Form["DepartmentId"]!);
+
+                if (string.IsNullOrWhiteSpace(designation) || string.IsNullOrWhiteSpace(designationShort) || string.IsNullOrWhiteSpace(accessLevel))
+                {
+                    return BadRequest(new { error = "All fields are required" });
+                }
+
+                var newDesignation = new Officersdesignations
+                {
+                    Designation = designation,
+                    DesignationShort = designationShort,
+                    AccessLevel = accessLevel,
+                    DepartmentId = departmentId
+                };
+
+                dbcontext.OfficersDesignations.Add(newDesignation);
+                dbcontext.SaveChanges();
+
+                return Json(new { status = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding designation");
+                return StatusCode(500, new
+                {
+                    error = "An error occurred while adding designation",
+                    details = ex.Message
+                });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult UpdateDesignation([FromForm] IFormCollection form)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                {
+                    return BadRequest(new { error = "Officer details not found" });
+                }
+
+                var designationIdString = form["DesignationId"].ToString();
+                var designation = form["Designation"].ToString();
+                var designationShort = form["DesignationShort"].ToString();
+                var accessLevel = form["AccessLevel"].ToString();
+                var departmentIdString = form["DepartmentId"].ToString();
+
+                if (string.IsNullOrWhiteSpace(designationIdString) || string.IsNullOrWhiteSpace(designation) ||
+                    string.IsNullOrWhiteSpace(designationShort) || string.IsNullOrWhiteSpace(accessLevel) ||
+                    string.IsNullOrWhiteSpace(departmentIdString))
+                {
+                    return BadRequest(new { error = "All fields are required" });
+                }
+
+                if (!int.TryParse(designationIdString, out var designationId))
+                {
+                    return BadRequest(new { error = "Invalid DesignationId format; must be an integer" });
+                }
+                if (!int.TryParse(departmentIdString, out var departmentId))
+                {
+                    return BadRequest(new { error = "Invalid DepartmentId format; must be an integer" });
+                }
+
+                var existingDesignation = dbcontext.OfficersDesignations
+                    .FirstOrDefault(d => d.Uuid == designationId && d.DepartmentId == officer.Department);
+                if (existingDesignation == null)
+                {
+                    return NotFound(new { error = "Designation not found or you do not have permission to update it" });
+                }
+
+                existingDesignation.Designation = designation;
+                existingDesignation.DesignationShort = designationShort;
+                existingDesignation.AccessLevel = accessLevel;
+                existingDesignation.DepartmentId = departmentId;
+
+                dbcontext.SaveChanges();
+
+                return Json(new { status = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating designation");
+                return StatusCode(500, new
+                {
+                    error = "An error occurred while updating designation",
+                    details = ex.Message
+                });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult DeleteDesignation([FromForm] IFormCollection form)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                {
+                    return BadRequest(new { error = "Officer details not found" });
+                }
+
+                var designationIdString = form["DesignationId"].ToString();
+
+                if (string.IsNullOrWhiteSpace(designationIdString))
+                {
+                    return BadRequest(new { error = "DesignationId is required" });
+                }
+
+                if (!int.TryParse(designationIdString, out var designationId))
+                {
+                    return BadRequest(new { error = "Invalid DesignationId format; must be an integer" });
+                }
+
+                var designation = dbcontext.OfficersDesignations
+                    .FirstOrDefault(d => d.Uuid == designationId && d.DepartmentId == officer.Department);
+                if (designation == null)
+                {
+                    return NotFound(new { error = "Designation not found or you do not have permission to delete it" });
+                }
+
+                dbcontext.OfficersDesignations.Remove(designation);
+                dbcontext.SaveChanges();
+
+                return Json(new { status = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting designation");
+                return StatusCode(500, new
+                {
+                    error = "An error occurred while deleting designation",
+                    details = ex.Message
+                });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult AddDepartment([FromForm] string DepartmentName)
+        {
+            try
+            {
+                var department = new Departments { DepartmentName = DepartmentName };
+                dbcontext.Departments.Add(department);
+                dbcontext.SaveChanges();
+                return Json(new { status = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding department");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult UpdateDepartment([FromForm] int DepartmentId, [FromForm] string DepartmentName)
+        {
+            try
+            {
+                var department = dbcontext.Departments.Find(DepartmentId);
+                if (department == null)
+                    return Json(new { status = false, message = "Department not found" });
+
+                department.DepartmentName = DepartmentName;
+                dbcontext.SaveChanges();
+                return Json(new { status = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating department");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public IActionResult DeleteDepartment([FromForm] int DepartmentId)
+        {
+            try
+            {
+                var department = dbcontext.Departments.Find(DepartmentId);
+                if (department == null)
+                    return Json(new { status = false, message = "Department not found" });
+
+                dbcontext.Departments.Remove(department);
+                dbcontext.SaveChanges();
+                return Json(new { status = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting department");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> AddOffice([FromForm] IFormCollection form)
+        {
+            try
+            {
+                if (!form.TryGetValue("OfficeType", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
+                    return Json(new { status = false, message = "Office Type is required." });
+
+                if (!form.TryGetValue("AccessLevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
+                    return Json(new { status = false, message = "Access Level is required." });
+
+                if (!form.TryGetValue("DepartmentId", out var deptIdValues) || !int.TryParse(deptIdValues[0], out int departmentId))
+                    return Json(new { status = false, message = "Invalid Department ID." });
+
+                var office = new Offices
+                {
+                    DepartmentId = departmentId,
+                    OfficeType = officeTypeValues[0]!.Trim(),
+                    AccessLevel = accessLevelValues[0]!.Trim()
+                };
+
+                dbcontext.Offices.Add(office);
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Office added successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding office");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateOffice([FromForm] IFormCollection form)
+        {
+            try
+            {
+                if (!form.TryGetValue("OfficeId", out var idValues) || !int.TryParse(idValues[0], out int officeId))
+                    return Json(new { status = false, message = "Invalid Office ID." });
+
+                if (!form.TryGetValue("OfficeType", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
+                    return Json(new { status = false, message = "Office Type is required." });
+
+                if (!form.TryGetValue("AccessLevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
+                    return Json(new { status = false, message = "Access Level is required." });
+
+                if (!form.TryGetValue("DepartmentId", out var deptIdValues) || !int.TryParse(deptIdValues[0], out int departmentId))
+                    return Json(new { status = false, message = "Invalid Department ID." });
+
+                var office = await dbcontext.Offices.FindAsync(officeId);
+                if (office == null)
+                    return Json(new { status = false, message = "Office not found." });
+
+                if (office.DepartmentId != departmentId)
+                    return Json(new { status = false, message = "You cannot modify offices from another department." });
+
+                office.OfficeType = officeTypeValues[0]!.Trim();
+                office.AccessLevel = accessLevelValues[0]!.Trim();
+
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Office updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating office");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> DeleteOffice([FromForm] IFormCollection form)
+        {
+            try
+            {
+                if (!form.TryGetValue("OfficeId", out var idValues) || !int.TryParse(idValues[0], out int officeId))
+                    return Json(new { status = false, message = "Invalid Office ID." });
+
+                var office = await dbcontext.Offices.FindAsync(officeId);
+                if (office == null)
+                    return Json(new { status = false, message = "Office not found." });
+
+                dbcontext.Offices.Remove(office);
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Office deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting office");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> AddOfficeDetail([FromForm] string OfficeName, [FromForm] int OfficeType, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return BadRequest(new { status = false, message = "Invalid officer or department." });
+
+                var office = await dbcontext.Offices
+                    .FirstOrDefaultAsync(o => o.OfficeId == OfficeType && o.DepartmentId == officer.Department);
+
+                if (office == null)
+                    return BadRequest(new { status = false, message = "Invalid office type or access denied." });
+
+                var newDetail = new Officesdetails
+                {
+                    StateCode = 0,
+                    DivisionCode = Divisioncode,
+                    DistrictCode = DistrictCode,
+                    AreaCode = AreaCode,
+                    AreaName = AreaName ?? "",
+                    OfficeName = OfficeName,
+                    OfficeType = OfficeType
+                };
+
+                dbcontext.OfficesDetails.Add(newDetail);
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Office detail added successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding office detail");
+                return StatusCode(500, new { status = false, message = "Error adding office detail: " + ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateOfficeDetail([FromForm] int OfficeDetailId, [FromForm] string OfficeName, [FromForm] int OfficeType, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return BadRequest(new { status = false, message = "Invalid officer." });
+
+                var detail = await dbcontext.OfficesDetails
+                    .FirstOrDefaultAsync(od =>
+                        od.DivisionCode == Divisioncode &&
+                        od.DistrictCode == DistrictCode &&
+                        od.AreaCode == AreaCode &&
+                        od.OfficeType == OfficeType);
+
+                if (detail == null)
+                    return NotFound(new { status = false, message = "Office detail not found." });
+
+                var office = await dbcontext.Offices
+                    .FirstOrDefaultAsync(o => o.OfficeId == OfficeType && o.DepartmentId == officer.Department);
+
+                if (office == null)
+                    return BadRequest(new { status = false, message = "Access denied." });
+
+                detail.OfficeName = OfficeName;
+                detail.AreaName = AreaName ?? "";
+
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Office detail updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating office detail");
+                return StatusCode(500, new { status = false, message = "Error updating: " + ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> DeleteOfficeDetail([FromForm] int OfficeDetailId)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return BadRequest(new { status = false, message = "Invalid officer." });
+
+                // For now, use OfficeDetailId as primary key (adjust based on your model)
+                var detail = await dbcontext.OfficesDetails
+                    .Include(od => od.OfficetypeNavigation)
+                    .FirstOrDefaultAsync(od => od.StateCode + od.DivisionCode + od.DistrictCode + od.AreaCode == OfficeDetailId); // Adjust based on actual PK
+
+                if (detail == null)
+                    return NotFound(new { status = false, message = "Office detail not found." });
+
+                // Verify department access
+                if (detail.OfficetypeNavigation?.DepartmentId != officer.Department)
+                    return BadRequest(new { status = false, message = "Access denied." });
+
+                dbcontext.OfficesDetails.Remove(detail);
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Office detail deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting office detail");
+                return StatusCode(500, new { status = false, message = "Error deleting: " + ex.Message });
+            }
+        }
+    }
+}

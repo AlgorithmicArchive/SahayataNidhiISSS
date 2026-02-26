@@ -1,0 +1,566 @@
+using System.Dynamic;
+using System.Globalization;
+using System.Security.Claims;
+using ClosedXML.Excel;
+using CsvHelper;
+using iText.Kernel.Pdf;
+using iText.Layout;
+using iText.Layout.Element;
+using iText.Layout.Properties;
+using Microsoft.AspNetCore.Mvc;
+using Npgsql;
+using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using SahayataNidhi.Models.Entities;
+
+namespace SahayataNidhi.Controllers
+{
+    public partial class BaseController
+    {
+        [HttpGet]
+        public async Task<IActionResult> DisplayFile(string fileName)
+        {
+            var fileModel = await dbcontext.UserDocuments
+                .FirstOrDefaultAsync(f => f.FileName == fileName);
+
+            if (fileModel == null)
+            {
+                return NotFound("File not found.");
+            }
+
+            if (!fileModel.FileType.StartsWith("image/") && fileModel.FileType != "application/pdf")
+            {
+                return BadRequest("File is not an image or PDF.");
+            }
+
+            return File(fileModel.FileData, fileModel.FileType);
+        }
+
+        [HttpGet]
+        public IActionResult GetTableSettings(string storageKey)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (!int.TryParse(userIdClaim, out int userId))
+            {
+                return BadRequest(new { status = false, message = "Invalid user." });
+            }
+
+            var userDetails = dbcontext.Users.FirstOrDefault(u => u.UserId == userId);
+            if (userDetails == null || string.IsNullOrWhiteSpace(userDetails.AdditionalDetails))
+            {
+                return NotFound(new { status = false, message = "User or settings not found." });
+            }
+
+            JObject additionalDetails;
+
+            try
+            {
+                additionalDetails = JObject.Parse(userDetails.AdditionalDetails);
+            }
+            catch (JsonReaderException)
+            {
+                return BadRequest(new { status = false, message = "Malformed AdditionalDetails JSON." });
+            }
+
+            if (additionalDetails.TryGetValue("TableSettings", out JToken? tableSettingsToken) &&
+                tableSettingsToken is JObject tableSettings &&
+                tableSettings.TryGetValue(storageKey, out JToken? value))
+            {
+                return Json(new { status = true, TableSettings = value });
+            }
+
+            return Json(new { status = false, message = "Table setting not found." });
+        }
+
+        public OfficerDetailsModal? GetOfficerDetails()
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                _logger.LogWarning(
+                    "GetOfficerDetails: UserId is null. User is not authenticated or NameIdentifier claim is missing."
+                );
+                return null;
+            }
+
+            if (!int.TryParse(userId, out int parsedUserId))
+            {
+                _logger.LogWarning(
+                    "GetOfficerDetails: Failed to parse UserId as integer. Value: {UserId}",
+                    userId
+                );
+                return null;
+            }
+
+            // ✅ CORRECT: parameterized SQL call
+            var result = dbcontext.Database
+                .SqlQueryRaw<OfficerDetailsModal>(
+                    "SELECT * FROM get_officer_details(@userId)",
+                    new NpgsqlParameter("@userId", parsedUserId)
+                )
+                .AsEnumerable()
+                .FirstOrDefault();
+
+            _logger.LogInformation(
+                "------- Officer Details Retrieved: {@OfficerDetails} --------",
+                result
+            );
+
+            return result;
+        }
+
+
+        public string GetFieldValue(string fieldName, dynamic data)
+        {
+            foreach (var section in data)
+            {
+                if (section.First is JArray fields)
+                {
+                    foreach (var field in fields)
+                    {
+                        if (field["name"] != null && field["name"]?.ToString() == fieldName)
+                        {
+                            return field["value"]?.ToString() ?? "";
+                        }
+                    }
+                }
+            }
+            return "";
+        }
+
+        [HttpGet]
+        public IActionResult GetDepartments()
+        {
+            var departments = dbcontext.Departments.ToList();
+            return Json(new { status = true, departments });
+        }
+
+        [HttpGet]
+        public IActionResult GetDesignations(string departmentId)
+        {
+            _logger.LogInformation($"------- Department ID: {departmentId} --------");
+            var designations = dbcontext.OfficersDesignations.Where(des => des.DepartmentId == Convert.ToInt32(departmentId)).ToList();
+            return Json(new { status = true, designations });
+        }
+
+        [HttpGet]
+        [HttpGet]
+        public IActionResult GetServices()
+        {
+            var officer = GetOfficerDetails();
+
+            if (officer == null)
+            {
+                _logger.LogWarning("GetServices: Officer details not found.");
+                return Json(new { status = false, message = "Officer details not found." });
+            }
+
+            _logger.LogInformation(
+                "------- Officer Details: {@Officer} --------",
+                officer
+            );
+
+            // ✅ Admin-like users → all services
+            if (officer.Role == "Designer"
+                || officer.UserType == "Admin"
+                || officer.UserType == "Viewer")
+            {
+                var services = dbcontext.Services.ToList();
+                return Json(new { status = true, services });
+            }
+
+            // ✅ CORRECT: parameterized PostgreSQL function call
+            var result = dbcontext.Database
+                .SqlQueryRaw<OfficerServiceListModal>(
+                    "SELECT * FROM get_services_by_role(@role)",
+                    new Npgsql.NpgsqlParameter("@role", officer.Role!)
+                )
+                .AsEnumerable()
+                .ToList();
+
+            return Json(new { status = true, services = result });
+        }
+
+
+        [HttpGet]
+        public IActionResult GetAccessAreas()
+        {
+            var officer = GetOfficerDetails();
+            if (officer == null)
+            {
+                var District = dbcontext.Districts.ToList();
+                return Json(new { status = true, districts = District });
+            }
+
+            if (officer!.AccessLevel == "Tehsil")
+            {
+                var tehsils = dbcontext.TswoTehsils.Where(t => t.TehsilId == officer.AccessCode).ToList();
+                return Json(new { status = true, tehsils });
+            }
+
+            var districts = dbcontext.Districts.Where(d =>
+                (officer.AccessLevel == "State") ||
+                (officer!.AccessLevel == "Division" && d.Division == officer.AccessCode) ||
+                (officer.AccessLevel == "District" && d.DistrictId == officer.AccessCode))
+                .ToList();
+
+            return Json(new { status = true, districts });
+        }
+
+        [HttpGet]
+        public IActionResult GetDistricts(string? division = null)
+        {
+            List<District> districts;
+            if (division != null)
+            {
+                districts = dbcontext.Districts.Where(d => d.Division == Convert.ToInt32(division)).ToList();
+                return Json(new { status = true, districts });
+            }
+            districts = dbcontext.Districts.ToList();
+            return Json(new { status = true, districts });
+        }
+
+        [HttpGet]
+        public IActionResult GetTeshilForDistrict(string districtId)
+        {
+            int DistrictId = Convert.ToInt32(districtId);
+            var tehsils = dbcontext.TswoTehsils.Where(u => u.DistrictId == DistrictId).ToList();
+            return Json(new { status = true, tehsils });
+        }
+
+        [HttpGet]
+        public IActionResult GetIFSCCode(string bankName, string branchName)
+        {
+            // Validate input parameters
+            if (string.IsNullOrWhiteSpace(bankName) || string.IsNullOrWhiteSpace(branchName))
+            {
+                return BadRequest(new { status = false, message = "BankName and BranchName are required." });
+            }
+
+            try
+            {
+                if (bankName == "JK GRAMEEN BANK")
+                {
+                    return Ok(new { status = true, ifscCode = "JAKA0GRAMEN" });
+                }
+
+                string cleanedBankName = bankName;
+                if (cleanedBankName.StartsWith("THE ", StringComparison.OrdinalIgnoreCase))
+                {
+                    cleanedBankName = cleanedBankName.Substring(4).TrimStart();
+                }
+
+                // Call PostgreSQL function
+                var result = dbcontext.Database
+                    .SqlQueryRaw<string>($"SELECT * FROM get_ifsc_code({0}, {1})", cleanedBankName, branchName)
+                    .AsNoTracking()
+                    .AsEnumerable()
+                    .FirstOrDefault();
+
+                if (!string.IsNullOrEmpty(result))
+                {
+                    return Ok(new { status = true, ifscCode = result });
+                }
+                else
+                {
+                    return NotFound(new { status = false, message = "No IFSC code found for the provided bank and branch." });
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log the exception (use a logging framework like Serilog in production)
+                return StatusCode(500, new { status = false, message = "An error occurred while fetching the IFSC code.", error = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult GetAreaList(string table, int parentId)
+        {
+            object? data = null;
+
+            switch (table)
+            {
+                case "TehsilAll":
+                    data = dbcontext.Tehsils
+                     .Where(t => t.DistrictId == parentId)
+                     .Select(t => new { value = t.TehsilId, label = t.TehsilName }) // Optional: project only needed fields
+                     .ToList();
+                    break;
+                case "Tehsil":
+                    data = dbcontext.TswoTehsils
+                        .Where(t => t.DistrictId == parentId)
+                        .Select(t => new { value = t.TehsilId, label = t.TehsilName }) // Optional: project only needed fields
+                        .ToList();
+                    break;
+
+                case "Muncipality":
+                    data = dbcontext.Muncipalities.Where(m => m.DistrictId == parentId)
+                    .Select(m => new { value = m.MuncipalityId, label = m.MuncipalityName })
+                    .ToList();
+                    break;
+
+                case "Block":
+                    data = dbcontext.Blocks.Where(m => m.DistrictId == parentId)
+                    .Select(m => new { value = m.BlockId, label = m.BlockName })
+                    .ToList();
+                    break;
+
+                case "Ward":
+                    data = dbcontext.Wards
+                    .Where(m => m.MuncipalityId == parentId)
+                    .OrderBy(m => m.WardCode) // 👈 Sorts by WardCode
+                    .Select(m => new
+                    {
+                        value = m.WardCode,
+                        label = "Ward No " + m.WardNo
+                    })
+                    .ToList();
+                    break;
+
+                case "HalqaPanchayat":
+                    data = dbcontext.HalqaPanchayats.Where(m => m.BlockId == parentId)
+                            .Select(m => new { value = m.HalqaPanchayatId, label = m.HalqaPanchayatName })
+                            .ToList();
+                    break;
+
+                case "Village":
+                    data = dbcontext.Villages.Where(m => m.HalqapanchayatId == parentId)
+                          .Select(m => new { value = m.VillageId, label = m.VillageName })
+                          .ToList();
+                    break;
+                // Add other cases as needed
+
+                default:
+                    return BadRequest("Invalid table name.");
+            }
+
+            return Json(new { data });
+        }
+
+        private static byte[] GenerateExcel(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var worksheet = workbook.Worksheets.Add("Report");
+
+                // Add headers
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    worksheet.Cell(1, i + 1).Value = columns[i]["header"] ?? columns[i]["accessorKey"];
+                    worksheet.Cell(1, i + 1).Style.Font.Bold = true;
+                }
+
+                // Add data
+                for (int rowIndex = 0; rowIndex < data.Count; rowIndex++)
+                {
+                    var rowData = data[rowIndex];
+                    for (int colIndex = 0; colIndex < columns.Count; colIndex++)
+                    {
+                        var key = columns[colIndex]["accessorKey"];
+                        worksheet.Cell(rowIndex + 2, colIndex + 1).Value = rowData.GetValueOrDefault(key)?.ToString() ?? "";
+                    }
+                }
+
+                // Add footer
+                int footerRow = data.Count + 3;
+                worksheet.Cell(footerRow, 1).Value = $"Report generated on: {DateTime.Now:dd MMMM yyyy, HH:mm:ss}";
+                worksheet.Cell(footerRow, 1).Style.Font.Italic = true;
+                worksheet.Range(footerRow, 1, footerRow, columns.Count).Merge();
+
+                // Auto-adjust column widths
+                worksheet.Columns().AdjustToContents();
+
+                using var stream = new MemoryStream();
+                workbook.SaveAs(stream);
+                return stream.ToArray();
+            }
+        }
+
+        private static byte[] GenerateCsv(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
+        {
+            using (var stream = new MemoryStream())
+            using (var writer = new StreamWriter(stream))
+            using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
+            {
+                // Write headers
+                foreach (var column in columns)
+                {
+                    csv.WriteField(column["header"] ?? column["accessorKey"]);
+                }
+                csv.NextRecord();
+
+                // Write data
+                foreach (var row in data)
+                {
+                    foreach (var column in columns)
+                    {
+                        csv.WriteField(row.GetValueOrDefault(column["accessorKey"])?.ToString() ?? "");
+                    }
+                    csv.NextRecord();
+                }
+
+                // Write footer
+                csv.WriteField($"Report generated on: {DateTime.Now:dd MMMM yyyy, HH:mm:ss}");
+                csv.NextRecord();
+
+                writer.Flush();
+                return stream.ToArray();
+            }
+        }
+
+        private static byte[] GeneratePdf(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
+        {
+            using (var stream = new MemoryStream())
+            {
+                using (var pdf = new PdfWriter(stream))
+                using (var pdfDoc = new PdfDocument(pdf))
+                {
+                    var document = new Document(pdfDoc);
+
+                    // Create table
+                    var table = new Table(columns.Count);
+                    table.SetWidth(UnitValue.CreatePercentValue(100));
+
+                    // Add headers
+                    foreach (var column in columns)
+                    {
+                        table.AddHeaderCell(new Cell().Add(new Paragraph(column["header"] ?? column["accessorKey"]).SetBold()));
+                    }
+
+                    // Add data
+                    foreach (var row in data)
+                    {
+                        foreach (var column in columns)
+                        {
+                            table.AddCell(new Cell().Add(new Paragraph(row.GetValueOrDefault(column["accessorKey"])?.ToString() ?? "")));
+                        }
+                    }
+
+                    // Add footer
+                    table.AddFooterCell(new Cell(1, columns.Count)
+                        .Add(new Paragraph($"Report generated on: {DateTime.Now:dd MMMM yyyy, HH:mm:ss}")
+                        .SetItalic()));
+
+                    document.Add(table);
+                    document.Close();
+
+                    return stream.ToArray();
+                }
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetBanks()
+        {
+            try
+            {
+                var banks = await dbcontext.Banks
+                    .ToListAsync();
+                return Ok(new { status = true, data = banks });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult GetBankCode(string bankId)
+        {
+            try
+            {
+                int BankId = Convert.ToInt32(bankId);
+                var bank = dbcontext.Banks
+                    .FirstOrDefault(b => b.Id == BankId);
+
+                if (bank != null)
+                {
+                    return Ok(new { status = true, bankCode = bank.BankCode });
+                }
+                else
+                {
+                    return NotFound(new { status = false, message = "Bank not found." });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult GetBankDetails(string IfscCode, int BankId)
+        {
+            try
+            {
+                string bankName = dbcontext.Banks
+                 .FirstOrDefault(b => b.Id == BankId)?.BankName ?? string.Empty;
+
+                var pattern = $"%{bankName}%";
+
+                // PostgreSQL query using LIKE for pattern matching
+                var bankDetails = dbcontext.BankDetails
+                    .FromSqlRaw(@"
+                    SELECT *
+                    FROM bankdetails
+                    WHERE ifsc = {0}
+                    AND bank ILIKE {1}
+                    LIMIT 1", IfscCode, pattern)
+                    .FirstOrDefault();
+
+                if (bankDetails != null)
+                {
+                    return Ok(new { status = true, bankDetails });
+                }
+                else
+                {
+                    return NotFound(new { status = false, message = "Bank details not found." });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult RedirectToCitizen(string username, bool isCitizen)
+        {
+            var clientToken = Request.Cookies["ClientToken"];
+            var localUser = dbcontext.Users.FirstOrDefault(u => u.Username == username);
+
+            if (localUser == null)
+                return Json(new { url = $"{_config["AppSettings:FrontendUrl"]}/login" });
+
+            // PRESERVE ORIGINAL USER TYPE
+            var actualUserType = localUser.UserType; // <-- This is the real role from DB
+
+            // Temporarily override for this session
+            localUser.UserType = isCitizen ? "Officer" : "Citizen";
+
+            var jwt = helper.GenerateJwt(localUser!, clientToken!);
+
+            dynamic ssoResponse = new ExpandoObject();
+            ssoResponse.status = true;
+            ssoResponse.token = jwt;
+            ssoResponse.userType = localUser.UserType;           // <-- current (switched) view
+            ssoResponse.actualUserType = actualUserType;         // <-- original DB role
+            ssoResponse.username = localUser.Username;
+            ssoResponse.userId = localUser.UserId;
+            ssoResponse.designation = "";
+            ssoResponse.department = helper.GetDepartment(localUser!);
+            ssoResponse.profile = localUser.Profile ?? "/assets/images/profile.jpg";
+            ssoResponse.email = localUser.Email;
+
+            var encoded = JsonConvert.SerializeObject(ssoResponse);
+            var frontendUrl = _config["AppSettings:FrontendUrl"] ?? "http://localhost:3000";
+
+            _logger.LogInformation("REDIRECTING TO FRONTEND: {Url}", $"{frontendUrl}/verification?sso={encoded}");
+
+            return Json(new { url = $"{frontendUrl}/verification?sso={encoded}" });
+        }
+    }
+}

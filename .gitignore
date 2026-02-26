@@ -1,0 +1,7 @@
+node_modules/
+bin/
+obj/
+wwwroot/uploads/
+wwwroot/files/
+.qodo
+Temp/

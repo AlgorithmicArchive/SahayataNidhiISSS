@@ -1,0 +1,17 @@
+:root {
+  --font-scale: 1;
+}
+
+html {
+  font-size: calc(100% * var(--font-scale)); /* base is 16px usually */
+}
+
+body {
+  font-size: 1rem; /* now scales with html's root */
+}
+
+
+html, body {
+  overflow: auto !important;
+  height: auto !important;
+}

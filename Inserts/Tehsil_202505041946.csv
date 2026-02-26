@@ -1,0 +1,199 @@
+"DistrictID","TehsilId","TehsilName","UUID"
+8,1,Kupwara,107
+8,2,Handwara,71
+8,3,Karnah,84
+2,4,Khag,92
+2,5,Beerwah,23
+2,6,Khansahib,93
+2,7,Budgam,39
+2,8,Chadoora,40
+2,9,Charar- E- Shrief,42
+10,16,Haveli,72
+10,17,Mandi,124
+10,18,Mendhar,131
+12,21,Darhal,54
+12,22,Rajouri,159
+12,23,Thanamandi,191
+12,24,Kalakote,82
+12,25,Nowshera,140
+7,26,Sunderbani,185
+7,27,Billawar,34
+7,28,Basohli,21
+7,29,Bani,15
+7,30,Kathua,86
+7,31,Hiranagar,74
+7,32,Sukrala,183
+3,33,Rafiabad,157
+3,34,Pattan,147
+3,35,Baramulla,17
+3,36,Kreeri,104
+3,37,Wagoora,195
+3,38,Boniyar,37
+3,39,Sopore,182
+623,40,Gurez,69
+623,41,Bandipora,14
+626,45,Lar,110
+626,46,Kangan,83
+626,47,Ganderbal,64
+11,48,Pampore,143
+11,49,Awantipora,11
+11,50,Wachi,194
+11,51,Pulwama,151
+11,52,Zakura,198
+1,53,Pahalgam,141
+1,54,Bijbehara,33
+1,55,Anantnag,4
+1,56,Shangus,174
+1,57,Kokernag,101
+1,58,Dooru,59
+622,59,Kulgam,105
+622,60,Devsar,55
+622,61,D H Pora,56
+4,62,Doda,58
+4,63,Thuroo  (Tehsil),188
+4,64,Thathri,186
+4,65,Bhaderwah,25
+621,66,Banihal,16
+621,67,Ramban,162
+620,68,Kishtwar,100
+620,69,Marwah,130
+620,70,Chhatroo,45
+620,71,Atholi (Paddar),10
+14,73,Chenani,44
+14,74,Ramnagar,166
+14,75,Majalta,122
+627,77,Reasi,169
+5,78,Akhnoor,2
+5,79,Jammu,75
+5,80,Ranbir Singh Pura,168
+5,81,Bishnah,35
+624,82,Samba,171
+625,6091,Keller,90
+625,6092,Keegam,89
+622,6193,Qaimoh,152
+622,6194,Pahloo,142
+5,6700,Thuroo,187
+5,6701,Jourian,79
+5,6702,Maira Mandrian,121
+5,6703,Chowki Choura,49
+5,6704,Kharah Balli,95
+5,6705,Pargwal,146
+5,6706,Jammu South,77
+5,6707,Bahu,12
+5,6708,Jammu North,76
+5,6709,Bhalwal,29
+5,6710,Tirind,190
+5,6711,Nagrota,136
+5,6712,Dansal,53
+5,6713,Mandal,123
+5,6714,Khour,99
+5,6715,Marh,127
+5,6717,Arnia,8
+5,6718,Jammu West,78
+624,6719,Rajpura,161
+624,6720,Bari Brahamana,19
+624,6721,Ghagwal,65
+14,6723,Udhampur,192
+624,6724,Ramgarh,163
+7,6725,Mahanpur,119
+7,6726,Dinga Amb,57
+7,6727,Nagri,135
+7,6728,Ramkote,165
+7,6729,Lohai Malhar,114
+7,6731,Marheen,128
+14,6733,Tikri,189
+14,6734,Moungri,133
+14,6735,Panchari,144
+14,6736,Basantgarh,20
+14,6737,Latti,113
+627,6738,Chassana,43
+627,6739,Shri Mata Vaishno Devi Shrine Board (SMVDSB),176
+627,6740,Arnas,7
+627,6741,Katra,87
+627,6742,Pouni,150
+627,6743,Sool,181
+627,6744,Bhomag,32
+4,6746,Bharath Bagla,30
+4,6747,Bhagwah,26
+4,6748,Kashtigarh,85
+4,6749,Gundna,68
+4,6750,Mohalla,132
+4,6751,Marmat,129
+4,6752,Assar,9
+4,6753,Bhalessa,27
+4,6754,Chilly Pingal,46
+4,6755,Bhalla,28
+4,6756,Kahara,80
+4,6757,Phigsoo,148
+4,6758,Chiralla,47
+621,6759,Khari,96
+621,6760,Pogal Paristan,149
+621,6761,Batote,22
+621,6762,Rajgarh,158
+621,6763,Gool,66
+620,6764,Mughalmaidan,134
+620,6765,Dachhan,50
+620,6766,Warwan,193
+620,6767,Machail,116
+620,6768,Nagseni,137
+620,6769,Drabshalla,60
+620,6770,Bounjwah,38
+12,6771,Khawas,97
+12,6772,Manjakote,125
+12,6773,Qila Darhal,156
+12,6774,Laroka,112
+12,6776,Beri Pattan,24
+620,6777,Washer,196
+10,6778,Balakote,13
+10,6779,Mankote,126
+622,6780,Frisal,63
+8,6782,Keran,91
+8,6783,Kralpora,103
+8,6784,Sogam,180
+8,6785,Machil,117
+8,6786,Drugmulla,61
+8,6787,Ramhal,164
+8,6788,Qaziabad,154
+8,6789,Langate,109
+13,6790,Shopian,179
+8,6791,Lolab,115
+8,6792,Lalpora,108
+11,6793,Kakapora,81
+11,6794,Shahoora,173
+11,6795,Aripal,6
+11,6796,Rajpora,160
+11,6797,Zainapora,197
+625,6798,Barbugh,18
+625,6799,Chitragam,48
+625,6800,Hermain,73
+13,6801,Khanyar,94
+13,6802,Channapora,41
+13,6803,Eidgah,62
+13,6804,Panthachowk,145
+13,6805,Sholipora,178
+626,6806,Gund,67
+623,6809,Aloosa,3
+623,6810,Ajas,1
+623,6811,Hajin,70
+2,6813,Narbal,138
+2,6814,Magam,118
+2,6815,Bk Pora,36
+1,6816,Shahbad Bala,172
+1,6817,Qazigund,155
+1,6818,Sallar,170
+1,6820,Larnoo,111
+1,6821,Shangus East,175
+1,6822,Anantnag East,5
+1,6823,Shirat,177
+3,6824,Danghiwacha,52
+3,6827,Dangarpora,51
+3,6828,Khoie,98
+3,6829,Kawarhama,88
+3,6830,Kunzar,106
+627,6850,Mahore,120
+12,6851,Koteranka,102
+621,7201,Ramsoo,167
+3,7202,Narvaw,139
+4,7203,Bhella,31
+4,7204,Sundar Doda,184
+8,7205,Qalamabad,153
