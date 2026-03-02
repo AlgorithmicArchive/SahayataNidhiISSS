@@ -3,17 +3,17 @@ using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class ScheduledJobs
+public partial class Scheduledjobs
 {
     public Guid Id { get; set; }
 
-    public string CronExpression { get; set; } = null!;
+    public string Cronexpression { get; set; } = null!;
 
-    public string ActionType { get; set; } = null!;
+    public string Actiontype { get; set; } = null!;
 
-    public DateTime? LastExecutedAt { get; set; }
+    public DateTime? Lastexecutedat { get; set; }
 
-    public DateTime CreatedAt { get; set; }
+    public DateTime Createdat { get; set; }
 
-    public string? JsonParameters { get; set; }
+    public string? Jsonparameters { get; set; }
 }

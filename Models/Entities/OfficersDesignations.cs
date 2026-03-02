@@ -7,11 +7,11 @@ public partial class Officersdesignations
 {
     public int Uuid { get; set; }
 
-    public int? DepartmentId { get; set; }
+    public int? Departmentid { get; set; }
 
     public string? Designation { get; set; }
 
-    public string? DesignationShort { get; set; }
+    public string? Designationshort { get; set; }
 
-    public string? AccessLevel { get; set; }
+    public string? Accesslevel { get; set; }
 }

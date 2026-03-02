@@ -64,7 +64,7 @@ public class CronServices
 
             try
             {
-                var formDetailsObj = JToken.Parse(application.FormDetails ?? "{}");
+                var formDetailsObj = JToken.Parse(application.Formdetails ?? "{}");
 
                 // Check if it's the new JSON structure with sections
                 if (formDetailsObj is JObject jObj && jObj.ContainsKey("Applicant Details"))
@@ -90,22 +90,22 @@ public class CronServices
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to parse FormDetails for application {ReferenceNumber}", application.ReferenceNumber);
+                _logger.LogWarning(ex, "Failed to parse FormDetails for application {Referencenumber}", application.Referencenumber);
                 continue;
             }
 
             if (string.IsNullOrEmpty(email)) continue;
 
-            var expiringApplication = await _dbcontext.ApplicationsWithExpiringEligibilities
-                .FirstOrDefaultAsync(ae => ae.ReferenceNumber == application.ReferenceNumber, ct);
+            var expiringApplication = await _dbcontext.Applicationswithexpiringeligibility
+                .FirstOrDefaultAsync(ae => ae.Referencenumber == application.Referencenumber, ct);
 
             if (expiringApplication == null) continue;
 
             DateTime expirationDate;
             if (!DateTime.TryParse(expiringApplication.ExpirationDate, out expirationDate))
             {
-                _logger.LogWarning("Invalid expiration date format for {ReferenceNumber}: {Date}",
-                    application.ReferenceNumber, expiringApplication.ExpirationDate);
+                _logger.LogWarning("Invalid expiration date format for {Referencenumber}: {Date}",
+                    application.Referencenumber, expiringApplication.ExpirationDate);
                 continue;
             }
 
@@ -114,7 +114,7 @@ public class CronServices
                     <h2 style='color: #2e6c80;'>UDID Card Validity Expiring</h2>
                     <p><strong>{applicantName}</strong>,</p>
                     <p>
-                        Your UDID Card linked to application <strong>{application.ReferenceNumber}</strong>
+                        Your UDID Card linked to application <strong>{application.Referencenumber}</strong>
                         is expiring on <strong>{expirationDate:dd MMM yyyy}</strong>.
                     </p>
                     <p>Please renew your UDID card to continue receiving financial assistance.</p>

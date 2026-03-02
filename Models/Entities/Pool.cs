@@ -5,17 +5,17 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Pool
 {
-    public int PoolId { get; set; }
+    public int Poolid { get; set; }
 
-    public int ServiceId { get; set; }
+    public int Serviceid { get; set; }
 
-    public string AccessLevel { get; set; } = null!;
+    public string Accesslevel { get; set; } = null!;
 
-    public int AccessCode { get; set; }
+    public int Accesscode { get; set; }
 
-    public string? ListType { get; set; }
+    public string? Listtype { get; set; }
 
     public string? List { get; set; }
 
-    public virtual Service Service { get; set; } = null!;
+    public virtual Services Service { get; set; } = null!;
 }

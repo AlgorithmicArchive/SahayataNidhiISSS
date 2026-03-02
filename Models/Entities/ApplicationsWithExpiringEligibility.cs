@@ -1,14 +1,15 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class ApplicationsWithExpiringEligibility
+public partial class Applicationswithexpiringeligibility
 {
     public int ExpiringId { get; set; }
 
-    public int ServiceId { get; set; }
+    public int Serviceid { get; set; }
 
-    public string ReferenceNumber { get; set; } = null!;
+    public string Referencenumber { get; set; } = null!;
 
     public string ExpirationDate { get; set; } = null!;
 

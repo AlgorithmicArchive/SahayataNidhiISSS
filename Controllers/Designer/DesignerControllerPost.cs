@@ -16,7 +16,7 @@ namespace SahayataNidhi.Controllers
             int serviceId = Convert.ToInt32(form["serviceId"].ToString());
             bool active = Convert.ToBoolean(form["active"]);
 
-            var svc = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var svc = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (svc == null)
                 return Json(new { status = false, message = "Not found" });
 
@@ -31,13 +31,13 @@ namespace SahayataNidhi.Controllers
             int serviceId = Convert.ToInt32(form["serviceId"].ToString());
             bool activeForOfficers = Convert.ToBoolean(form["activeForOfficers"]);
 
-            var svc = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var svc = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (svc == null)
                 return Json(new { status = false, message = "Not found" });
 
-            svc.ActiveForOfficers = activeForOfficers;
+            svc.Activeforofficers = activeForOfficers;
             dbcontext.SaveChanges();
-            return Json(new { status = true, activeForOfficers = svc.ActiveForOfficers });
+            return Json(new { status = true, activeForOfficers = svc.Activeforofficers });
         }
 
         [HttpPost]
@@ -48,7 +48,7 @@ namespace SahayataNidhi.Controllers
                 int webserviceId = Convert.ToInt32(form["webserviceId"].ToString());
                 bool active = Convert.ToBoolean(form["active"]);
 
-                var svc = dbcontext.WebServices.FirstOrDefault(s => s.Id == webserviceId);
+                var svc = dbcontext.Webservice.FirstOrDefault(s => s.Id == webserviceId);
                 if (svc == null)
                 {
                     return Json(new { status = false, message = "Web service not found" });
@@ -56,14 +56,14 @@ namespace SahayataNidhi.Controllers
 
                 if (active)
                 {
-                    // Check for other active web services for the same ServiceId
-                    var otherActiveWebService = dbcontext.WebServices
-                        .FirstOrDefault(ws => ws.ServiceId == svc.ServiceId && ws.Id != webserviceId && ws.IsActive);
+                    // Check for other active web services for the same Serviceid
+                    var otherActiveWebService = dbcontext.Webservice
+                        .FirstOrDefault(ws => ws.Serviceid == svc.Serviceid && ws.Id != webserviceId && ws.Isactive);
 
                     if (otherActiveWebService != null)
                     {
                         var serviceName = dbcontext.Services
-                            .FirstOrDefault(s => s.ServiceId == svc.ServiceId)?.ServiceName ?? "Unknown";
+                            .FirstOrDefault(s => s.Serviceid == svc.Serviceid)?.Servicename ?? "Unknown";
                         return Json(new
                         {
                             status = false,
@@ -73,14 +73,14 @@ namespace SahayataNidhi.Controllers
                 }
 
                 // Update the requested web service
-                svc.IsActive = active;
-                svc.UpdatedAt = DateTime.Now.ToString("o");
+                svc.Isactive = active;
+                svc.Updatedat = DateTime.Now.ToString("o");
                 dbcontext.SaveChanges();
 
                 return Json(new
                 {
                     status = true,
-                    active = svc.IsActive,
+                    active = svc.Isactive,
                     message = $"Web service {(active ? "activated" : "deactivated")} successfully"
                 });
             }
@@ -102,81 +102,60 @@ namespace SahayataNidhi.Controllers
                 var apiEndPoint = form["apiEndPoint"].ToString();
                 var onAction = form["onAction"].ToString(); // JSON string
                 var fieldMappings = form["fieldMappings"].ToString(); // JSON string
+                var headers = form["headers"].ToString(); // JSON string   ← ADD THIS
                 var createdAt = form["createdAt"].ToString();
                 var updatedAt = form["updatedAt"].ToString();
 
-                WebService webService;
+                Webservice webService;
 
-                // Try parse webServiceId
                 if (int.TryParse(webServiceId, out int parsedWebServiceId))
                 {
-                    // Update existing web service
-                    webService = dbcontext.WebServices
-                        .FirstOrDefault(ws => ws.Id == parsedWebServiceId)!;
-
+                    webService = dbcontext.Webservice.FirstOrDefault(ws => ws.Id == parsedWebServiceId)!;
                     if (webService != null)
                     {
-                        webService.ServiceId = Convert.ToInt32(serviceId);
-                        webService.WebServiceName = webServiceName;
-                        webService.ApiEndpoint = apiEndPoint;
-                        webService.OnAction = onAction;
-                        webService.FieldMappings = fieldMappings;
-                        webService.UpdatedAt = updatedAt;
+                        webService.Serviceid = Convert.ToInt32(serviceId);
+                        webService.Webservicename = webServiceName;
+                        webService.Apiendpoint = apiEndPoint;
+                        webService.Onaction = onAction;
+                        webService.Fieldmappings = fieldMappings;
+                        webService.Headers = headers;   // ← ADD THIS
+                        webService.Updatedat = updatedAt;
                     }
                     else
                     {
-                        return Json(new
-                        {
-                            status = false,
-                            message = "Web service not found for the provided WebServiceId"
-                        });
+                        return Json(new { status = false, message = "Web service not found" });
                     }
                 }
                 else
                 {
-                    // Create new web service
-                    webService = new WebService
+                    webService = new Webservice
                     {
-                        ServiceId = Convert.ToInt32(serviceId),
-                        WebServiceName = webServiceName,
-                        ApiEndpoint = apiEndPoint,
-                        OnAction = onAction,
-                        FieldMappings = fieldMappings,
-                        CreatedAt = createdAt,
-                        UpdatedAt = updatedAt,
-                        IsActive = true
+                        Serviceid = Convert.ToInt32(serviceId),
+                        Webservicename = webServiceName,
+                        Apiendpoint = apiEndPoint,
+                        Onaction = onAction,
+                        Fieldmappings = fieldMappings,
+                        Headers = headers,   // ← ADD THIS
+                        Createdat = createdAt,
+                        Updatedat = updatedAt,
+                        Isactive = true
                     };
-
-                    dbcontext.WebServices.Add(webService);
+                    dbcontext.Webservice.Add(webService);
                 }
 
                 dbcontext.SaveChanges();
-
-                return Json(new
-                {
-                    status = true,
-                    message = string.IsNullOrEmpty(webServiceId)
-                        ? "Web service configuration saved successfully"
-                        : "Web service configuration updated successfully",
-                    webServiceId = webService.Id
-                });
+                return Json(new { status = true, message = "Saved successfully", webServiceId = webService.Id });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving web service");
-                return Json(new
-                {
-                    status = false,
-                    message = "Failed to save configuration",
-                    error = ex.Message
-                });
+                return Json(new { status = false, message = "Failed to save configuration", error = ex.Message });
             }
         }
-
         [HttpPost]
         public async Task<IActionResult> SaveLetterDetails(int serviceId, string objField, string letterData)
         {
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (service == null)
             {
                 return NotFound(new { status = false, message = "Service not found." });
@@ -224,7 +203,7 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpPost]
-        public IActionResult FormElement([FromForm] IFormCollection form)
+        public IActionResult Formelement([FromForm] IFormCollection form)
         {
             string serviceIdString = form["serviceId"].ToString();
             string serviceName = form["serviceName"].ToString();
@@ -245,31 +224,31 @@ namespace SahayataNidhi.Controllers
                     return Json(new { status = false, response = "Invalid Service ID." });
                 }
 
-                var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+                var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
 
                 if (service != null)
                 {
-                    if (service.FormElement != formElement)
-                        service.FormElement = formElement;
+                    if (service.Formelement != formElement)
+                        service.Formelement = formElement;
 
-                    if (service.ServiceName != serviceName)
-                        service.ServiceName = serviceName;
+                    if (service.Servicename != serviceName)
+                        service.Servicename = serviceName;
 
-                    if (service.NameShort != serviceNameShort)
-                        service.NameShort = serviceNameShort;
+                    if (service.Nameshort != serviceNameShort)
+                        service.Nameshort = serviceNameShort;
 
-                    if (service.DepartmentId != departmentId)
-                        service.DepartmentId = departmentId;
+                    if (service.Departmentid != departmentId)
+                        service.Departmentid = departmentId;
                 }
             }
             else
             {
-                var newService = new Service
+                var newService = new Services
                 {
-                    FormElement = formElement,
-                    ServiceName = serviceName,
-                    NameShort = serviceNameShort,
-                    DepartmentId = departmentId
+                    Formelement = formElement,
+                    Servicename = serviceName,
+                    Nameshort = serviceNameShort,
+                    Departmentid = departmentId
                 };
 
                 dbcontext.Services.Add(newService);
@@ -291,7 +270,7 @@ namespace SahayataNidhi.Controllers
                 if (!string.IsNullOrEmpty(serviceIdString))
                 {
                     int serviceId = Convert.ToInt32(serviceIdString);
-                    var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+                    var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
                     if (service != null)
                     {
                         // Use JSON settings that handle nested objects properly
@@ -307,12 +286,12 @@ namespace SahayataNidhi.Controllers
                         try
                         {
                             var parsedObject = JsonConvert.DeserializeObject(workFlowPlayers, settings);
-                            service.OfficerEditableField = JsonConvert.SerializeObject(parsedObject, settings);
+                            service.Officereditablefield = JsonConvert.SerializeObject(parsedObject, settings);
                         }
                         catch (JsonException)
                         {
                             // If parsing fails, store as-is
-                            service.OfficerEditableField = workFlowPlayers;
+                            service.Officereditablefield = workFlowPlayers;
                         }
 
                         dbcontext.Services.Update(service);
@@ -320,9 +299,9 @@ namespace SahayataNidhi.Controllers
                 }
                 else
                 {
-                    var newService = new Service
+                    var newService = new Services
                     {
-                        OfficerEditableField = workFlowPlayers
+                        Officereditablefield = workFlowPlayers
                     };
                     dbcontext.Services.Add(newService);
                 }
@@ -367,14 +346,14 @@ namespace SahayataNidhi.Controllers
 
                 var emailSetting = new Models.Entities.Emailsettings
                 {
-                    SenderName = senderName,
-                    SenderEmail = senderEmail,
-                    SmtpServer = smtpServer,
-                    SmtpPort = smtpPort,
+                    Sendername = senderName,
+                    Senderemail = senderEmail,
+                    Smtpserver = smtpServer,
+                    Smtpport = smtpPort,
                     Password = encryptedPassword,
                 };
 
-                dbcontext.EmailSettings.Add(emailSetting);
+                dbcontext.Emailsettings.Add(emailSetting);
                 dbcontext.SaveChanges();
 
                 return Json(new { success = true, message = "Email settings saved successfully." });
@@ -391,7 +370,7 @@ namespace SahayataNidhi.Controllers
         {
             try
             {
-                var emailSettings = dbcontext.EmailSettings.FirstOrDefault();
+                var emailSettings = dbcontext.Emailsettings.FirstOrDefault();
                 if (emailSettings == null)
                     return BadRequest("Email settings not found.");
 
@@ -421,7 +400,7 @@ namespace SahayataNidhi.Controllers
             string documentType = form["documentType"].ToString();
             string fields = form["fields"].ToString();
 
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (service == null)
             {
                 return Json(new { status = false, message = "Service not found." });
@@ -471,7 +450,7 @@ namespace SahayataNidhi.Controllers
             }
 
             Dictionary<string, List<object>> documentFields;
-            if (string.IsNullOrEmpty(service.DocumentFields))
+            if (string.IsNullOrEmpty(service.Documentfields))
             {
                 documentFields = new Dictionary<string, List<object>>();
             }
@@ -479,7 +458,7 @@ namespace SahayataNidhi.Controllers
             {
                 try
                 {
-                    documentFields = JsonConvert.DeserializeObject<Dictionary<string, List<object>>>(service.DocumentFields)!;
+                    documentFields = JsonConvert.DeserializeObject<Dictionary<string, List<object>>>(service.Documentfields)!;
                     if (documentFields == null)
                     {
                         documentFields = new Dictionary<string, List<object>>();
@@ -496,7 +475,7 @@ namespace SahayataNidhi.Controllers
 
             try
             {
-                service.DocumentFields = JsonConvert.SerializeObject(documentFields);
+                service.Documentfields = JsonConvert.SerializeObject(documentFields);
                 dbcontext.SaveChanges();
                 return Json(new { status = true, message = "Document fields saved successfully." });
             }
@@ -547,7 +526,7 @@ namespace SahayataNidhi.Controllers
                 }
 
                 var service = await dbcontext.Services
-                    .Where(s => s.ServiceId == serviceId)
+                    .Where(s => s.Serviceid == serviceId)
                     .FirstOrDefaultAsync();
 
                 if (service == null)
@@ -555,7 +534,7 @@ namespace SahayataNidhi.Controllers
                     return NotFound(new { status = false, message = "Service not found." });
                 }
 
-                service.SubmissionLimitConfig = submissionLimitConfig;
+                service.Submissionlimitconfig = submissionLimitConfig;
                 await dbcontext.SaveChangesAsync();
 
                 return Ok(new { status = true, message = "Configuration saved successfully." });

@@ -357,6 +357,7 @@ const MyNavbar = () => {
             { name: "Corrections/Corrigendum", path: "/designer/corrections" },
             { name: "Letter Pdf", path: "/designer/createletterpdf" },
             { name: "Web Service", path: "/designer/createwebservice" },
+            { name: "Create Reports", path: "/designer/createreports" },
             { name: "Email", path: "/designer/emailsettings" },
             {
               name: "Submission Limitations",

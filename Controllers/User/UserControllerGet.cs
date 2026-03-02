@@ -11,9 +11,9 @@ namespace SahayataNidhi.Controllers.User
 {
     public partial class UserController
     {
-        public string? GetSanctionedCorrigendum(dynamic WorkFlow, string id)
+        public string? GetSanctionedCorrigendum(dynamic Workflow, string id)
         {
-            foreach (var item in WorkFlow)
+            foreach (var item in Workflow)
             {
                 if ((string)item.status == "sanctioned")
                 {
@@ -26,48 +26,48 @@ namespace SahayataNidhi.Controllers.User
 
         public IActionResult GetFormFields(string referenceNumber)
         {
-            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.ReferenceNumber == referenceNumber);
-            return Json(new { status = true, formDetails = JsonConvert.DeserializeObject<dynamic>(application!.FormDetails!) });
+            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
+            return Json(new { status = true, formDetails = JsonConvert.DeserializeObject<dynamic>(application!.Formdetails!) });
         }
 
         [HttpGet]
         public IActionResult GetFormDetails(string applicationId)
         {
             var details = dbcontext.CitizenApplications
-                          .FirstOrDefault(ca => ca.ReferenceNumber == applicationId);
+                          .FirstOrDefault(ca => ca.Referencenumber == applicationId);
 
             if (details == null)
                 return NotFound($"Application ID {applicationId} not found.");
 
-            if (string.IsNullOrWhiteSpace(details.FormDetails))
-                return BadRequest("FormDetails is empty.");
+            if (string.IsNullOrWhiteSpace(details.Formdetails))
+                return BadRequest("Formdetails is empty.");
 
             dynamic formDetails;
             try
             {
-                formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails)!;
+                formDetails = JsonConvert.DeserializeObject<dynamic>(details.Formdetails)!;
             }
             catch (JsonException)
             {
-                return BadRequest("Malformed JSON in FormDetails.");
+                return BadRequest("Malformed JSON in Formdetails.");
             }
 
-            if (!string.IsNullOrWhiteSpace(details.AdditionalDetails))
+            if (!string.IsNullOrWhiteSpace(details.Additionaldetails))
             {
                 dynamic additionalDetails;
                 try
                 {
-                    additionalDetails = JsonConvert.DeserializeObject<dynamic>(details.AdditionalDetails)!;
+                    additionalDetails = JsonConvert.DeserializeObject<dynamic>(details.Additionaldetails)!;
                 }
                 catch (JsonException)
                 {
-                    return BadRequest("Malformed JSON in AdditionalDetails.");
+                    return BadRequest("Malformed JSON in Additionaldetails.");
                 }
 
                 return Json(new { formDetails, additionalDetails });
             }
 
-            return Json(new { formDetails, AdditionalDetails = "" });
+            return Json(new { formDetails, Additionaldetails = "" });
         }
 
         public IActionResult IncompleteApplications(int pageIndex = 0, int pageSize = 10)
@@ -101,13 +101,13 @@ namespace SahayataNidhi.Controllers.User
             foreach (var application in pagedApplications)
             {
                 List<dynamic> actions = [];
-                var formDetails = JsonConvert.DeserializeObject<dynamic>(application.FormDetails!);
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
                 actions.Add(new { id = (pageIndex * pageSize) + index + 1, tooltip = "Edit", color = "#F0C38E", actionFunction = "IncompleteForm" });
                 data.Add(new
                 {
                     sno = (pageIndex * pageSize) + index + 1,
-                    referenceNumber = application.ReferenceNumber,
-                    serviceId = application.ServiceId,
+                    referenceNumber = application.Referencenumber,
+                    serviceId = application.Serviceid,
                     saveDate = application.CreatedAt,
                     customActions = actions
                 });
@@ -174,15 +174,15 @@ namespace SahayataNidhi.Controllers.User
             foreach (var application in applications)
             {
                 // Safely deserialize formdetails and workflow
-                var formDetails = string.IsNullOrEmpty(application.FormDetails)
+                var formDetails = string.IsNullOrEmpty(application.Formdetails)
                     ? null
-                    : JsonConvert.DeserializeObject<dynamic>(application.FormDetails);
+                    : JsonConvert.DeserializeObject<dynamic>(application.Formdetails);
 
-                var officers = string.IsNullOrEmpty(application.WorkFlow)
+                var officers = string.IsNullOrEmpty(application.Workflow)
                     ? null
-                    : JsonConvert.DeserializeObject<JArray>(application.WorkFlow);
+                    : JsonConvert.DeserializeObject<JArray>(application.Workflow);
 
-                int currentPlayer = application.CurrentPlayer ?? -1;
+                int currentPlayer = application.Currentplayer ?? -1;
 
                 // Default values
                 string officerDesignation = "Unknown";
@@ -190,7 +190,7 @@ namespace SahayataNidhi.Controllers.User
                 string workflowStatus = "pending";
                 string officerArea = "";
 
-                _logger.LogInformation($"Processing ApplicationId: {application.ReferenceNumber}, CurrentPlayer: {currentPlayer}, Officers Count: {officers?.Count} Officers Data: {application.WorkFlow}");
+                _logger.LogInformation($"Processing ApplicationId: {application.Referencenumber}, Currentplayer: {currentPlayer}, Officers Count: {officers?.Count} Officers Data: {application.Workflow}");
 
                 // Safely extract current officer details
                 if (officers != null &&
@@ -205,22 +205,22 @@ namespace SahayataNidhi.Controllers.User
 
                 // Get service name safely
                 string serviceName = dbcontext.Services
-                    .FirstOrDefault(s => s.ServiceId == application.ServiceId)?.ServiceName ?? "Unknown Service";
+                    .FirstOrDefault(s => s.Serviceid == application.Serviceid)?.Servicename ?? "Unknown Service";
 
                 // Get officer area from form details
                 officerArea = GetOfficerArea(officerAccessLevel, formDetails);
 
                 // Corrigendum handling
-                var Corrigendum = dbcontext.Corrigendums
-                    .Where(co => co.ReferenceNumber == application.ReferenceNumber)
+                var Corrigendum = dbcontext.Corrigendum
+                    .Where(co => co.Referencenumber == application.Referencenumber)
                     .ToList();
 
                 var corrigendumIds = new List<string>();
                 foreach (var item in Corrigendum)
                 {
                     string value = GetSanctionedCorrigendum(
-                        JsonConvert.DeserializeObject<dynamic>(item.WorkFlow),
-                        item.CorrigendumId);
+                        JsonConvert.DeserializeObject<dynamic>(item.Workflow),
+                        item.Corrigendumid);
                     if (!string.IsNullOrEmpty(value))
                     {
                         corrigendumIds.Add(value);
@@ -228,8 +228,8 @@ namespace SahayataNidhi.Controllers.User
                 }
 
                 // Expiring eligibility check
-                var expiringEligibility = dbcontext.ApplicationsWithExpiringEligibilities
-                    .FirstOrDefault(aee => aee.ReferenceNumber == application.ReferenceNumber);
+                var expiringEligibility = dbcontext.Applicationswithexpiringeligibility
+                    .FirstOrDefault(aee => aee.Referencenumber == application.Referencenumber);
 
                 // Define actions
                 var actions = new List<dynamic>();
@@ -265,8 +265,8 @@ namespace SahayataNidhi.Controllers.User
                 if (expiringEligibility != null &&
                     !string.IsNullOrWhiteSpace(expiringEligibility.ExpirationDate))
                 {
-                    bool hasInitiatedCorrection = dbcontext.Corrigendums
-                        .Any(co => co.ReferenceNumber == application.ReferenceNumber && co.Status == "Initiated");
+                    bool hasInitiatedCorrection = dbcontext.Corrigendum
+                        .Any(co => co.Referencenumber == application.Referencenumber && co.Status == "Initiated");
 
                     if (!hasInitiatedCorrection &&
                         DateTime.TryParse(expiringEligibility.ExpirationDate, out DateTime expirationDate))
@@ -293,7 +293,7 @@ namespace SahayataNidhi.Controllers.User
                 {
                     sno = (pageIndex * pageSize) + rowIndex + 1,
                     serviceName,
-                    referenceNumber = application.ReferenceNumber,
+                    referenceNumber = application.Referencenumber,
                     applicantName = GetFieldValue("ApplicantName", formDetails),
                     currentlyWith = $"{officerDesignation} {officerArea}".Trim(),
                     status = actionMap.TryGetValue(workflowStatus, out var displayStatus)
@@ -302,7 +302,7 @@ namespace SahayataNidhi.Controllers.User
                     submissionDate = DateTime.TryParse(application.CreatedAt, out var createdAt)
                         ? createdAt.ToString("dd MMM yyyy")
                         : "",
-                    serviceId = application.ServiceId,
+                    serviceId = application.Serviceid,
                     customActions = actions
                 });
 
@@ -336,14 +336,14 @@ namespace SahayataNidhi.Controllers.User
             }
 
 
-            var application = await dbcontext.CitizenApplications.FirstOrDefaultAsync(ca => ca.ReferenceNumber == ApplicationId);
+            var application = await dbcontext.CitizenApplications.FirstOrDefaultAsync(ca => ca.Referencenumber == ApplicationId);
 
-            _logger.LogInformation($"Fetching history for ApplicationId: {ApplicationId} WorkFlow: {application?.WorkFlow} CurrentPlayer: {application?.CurrentPlayer}");
-            var players = JsonConvert.DeserializeObject<dynamic>(application!.WorkFlow!) as JArray;
-            int currentPlayerIndex = (int)application.CurrentPlayer!;
+            _logger.LogInformation($"Fetching history for ApplicationId: {ApplicationId} Workflow: {application?.Workflow} Currentplayer: {application?.Currentplayer}");
+            var players = JsonConvert.DeserializeObject<dynamic>(application!.Workflow!) as JArray;
+            int currentPlayerIndex = (int)application.Currentplayer!;
             var currentPlayer = players!.FirstOrDefault(o => (int)o["playerId"]! == currentPlayerIndex);
-            var history = await dbcontext.ActionHistories.Where(ah => ah.ReferenceNumber == ApplicationId && !ah.ActionTaken.Contains("Withheld")).ToListAsync();
-            var formDetails = JsonConvert.DeserializeObject<dynamic>(application.FormDetails!);
+            var history = await dbcontext.Actionhistory.Where(ah => ah.Referencenumber == ApplicationId && !ah.Actiontaken.Contains("Withheld")).ToListAsync();
+            var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
             int totalRecords = history.Count;
 
             var columns = new List<dynamic>
@@ -358,15 +358,15 @@ namespace SahayataNidhi.Controllers.User
             List<dynamic> data = [];
             foreach (var item in history)
             {
-                string officerArea = GetOfficerAreaForHistory(item.LocationLevel!, item.LocationValue);
+                string officerArea = GetOfficerAreaForHistory(item.Locationlevel!, item.Locationvalue);
 
                 data.Add(new
                 {
                     sno = index,
-                    actionTaker = item.ActionTaker != "Citizen" ? item.ActionTaker + " " + officerArea : item.ActionTaker,
-                    actionTaken = item.ActionTaken! == "ReturnToCitizen" ? "Returned to citizen for correction" : item.ActionTaken,
+                    actionTaker = item.Actiontaker != "Citizen" ? item.Actiontaker + " " + officerArea : item.Actiontaker,
+                    actionTaken = item.Actiontaken! == "ReturnToCitizen" ? "Returned to citizen for correction" : item.Actiontaken,
                     remarks = item.Remarks,
-                    actionTakenOn = DateTime.TryParse(item.ActionTakenDate, out var dt)
+                    actionTakenOn = DateTime.TryParse(item.Actiontakendate, out var dt)
     ? dt.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
     : ""
                 });
@@ -423,14 +423,14 @@ namespace SahayataNidhi.Controllers.User
             foreach (var item in pagedServices)
             {
                 int serialNo = (pageIndex * pageSize) + index + 1;
-                var department = dbcontext.Departments.FirstOrDefault(d => d.DepartmentId == item.DepartmentId)?.DepartmentName ?? "N/A";
+                var department = dbcontext.Departments.FirstOrDefault(d => d.Departmentid == item.Departmentid)?.Departmentname ?? "N/A";
 
                 var row = new
                 {
                     sno = serialNo,
-                    servicename = item.ServiceName,
+                    servicename = item.Servicename,
                     department = department,
-                    serviceId = item.ServiceId,
+                    serviceId = item.Serviceid,
                     customActions = new List<dynamic>
                 {
                     new
@@ -438,7 +438,7 @@ namespace SahayataNidhi.Controllers.User
                         tooltip = "Apply",
                         color = "#F0C38E",
                         actionFunction = "OpenForm",
-                        parameters = new[] { item.ServiceId }
+                        parameters = new[] { item.Serviceid }
                     }
                 }
                 };
@@ -474,7 +474,7 @@ namespace SahayataNidhi.Controllers.User
                 .Where(u => u.CitizenId.ToString() == userId && u.Status == "Incomplete")
                 .Count();
 
-            var userDetails = dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+            var userDetails = dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
 
             var details = new
             {
@@ -482,8 +482,8 @@ namespace SahayataNidhi.Controllers.User
                 userDetails.Username,
                 userDetails.Profile,
                 userDetails.Email,
-                userDetails.MobileNumber,
-                userDetails.BackupCodes,
+                userDetails.Mobilenumber,
+                userDetails.Backupcodes,
                 initiated,
                 incomplete,
             };
@@ -497,8 +497,8 @@ namespace SahayataNidhi.Controllers.User
             var userId = Convert.ToInt32(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             try
             {
-                var sanctionLetter = await dbcontext.UserDocuments
-                    .FirstOrDefaultAsync(sl => sl.FileName == fileName);
+                var sanctionLetter = await dbcontext.Userdocuments
+                    .FirstOrDefaultAsync(sl => sl.Filename == fileName);
                 if (sanctionLetter == null)
                     return NotFound($"Sanction letter for FileName {fileName} not found.");
 
@@ -506,7 +506,7 @@ namespace SahayataNidhi.Controllers.User
                 _auditService.InsertLog(HttpContext, "Download File", "Sanction Letter downloaded successfully.", userId, "Success");
 
                 // Return the file
-                return File(sanctionLetter.FileData, "application/pdf", sanctionLetter.FileName);
+                return File(sanctionLetter.Filedata, "application/pdf", sanctionLetter.Filename);
             }
             catch (Exception ex)
             {
@@ -525,38 +525,38 @@ namespace SahayataNidhi.Controllers.User
         }
 
         [HttpGet]
-        public IActionResult GetExpiringDocumentDetails(string ServiceId, string referenceNumber)
+        public IActionResult GetExpiringDocumentDetails(string Serviceid, string referenceNumber)
         {
-            // Validate ServiceId
-            if (!int.TryParse(ServiceId, out int serviceId))
+            // Validate Serviceid
+            if (!int.TryParse(Serviceid, out int serviceId))
             {
-                _logger.LogError($"Invalid ServiceId: {ServiceId}");
-                return Json(new { status = false, message = "Invalid ServiceId. Must be a valid integer." });
+                _logger.LogError($"Invalid Serviceid: {Serviceid}");
+                return Json(new { status = false, message = "Invalid Serviceid. Must be a valid integer." });
             }
 
             // Retrieve service
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (service == null)
             {
-                _logger.LogError($"Service not found for ServiceId: {serviceId}");
+                _logger.LogError($"Service not found for Serviceid: {serviceId}");
                 return Json(new { status = false, message = "Service not found." });
             }
 
             // Validate referenceNumber
-            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.ReferenceNumber == referenceNumber);
+            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
             if (application == null)
             {
-                _logger.LogError($"Application not found for ReferenceNumber: {referenceNumber}");
+                _logger.LogError($"Application not found for Referencenumber: {referenceNumber}");
                 return Json(new { status = false, message = "Application not found." });
             }
 
             try
             {
                 // Parse FormElement JSON
-                var formElementObj = JArray.Parse(service.FormElement!);
+                var formElementObj = JArray.Parse(service.Formelement!);
                 if (formElementObj == null || !formElementObj.Any())
                 {
-                    _logger.LogError($"FormElement is empty or invalid for ServiceId: {serviceId}");
+                    _logger.LogError($"FormElement is empty or invalid for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "FormElement is empty or invalid." });
                 }
 
@@ -564,7 +564,7 @@ namespace SahayataNidhi.Controllers.User
                 var pensionTypeSection = formElementObj.FirstOrDefault(s => s["section"]?.ToString() == "Pension Type");
                 if (pensionTypeSection == null)
                 {
-                    _logger.LogError($"Pension Type section not found in FormElement for ServiceId: {serviceId}");
+                    _logger.LogError($"Pension Type section not found in FormElement for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "Pension Type section not found." });
                 }
 
@@ -572,14 +572,14 @@ namespace SahayataNidhi.Controllers.User
                 var fieldsArray = pensionTypeSection["fields"] as JArray;
                 if (fieldsArray == null)
                 {
-                    _logger.LogError($"No fields found in Pension Type section for ServiceId: {serviceId}");
+                    _logger.LogError($"No fields found in Pension Type section for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "No fields found in Pension Type section." });
                 }
 
                 var pensionTypeField = fieldsArray.FirstOrDefault(f => f["name"]?.ToString().Trim() == "PensionType");
                 if (pensionTypeField == null)
                 {
-                    _logger.LogError($"PensionType field not found in Pension Type section for ServiceId: {serviceId}");
+                    _logger.LogError($"PensionType field not found in Pension Type section for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "PensionType field not found." });
                 }
 
@@ -588,7 +588,7 @@ namespace SahayataNidhi.Controllers.User
                     .Any(o => o["value"]?.ToString().Trim() == "PHYSICALLY CHALLENGED PERSON") ?? false;
                 if (!hasPhysicallyChallengedOption)
                 {
-                    _logger.LogError($"PHYSICALLY CHALLENGED PERSON option not found in PensionType for ServiceId: {serviceId}");
+                    _logger.LogError($"PHYSICALLY CHALLENGED PERSON option not found in PensionType for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "PHYSICALLY CHALLENGED PERSON option not found." });
                 }
 
@@ -596,7 +596,7 @@ namespace SahayataNidhi.Controllers.User
                 var additionalFields = pensionTypeField["additionalFields"]?["PHYSICALLY CHALLENGED PERSON"]?.ToObject<JArray>();
                 if (additionalFields == null)
                 {
-                    _logger.LogError($"No additionalFields for PHYSICALLY CHALLENGED PERSON in ServiceId: {serviceId}");
+                    _logger.LogError($"No additionalFields for PHYSICALLY CHALLENGED PERSON in Serviceid: {serviceId}");
                     return Json(new { status = false, message = "No additional fields for PHYSICALLY CHALLENGED PERSON." });
                 }
 
@@ -604,7 +604,7 @@ namespace SahayataNidhi.Controllers.User
                 var kindOfDisabilityField = additionalFields.FirstOrDefault(f => f["name"]?.ToString() == "KindOfDisability");
                 if (kindOfDisabilityField == null)
                 {
-                    _logger.LogError($"KindOfDisability field not found in PHYSICALLY CHALLENGED PERSON additionalFields for ServiceId: {serviceId}");
+                    _logger.LogError($"KindOfDisability field not found in PHYSICALLY CHALLENGED PERSON additionalFields for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "KindOfDisability field not found." });
                 }
 
@@ -613,7 +613,7 @@ namespace SahayataNidhi.Controllers.User
                     .Any(o => o["value"]?.ToString().Trim() == "TEMPORARY") ?? false;
                 if (!hasTemporaryOption)
                 {
-                    _logger.LogError($"TEMPORARY option not found in KindOfDisability for ServiceId: {serviceId}");
+                    _logger.LogError($"TEMPORARY option not found in KindOfDisability for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "TEMPORARY option not found in KindOfDisability." });
                 }
 
@@ -621,7 +621,7 @@ namespace SahayataNidhi.Controllers.User
                 var temporaryAdditionalFields = kindOfDisabilityField["additionalFields"]?["TEMPORARY"]?.ToObject<JArray>();
                 if (temporaryAdditionalFields == null)
                 {
-                    _logger.LogError($"No additionalFields for TEMPORARY in KindOfDisability for ServiceId: {serviceId}");
+                    _logger.LogError($"No additionalFields for TEMPORARY in KindOfDisability for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "No additional fields for TEMPORARY in KindOfDisability." });
                 }
 
@@ -636,7 +636,7 @@ namespace SahayataNidhi.Controllers.User
                 var documentsSection = formElementObj.FirstOrDefault(s => s["section"]?.ToString() == "Documents");
                 if (documentsSection == null)
                 {
-                    _logger.LogError($"Documents section not found in FormElement for ServiceId: {serviceId}");
+                    _logger.LogError($"Documents section not found in FormElement for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "Documents section not found." });
                 }
 
@@ -644,14 +644,14 @@ namespace SahayataNidhi.Controllers.User
                 var documentFieldsArray = documentsSection["fields"] as JArray;
                 if (documentFieldsArray == null)
                 {
-                    _logger.LogError($"No fields found in Documents section for ServiceId: {serviceId}");
+                    _logger.LogError($"No fields found in Documents section for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "No fields found in Documents section." });
                 }
 
                 var udidCardField = documentFieldsArray.FirstOrDefault(f => f["name"]?.ToString() == "UdidCard");
                 if (udidCardField == null)
                 {
-                    _logger.LogError($"UdidCard field not found in Documents section for ServiceId: {serviceId}");
+                    _logger.LogError($"UdidCard field not found in Documents section for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "UdidCard field not found." });
                 }
 
@@ -661,7 +661,7 @@ namespace SahayataNidhi.Controllers.User
                 var dependentValues = udidCardField["dependentValues"]?.ToObject<string[]>();
                 if (!isDependentEnclosure || dependentField != "KindOfDisability" || dependentValues == null || !dependentValues.Contains("TEMPORARY"))
                 {
-                    _logger.LogError($"UdidCard is not correctly configured as a dependent enclosure for KindOfDisability with TEMPORARY for ServiceId: {serviceId}");
+                    _logger.LogError($"UdidCard is not correctly configured as a dependent enclosure for KindOfDisability with TEMPORARY for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "UdidCard is not correctly configured as a dependent enclosure." });
                 }
 
@@ -670,7 +670,7 @@ namespace SahayataNidhi.Controllers.User
                     percentageOfDisabilityField == null || ifTemporaryDisabilityUdidCardValidUptoField == null ||
                     udidCardField == null)
                 {
-                    _logger.LogError($"One or more required fields (UdidCardNumber, UdidCardIssueDate, PercentageOfDisability, IfTemporaryDisabilityUdidCardValidUpto, UdidCard) not found for ServiceId: {serviceId}");
+                    _logger.LogError($"One or more required fields (UdidCardNumber, UdidCardIssueDate, PercentageOfDisability, IfTemporaryDisabilityUdidCardValidUpto, UdidCard) not found for Serviceid: {serviceId}");
                     return Json(new { status = false, message = "One or more required fields not found in form elements." });
                 }
 
@@ -691,7 +691,7 @@ namespace SahayataNidhi.Controllers.User
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error processing FormElement for ServiceId: {serviceId}, ReferenceNumber: {referenceNumber}");
+                _logger.LogError(ex, $"Error processing FormElement for Serviceid: {serviceId}, Referencenumber: {referenceNumber}");
                 return Json(new { status = false, message = "An error occurred while processing the request." });
             }
         }
@@ -699,8 +699,8 @@ namespace SahayataNidhi.Controllers.User
         [HttpGet]
         public IActionResult GetIfSameUdidNumber(string referenceNumber, string udidNumber)
         {
-            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.ReferenceNumber == referenceNumber);
-            var formDetails = JToken.Parse(application!.FormDetails!);
+            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
+            var formDetails = JToken.Parse(application!.Formdetails!);
             var UdidNumber = FindFieldRecursively(formDetails, "UdidCardNumber");
             if (udidNumber == (string)UdidNumber!["value"]!)
             {
@@ -727,8 +727,8 @@ namespace SahayataNidhi.Controllers.User
                 // Fetch SubmissionLimitConfig
                 var service = await dbcontext.Services
                     .AsNoTracking()
-                    .Where(s => s.ServiceId == serviceId)
-                    .Select(s => new { s.SubmissionLimitConfig })
+                    .Where(s => s.Serviceid == serviceId)
+                    .Select(s => new { s.Submissionlimitconfig })
                     .FirstOrDefaultAsync();
 
                 if (service == null)
@@ -740,7 +740,7 @@ namespace SahayataNidhi.Controllers.User
                 dynamic config;
                 try
                 {
-                    config = JsonConvert.DeserializeObject(service.SubmissionLimitConfig!)
+                    config = JsonConvert.DeserializeObject(service.Submissionlimitconfig!)
                              ?? new { isLimited = false, limitType = "", limitCount = 0 };
                 }
                 catch (JsonException)
@@ -788,7 +788,7 @@ namespace SahayataNidhi.Controllers.User
                 // Fetch submissions
                 var submissions = await dbcontext.CitizenApplications
                     .AsNoTracking()
-                    .Where(s => s.ServiceId == serviceId && s.CitizenId == Convert.ToInt32(userId))
+                    .Where(s => s.Serviceid == serviceId && s.CitizenId == Convert.ToInt32(userId))
                     .Select(s => new { s.CreatedAt })
                     .ToListAsync();
 

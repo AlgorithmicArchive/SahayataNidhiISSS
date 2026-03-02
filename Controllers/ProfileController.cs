@@ -26,7 +26,7 @@ namespace SahayataNidhi.Controllers.Profile
             base.OnActionExecuted(context);
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             string? userType = User.FindFirst(ClaimTypes.Role)?.Value;
-            var user = _dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+            var user = _dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
             string Profile = user?.Profile ?? "/assets/images/profile.jpg";
             ViewData["UserType"] = userType;
             ViewData["UserName"] = user?.Username;
@@ -41,7 +41,7 @@ namespace SahayataNidhi.Controllers.Profile
 
             if (userId != null && !string.IsNullOrEmpty(userType))
             {
-                var userDetails = _dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+                var userDetails = _dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
                 return View(userDetails);
             }
             return RedirectToAction("Error", "Home");
@@ -57,7 +57,7 @@ namespace SahayataNidhi.Controllers.Profile
                 return Json(new { isValid = false, errorMessage = "User ID not found." });
             }
 
-            var userDetails = _dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+            var userDetails = _dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
             if (userDetails == null)
             {
                 _logger.LogWarning($"User not found for ID: {userId}");
@@ -66,10 +66,10 @@ namespace SahayataNidhi.Controllers.Profile
 
             try
             {
-                // Get ProofOfAge from AdditionalDetails
-                var ageProof = string.IsNullOrEmpty(userDetails.AdditionalDetails)
+                // Get ProofOfAge from Additionaldetails
+                var ageProof = string.IsNullOrEmpty(userDetails.Additionaldetails)
                     ? ""
-                    : JObject.Parse(userDetails.AdditionalDetails)["ProofOfAge"]?.ToString() ?? "";
+                    : JObject.Parse(userDetails.Additionaldetails)["ProofOfAge"]?.ToString() ?? "";
 
                 var details = new
                 {
@@ -77,9 +77,9 @@ namespace SahayataNidhi.Controllers.Profile
                     userDetails.Name,
                     userDetails.Username,
                     userDetails.Email,
-                    userDetails.MobileNumber,
+                    userDetails.Mobilenumber,
                     userDetails.Profile,
-                    userDetails.BackupCodes,
+                    userDetails.Backupcodes,
                     ageProof
                 };
 
@@ -99,7 +99,7 @@ namespace SahayataNidhi.Controllers.Profile
 
             try
             {
-                var user = _dbcontext.Users.FirstOrDefault(u => u.UserId == userId);
+                var user = _dbcontext.Users.FirstOrDefault(u => u.Userid == userId);
                 if (user == null)
                 {
                     return Json(new { status = false, errorMessage = "User not found." });
@@ -113,7 +113,7 @@ namespace SahayataNidhi.Controllers.Profile
                 };
 
                 // Direct update without stored procedure
-                user.BackupCodes = JsonConvert.SerializeObject(backupCodes);
+                user.Backupcodes = JsonConvert.SerializeObject(backupCodes);
                 _dbcontext.SaveChanges();
 
                 return Json(new { status = true, url = "/settings" });
@@ -133,7 +133,7 @@ namespace SahayataNidhi.Controllers.Profile
 
             if (userId != null && !string.IsNullOrEmpty(userType))
             {
-                var userDetails = _dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+                var userDetails = _dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
                 if (userType == "Admin") ViewData["Layout"] = "_AdminLayout";
 
                 if (userDetails != null) return View(userDetails);
@@ -145,7 +145,7 @@ namespace SahayataNidhi.Controllers.Profile
         public async Task<IActionResult> UpdateUserDetails([FromForm] IFormCollection form)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var user = await _dbcontext.Users.FirstOrDefaultAsync(u => u.UserId.ToString() == userId);
+            var user = await _dbcontext.Users.FirstOrDefaultAsync(u => u.Userid.ToString() == userId);
 
             if (user == null)
             {
@@ -177,7 +177,7 @@ namespace SahayataNidhi.Controllers.Profile
                 user.Name = name.ToString();
                 user.Username = username.ToString();
                 user.Email = email.ToString();
-                user.MobileNumber = mobileNumber.ToString();
+                user.Mobilenumber = mobileNumber.ToString();
 
                 // Handle profile image if uploaded
                 if (form.Files.GetFile("profile") is IFormFile profileFile && profileFile.Length > 0)
@@ -218,10 +218,10 @@ namespace SahayataNidhi.Controllers.Profile
                         return Json(new { isValid = false, errorMessage = "Proof of Age must be a PDF file." });
                     }
 
-                    // Get existing AdditionalDetails or initialize
-                    JObject additionalDetails = string.IsNullOrEmpty(user.AdditionalDetails)
+                    // Get existing Additionaldetails or initialize
+                    JObject additionalDetails = string.IsNullOrEmpty(user.Additionaldetails)
                         ? new JObject()
-                        : JObject.Parse(user.AdditionalDetails);
+                        : JObject.Parse(user.Additionaldetails);
 
                     // Get existing ProofOfAge filename to pass to GetFilePath
                     var existingProofOfAge = additionalDetails["ProofOfAge"]?.ToString();
@@ -229,21 +229,21 @@ namespace SahayataNidhi.Controllers.Profile
                     ageProofFileName = await _helper.GetFilePath(ageProofFile, null, existingProofOfAge, "document");
                     _logger.LogInformation($"Proof of Age file path: {ageProofFileName}");
 
-                    // Update AdditionalDetails JSON
+                    // Update Additionaldetails JSON
                     additionalDetails["ProofOfAge"] = ageProofFileName;
-                    user.AdditionalDetails = JsonConvert.SerializeObject(additionalDetails);
+                    user.Additionaldetails = JsonConvert.SerializeObject(additionalDetails);
                 }
 
                 await _dbcontext.SaveChangesAsync();
 
                 _auditService.InsertLog(HttpContext, "Update Profile",
                     ageProofFileName != null ? "Profile and Proof of Age updated successfully." : "Profile updated successfully.",
-                    user.UserId, "Success");
+                    user.Userid, "Success");
 
                 // Get ProofOfAge for response
-                var responseAgeProof = string.IsNullOrEmpty(user.AdditionalDetails)
+                var responseAgeProof = string.IsNullOrEmpty(user.Additionaldetails)
                     ? ""
-                    : JObject.Parse(user.AdditionalDetails)["ProofOfAge"]?.ToString() ?? "";
+                    : JObject.Parse(user.Additionaldetails)["ProofOfAge"]?.ToString() ?? "";
 
                 return Json(new
                 {
@@ -251,7 +251,7 @@ namespace SahayataNidhi.Controllers.Profile
                     name = user.Name,
                     username = user.Username,
                     email = user.Email,
-                    mobileNumber = user.MobileNumber,
+                    mobileNumber = user.Mobilenumber,
                     profile = user.Profile,
                     ageProof = responseAgeProof
                 });
@@ -292,14 +292,14 @@ namespace SahayataNidhi.Controllers.Profile
 
                 var feedback = new Feedback
                 {
-                    UserId = userId,
+                    Userid = userId,
                     Title = title,
                     Description = description,
                     Files = JsonConvert.SerializeObject(fileNames),
-                    CreatedOn = DateTime.Now
+                    Createdon = DateTime.Now
                 };
 
-                _dbcontext.Feedbacks.Add(feedback);
+                _dbcontext.Feedback.Add(feedback);
                 await _dbcontext.SaveChangesAsync();
 
                 return Ok(new { message = "Feedback submitted successfully" });
@@ -316,19 +316,19 @@ namespace SahayataNidhi.Controllers.Profile
             try
             {
                 // Fetch all feedbacks
-                var feedbacks = await _dbcontext.Feedbacks
+                var feedbacks = await _dbcontext.Feedback
                 .Select(f => new
                 {
                     f.Id,
-                    f.UserId,
+                    f.Userid,
                     f.Title,
                     f.Description,
                     Files = JsonConvert.DeserializeObject<List<string>>(f.Files ?? "[]"),
                     f.Status,
-                    f.CreatedOn
+                    f.Createdon
                 })
                 .OrderBy(f => f.Status != "Pending") // "Pending" first, others after
-                .ThenByDescending(f => f.CreatedOn)   // optional: newest first
+                .ThenByDescending(f => f.Createdon)   // optional: newest first
                 .ToListAsync();
 
                 // Pagination
@@ -367,7 +367,7 @@ namespace SahayataNidhi.Controllers.Profile
                         f.Id,
                         f.Title,
                         f.Description,
-                        CreatedOn = f.CreatedOn.ToString("yyyy-MM-dd"),
+                        Createdon = f.Createdon.ToString("yyyy-MM-dd"),
                         f.Status,
                         f.Files,
                         CustomActions = customActions
@@ -399,7 +399,7 @@ namespace SahayataNidhi.Controllers.Profile
                 var feedbackId = Convert.ToInt32(form["feedbackId"]);
                 _logger.LogInformation($"---------- Updating status for feedback ID: {feedbackId} ---------");
 
-                var feedback = _dbcontext.Feedbacks.FirstOrDefault(f => f.Id == feedbackId);
+                var feedback = _dbcontext.Feedback.FirstOrDefault(f => f.Id == feedbackId);
                 if (feedback == null)
                 {
                     return Json(new { isValid = false, errorMessage = "Feedback not found." });

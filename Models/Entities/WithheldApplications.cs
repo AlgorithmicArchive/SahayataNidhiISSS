@@ -7,27 +7,27 @@ public partial class WithheldApplications
 {
     public int WithheldId { get; set; }
 
-    public int ServiceId { get; set; }
+    public int Serviceid { get; set; }
 
-    public string ReferenceNumber { get; set; } = null!;
+    public string Referencenumber { get; set; } = null!;
 
     public string? Location { get; set; }
 
-    public string? WorkFlow { get; set; }
+    public string? Workflow { get; set; }
 
-    public int? CurrentPlayer { get; set; }
+    public int? Currentplayer { get; set; }
 
     public string? History { get; set; }
 
-    public bool IsWithheld { get; set; }
+    public bool Iswithheld { get; set; }
 
-    public string WithheldType { get; set; } = null!;
+    public string Withheldtype { get; set; } = null!;
 
-    public string WithheldReason { get; set; } = null!;
+    public string Withheldreason { get; set; } = null!;
 
     public string? Files { get; set; }
 
     public string? Status { get; set; }
 
-    public DateOnly? WithheldOn { get; set; }
+    public DateOnly? Withheldon { get; set; }
 }

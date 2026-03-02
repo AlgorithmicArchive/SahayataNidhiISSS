@@ -11,7 +11,7 @@ public class SessionRepository
         _dbContext = dbContext;
     }
 
-    public async Task<UserSession?> GetActiveSessionAsync(int userId)
+    public async Task<Usersessions?> GetActiveSessionAsync(int userId)
     {
         _logger.LogInformation(
             $"Checking for active session for user ID: {userId}"
@@ -19,27 +19,27 @@ public class SessionRepository
 
         var threshold = DateTime.Now.AddMinutes(-30);
 
-        return await _dbContext.UserSessions
-            .Where(s => s.UserId == userId && s.LastActivityTime > threshold)
+        return await _dbContext.Usersessions
+            .Where(s => s.Userid == userId && s.Lastactivitytime > threshold)
             .FirstOrDefaultAsync();
     }
 
 
-    public async Task AddSessionAsync(UserSession session)
+    public async Task AddSessionAsync(Usersessions session)
     {
-        _dbContext.UserSessions.Add(session);
+        _dbContext.Usersessions.Add(session);
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task RemoveSessionAsync(UserSession session)
+    public async Task RemoveSessionAsync(Usersessions session)
     {
-        _dbContext.UserSessions.Remove(session);
+        _dbContext.Usersessions.Remove(session);
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task UpdateLastActivityAsync(UserSession session)
+    public async Task UpdateLastActivityAsync(Usersessions session)
     {
-        session.LastActivityTime = DateTime.Now;
+        session.Lastactivitytime = DateTime.Now;
         await _dbContext.SaveChangesAsync();
     }
 }

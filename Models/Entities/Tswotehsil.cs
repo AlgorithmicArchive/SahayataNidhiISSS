@@ -5,13 +5,13 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Tswotehsil
 {
-    public int? DivisionCode { get; set; }
+    public int? Divisioncode { get; set; }
 
-    public int? DistrictId { get; set; }
+    public int? Districtid { get; set; }
 
-    public int? TehsilId { get; set; }
+    public int? Tehsilid { get; set; }
 
-    public string? TehsilName { get; set; }
+    public string? Tehsilname { get; set; }
 
-    public string? TswoOfficeName { get; set; }
+    public string? Tswoofficename { get; set; }
 }

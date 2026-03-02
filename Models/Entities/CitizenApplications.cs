@@ -3,33 +3,33 @@ using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class CitizenApplication
+public partial class CitizenApplications
 {
-    public string ReferenceNumber { get; set; } = null!;
+    public string Referencenumber { get; set; } = null!;
 
-    public string? ReferenceNumberAlphanumeric { get; set; }
+    public string? Referencenumberalphanumeric { get; set; }
 
     public int CitizenId { get; set; }
 
-    public int ServiceId { get; set; }
+    public int Serviceid { get; set; }
 
-    public string? DistrictUidForBank { get; set; }
+    public string? Districtuidforbank { get; set; }
 
-    public string? FormDetails { get; set; }
+    public string? Formdetails { get; set; }
 
-    public string? WorkFlow { get; set; }
+    public string? Workflow { get; set; }
 
-    public string? AdditionalDetails { get; set; }
+    public string? Additionaldetails { get; set; }
 
-    public int? CurrentPlayer { get; set; }
+    public int? Currentplayer { get; set; }
 
     public string? Status { get; set; }
 
-    public string? DataType { get; set; }
+    public string? Datatype { get; set; }
 
     public string? CreatedAt { get; set; }
 
-    public long? ApplicationId { get; set; }
+    public long? ApplId { get; set; }
 
-    public virtual ICollection<Corrigendum> Corrigendums { get; set; } = new List<Corrigendum>();
+    public virtual ICollection<Corrigendum> Corrigendum { get; set; } = new List<Corrigendum>();
 }

@@ -40,27 +40,92 @@ export function onlyDigits(field, value) {
 }
 
 export function specificLength(field, value, formData = {}) {
-  let maxLengthValue;
+  console.log("Specific length validation:", { field, value, formData });
 
-  // Determine maxLength based on dependent field if needed
-  if (typeof field.maxLength === "object" && field.maxLength.dependentOn) {
-    const dependentFieldId = field.maxLength.dependentOn;
-    const dependentValue = formData[dependentFieldId];
-    if (!dependentValue) {
-      return `Dependent field (${dependentFieldId}) value is missing.`;
+  // Helper to resolve a length value that may be dependent
+  const resolveLength = (lengthConfig, lengthType) => {
+    // If it's a plain number, return it directly
+    if (typeof lengthConfig === "number") return lengthConfig;
+
+    // If it's an object with dependentOn, use formData to get the dependent value
+    if (typeof lengthConfig === "object" && lengthConfig.dependentOn) {
+      const dependentFieldId = lengthConfig.dependentOn;
+      const dependentValue = formData[dependentFieldId];
+      if (
+        dependentValue === undefined ||
+        dependentValue === null ||
+        dependentValue === ""
+      ) {
+        return {
+          error: `Dependent field (${dependentFieldId}) value is missing for ${lengthType}.`,
+        };
+      }
+      const resolved = lengthConfig[dependentValue];
+      if (resolved === undefined) {
+        return {
+          error: `No ${lengthType} defined for option "${dependentValue}".`,
+        };
+      }
+      return resolved;
     }
-    maxLengthValue = field.maxLength[dependentValue];
-    if (maxLengthValue === undefined) {
-      return `No maximum length defined for option (${dependentValue}).`;
-    }
-  } else {
-    maxLengthValue = field.maxLength;
+
+    // Fallback (should not happen)
+    return lengthConfig;
+  };
+
+  // Resolve minLength if it exists
+  let minLengthValue = null;
+  if (field.minLength !== undefined) {
+    const minResult = resolveLength(field.minLength, "minimum length");
+    if (minResult?.error) return minResult.error;
+    minLengthValue = minResult;
   }
 
-  // Check the length
-  if (value.length !== maxLengthValue) {
-    return `This must be exactly ${maxLengthValue} characters long.`;
+  // Resolve maxLength if it exists
+  let maxLengthValue = null;
+  if (field.maxLength !== undefined) {
+    const maxResult = resolveLength(field.maxLength, "maximum length");
+    if (maxResult?.error) return maxResult.error;
+    maxLengthValue = maxResult;
   }
+
+  // Case 1: Both minLength and maxLength are defined and equal
+  if (
+    minLengthValue !== null &&
+    maxLengthValue !== null &&
+    minLengthValue === maxLengthValue
+  ) {
+    if (value.length !== minLengthValue) {
+      return `This must be exactly ${minLengthValue} characters long.`;
+    }
+    return true;
+  }
+
+  // Case 2: Both minLength and maxLength are defined but different
+  if (minLengthValue !== null && maxLengthValue !== null) {
+    if (value.length !== minLengthValue && value.length !== maxLengthValue) {
+      return `This must be exactly ${minLengthValue} or ${maxLengthValue} characters long.`;
+    }
+    return true;
+  }
+
+  // Case 3: Only minLength is defined
+  if (minLengthValue !== null && maxLengthValue === null) {
+    if (value.length !== minLengthValue) {
+      return `This must be exactly ${minLengthValue} characters long.`;
+    }
+    return true;
+  }
+
+  // Case 4: Only maxLength is defined (original behavior)
+  if (maxLengthValue !== null && minLengthValue === null) {
+    if (value.length !== maxLengthValue) {
+      return `This must be exactly ${maxLengthValue} characters long.`;
+    }
+    return true;
+  }
+
+  // Case 5: Neither defined (shouldn't happen if validation is applied correctly)
   return true;
 }
 
@@ -212,6 +277,7 @@ export async function validateFile(field, value) {
 }
 
 export function range(field, value) {
+  console.log;
   console.log(field, value);
   if (value < field.minLength || value > field.maxLength) {
     return `The value must be between ${field.minLength} and ${field.maxLength}.`;

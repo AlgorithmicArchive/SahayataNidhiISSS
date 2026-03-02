@@ -18,7 +18,7 @@ import {
   Alert,
 } from "@mui/material";
 import { styled } from "@mui/system";
-import { Delete as DeleteIcon, Label } from "@mui/icons-material";
+import { Delete as DeleteIcon } from "@mui/icons-material";
 import ServiceSelectionForm from "../../components/ServiceSelectionForm";
 import { fetchServiceList } from "../../assets/fetch";
 import axiosInstance from "../../axiosConfig";
@@ -164,13 +164,11 @@ export default function IssueDocumentChange() {
   const [remarks, setRemarks] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const MAX_WORDS = 50;
-  const [files, setFiles] = useState([]);
-  const [serverFiles, setServerFiles] = useState([]);
+  // REMOVED: files and serverFiles states
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({});
   const [touched, setTouched] = useState({
     remarks: false,
-    files: false,
     type: false,
   });
   const [nextOfficer, setNextOfficer] = useState("");
@@ -195,7 +193,6 @@ export default function IssueDocumentChange() {
   const [existingCorrigendumId, setExistingCorrigendumId] = useState(null);
   const [canEditExisting, setCanEditExisting] = useState(false);
 
-  const fileInputRef = useRef(null);
   const location = useLocation();
   const { ReferenceNumber, ServiceId, applicationId, applicationType } =
     location.state || {};
@@ -268,11 +265,9 @@ export default function IssueDocumentChange() {
     setSelectedField("");
     setRemarks("");
     setWordCount(0);
-    setFiles([]);
-    setServerFiles([]);
     setErrors({});
     setFormData({});
-    setTouched({ remarks: false, files: false, type: false });
+    setTouched({ remarks: false, type: false });
     setNextOfficer("");
     setColumns([]);
     setData([]);
@@ -294,37 +289,30 @@ export default function IssueDocumentChange() {
     }
   }, [existingCorrigendumId]);
 
-
   // Automatically load data when component mounts
   useEffect(() => {
     const loadInitialData = async () => {
       setIsInitialLoad(true);
 
-      // Fetch services
       try {
         await fetchServiceList(setServices);
       } catch (error) {
         console.error("Failed to load services:", error);
       }
 
-      // Check if we have data in location state
       if (ReferenceNumber && ServiceId) {
         setReferenceNumber(ReferenceNumber);
         setServiceId(ServiceId);
 
-        // If we have an applicationId, we're editing
         if (applicationId) {
           setIsEdit(true);
           setExistingCorrigendumId(applicationId);
         }
 
-        // Set type if provided
         if (applicationType) {
           setType(applicationType);
         }
 
-        // Always check for document change when we have the required data
-        // Don't wait for timeout, check immediately
         await handleCheckIfDocumentChange();
         setIsInitialLoad(false);
       } else {
@@ -333,7 +321,7 @@ export default function IssueDocumentChange() {
     };
 
     loadInitialData();
-  }, []); // Remove dependencies to run only once on mount
+  }, []);
 
   // Handle area change function
   const handleAreaChange = useCallback(
@@ -855,19 +843,19 @@ export default function IssueDocumentChange() {
         );
         const data = response.data;
         if (data.status) {
-          return null; // UDID matches, no error
+          return null;
         } else {
           return (
             data.message ||
             "UDID Number doesn't match the existing one in the record."
-          ); // UDID doesn't match, return error message
+          );
         }
       } catch (error) {
         console.error("Error validating UDID number:", error);
         return (
           error.response?.data?.message ||
           "Error validating UDID number. Please try again."
-        ); // Error case, return error message
+        );
       }
     },
     [],
@@ -878,7 +866,6 @@ export default function IssueDocumentChange() {
     async (field, value, formData, referenceNumber) => {
       const fieldConfig = findFieldConfig(field.name);
 
-      // List of fields to skip "same as old value" validation
       const skipSameValueCheckFields = [
         "UdidCardNumber",
         "KindOfDisability",
@@ -886,7 +873,6 @@ export default function IssueDocumentChange() {
       ];
 
       if (fieldConfig.type === "enclosure") {
-        // Check if new value is the same as old file
         if (
           value &&
           field.oldValue?.file &&
@@ -897,7 +883,6 @@ export default function IssueDocumentChange() {
             error: "New file cannot be the same as the old file",
           };
         }
-        // Validate file type and size
         if (value) {
           if (!(value instanceof File)) {
             return {
@@ -917,7 +902,6 @@ export default function IssueDocumentChange() {
               error: `File must be one of: ${validTypes.join(", ")}`,
             };
           }
-          // Validate file size (e.g., max 5MB)
           if (value.size > 5 * 1024 * 1024) {
             return {
               transformedValue: value,
@@ -931,7 +915,6 @@ export default function IssueDocumentChange() {
         };
       }
 
-      // Skip "same as old value" check for specified fields
       if (
         !skipSameValueCheckFields.includes(field.name) &&
         !fieldConfig.allowSameAsOldValue &&
@@ -943,7 +926,6 @@ export default function IssueDocumentChange() {
         };
       }
 
-      // Run standard validations
       const validationResult = await runValidations(
         {
           ...fieldConfig,
@@ -960,7 +942,6 @@ export default function IssueDocumentChange() {
         };
       }
 
-      // Apply UDID Number validation for UdidCardNumber
       if (field.name === "UdidCardNumber" && value) {
         const udidValidationResult = await validateUdidNumber(
           value,
@@ -994,11 +975,12 @@ export default function IssueDocumentChange() {
     return null;
   }, []);
 
-  // Validate files
-  const validateFiles = useCallback((files, serverFiles) => {
-    return files.length > 0 || serverFiles.length > 0
-      ? null
-      : "At least one verification document is required";
+  // --- NEW: Validate supporting document for a field
+  const validateSupportingDocument = useCallback((field) => {
+    if (!field.supportingDocument) {
+      return "Supporting document is required for this field.";
+    }
+    return null;
   }, []);
 
   // Validate type
@@ -1008,7 +990,7 @@ export default function IssueDocumentChange() {
       : "Please select a valid type (Corrigendum, Correction)";
   }, []);
 
-  // Revalidate all fields
+  // Revalidate all fields (including supporting documents)
   const revalidateAllFields = useCallback(
     async (
       updatedFields,
@@ -1017,6 +999,7 @@ export default function IssueDocumentChange() {
       validateRemarksAndFiles = false,
     ) => {
       const newErrors = {};
+
       for (const field of updatedFields) {
         if (field.newValue) {
           const { error } = await validateField(
@@ -1026,6 +1009,10 @@ export default function IssueDocumentChange() {
             referenceNumber,
           );
           newErrors[field.name] = error;
+
+          // Validate supporting document
+          const docError = validateSupportingDocument(field);
+          newErrors[`${field.name}-doc`] = docError;
 
           for (const additionalFieldName in field.additionalValues) {
             const additionalFieldConfig = (
@@ -1048,9 +1035,9 @@ export default function IssueDocumentChange() {
           }
         }
       }
+
       if (validateRemarksAndFiles) {
         newErrors.remarks = validateRemarks(remarks);
-        newErrors.files = validateFiles(files, serverFiles);
         newErrors.type = validateType(type);
       }
       return newErrors;
@@ -1058,19 +1045,15 @@ export default function IssueDocumentChange() {
     [
       validateField,
       validateRemarks,
-      validateFiles,
       validateType,
+      validateSupportingDocument,
       remarks,
-      files,
-      serverFiles,
       type,
     ],
   );
 
   // Main function to check for document change
   const handleCheckIfDocumentChange = useCallback(async () => {
-    // If we have an existing corrigendum ID, we should always check
-    // regardless of type being selected (since type is already set)
     if (!existingCorrigendumId && !type) {
       if (!applicationType) {
         setErrors((prev) => ({
@@ -1098,25 +1081,21 @@ export default function IssueDocumentChange() {
           referenceNumber: ReferenceNumber || referenceNumber,
           serviceId: ServiceId || serviceId,
           applicationId: existingCorrigendumId,
-          type: type || applicationType, // Use type or applicationType
+          type: type || applicationType,
         }
         : {
           referenceNumber,
           serviceId,
-          type: type || applicationType // Use type or applicationType
+          type: type || applicationType,
         };
-
-      console.log("Sending request with params:", params); // Debug log
 
       const response = await axiosInstance.get(
         "/Officer/GetApplicationForCorrigendum",
         { params },
       );
       const result = response.data;
-      console.log("Response received:", result); // Debug log
 
       if (result.status) {
-        // Parse formElements
         let parsedFormElements = [];
         if (typeof result.formElements === "string") {
           try {
@@ -1149,30 +1128,24 @@ export default function IssueDocumentChange() {
         );
         setFormDetails(result.formDetails || {});
 
-        // Check if we can issue based on backend response
         const canIssueNow = result.canEdit || result.isCurrentOfficer ||
           (result.corrigendumType === type && !result.existingCorrigendumId);
         setCanIssue(canIssueNow);
 
-        // Set edit mode if we have an existing corrigendum
         if (result.existingCorrigendumId) {
           setIsEdit(true);
           setExistingCorrigendumId(result.existingCorrigendumId);
           setCanEditExisting(result.canEdit);
         } else if (existingCorrigendumId) {
-          // If we came with an existingCorrigendumId but server doesn't return one,
-          // it might have been deleted or we don't have access
           setIsEdit(false);
           setCanEditExisting(false);
         } else {
-          // For new document creation, user should be able to edit
           setIsEdit(false);
-          setCanEditExisting(true); // Allow editing for new documents
+          setCanEditExisting(true);
         }
 
         setNextOfficer(result.nextOfficer);
 
-        // Allowed fields mapping
         const mappedAllowedFields = result.allowedForDetails.map((item) => {
           if (item.isGroup) {
             return {
@@ -1194,12 +1167,9 @@ export default function IssueDocumentChange() {
         });
         setAllowedFormFields(mappedAllowedFields);
 
-        // Editing scenario
         if (isEdit || result.existingCorrigendumId) {
           setColumns(result.columns || []);
           setData(result.data || []);
-          setServerFiles(result.files || []);
-          // Set the type from the result if available, otherwise keep current
           setType(result.corrigendumType || type || applicationType);
           const words = result.remarks
             ? result.remarks
@@ -1211,7 +1181,6 @@ export default function IssueDocumentChange() {
           setRemarks(result.remarks || "");
         }
 
-        // Initialize corrigendumFields
         let newCorrigendumFields = [];
         let newErrors = {};
         if ((isEdit || result.existingCorrigendumId) && result.corrigendumFields) {
@@ -1264,9 +1233,9 @@ export default function IssueDocumentChange() {
                   conditionalAdditionalFields:
                     fieldConfig.conditionalAdditionalFields || {},
                   accept: fieldConfig.accept || ".pdf",
+                  supportingDocument: subFieldData.supporting_document || null,
                 };
 
-                // Add conditional fields if newValue triggers them
                 if (
                   subFieldData.new_value &&
                   fieldConfig.conditionalAdditionalFields?.[
@@ -1303,6 +1272,7 @@ export default function IssueDocumentChange() {
                       conditionalAdditionalFields:
                         condField.conditionalAdditionalFields || {},
                       accept: condField.accept || ".pdf",
+                      supportingDocument: null,
                     });
                   }
                 }
@@ -1353,9 +1323,9 @@ export default function IssueDocumentChange() {
                 conditionalAdditionalFields:
                   fieldConfig.conditionalAdditionalFields || {},
                 accept: fieldConfig.accept || ".pdf",
+                supportingDocument: fieldData.supporting_document || null,
               };
 
-              // Add conditional fields if newValue triggers them
               if (
                 fieldData.new_value &&
                 fieldConfig.conditionalAdditionalFields?.[fieldData.new_value]
@@ -1388,6 +1358,7 @@ export default function IssueDocumentChange() {
                     conditionalAdditionalFields:
                       condField.conditionalAdditionalFields || {},
                     accept: condField.accept || ".pdf",
+                    supportingDocument: null,
                   });
                 }
               }
@@ -1409,14 +1380,12 @@ export default function IssueDocumentChange() {
         setCorrigendumFields(newCorrigendumFields);
         setErrors(newErrors);
 
-        // Initialize formData
         const newFormData = {};
         normalizeDetails(result.formDetails).forEach((item) => {
           newFormData[item.name] = item.value || (item.File ? item.File : "");
         });
         setFormData(newFormData);
 
-        // Show appropriate message
         if (result.existingCorrigendumId) {
           if (result.canEdit) {
             setResponseMessage({
@@ -1430,12 +1399,10 @@ export default function IssueDocumentChange() {
             });
           }
         } else if (existingCorrigendumId) {
-          // We had an existingCorrigendumId but server didn't return one
           setResponseMessage({
             message: `No existing ${type.toLowerCase()} found with the provided ID. You can create a new one.`,
             type: "warning",
           });
-          // Reset edit mode
           setIsEdit(false);
           setExistingCorrigendumId(null);
           setCanEditExisting(false);
@@ -1580,7 +1547,6 @@ export default function IssueDocumentChange() {
           };
           setCorrigendumFields(tempUpdated);
 
-          // Validate the additional field immediately
           runValidations(
             {
               ...additionalFieldConfig,
@@ -1620,7 +1586,6 @@ export default function IssueDocumentChange() {
           const tempUpdated = [...corrigendumFields];
           tempUpdated[index].newValue = transformedValue;
 
-          // Handle conditional additional fields
           const conditionalFields =
             field.additionalFields?.[transformedValue] ||
             field.conditionalAdditionalFields?.[transformedValue] ||
@@ -1632,7 +1597,6 @@ export default function IssueDocumentChange() {
           const fieldsToAdd = [];
           const fieldsToRemove = [];
 
-          // Identify fields to remove
           corrigendumFields.forEach((f, i) => {
             if (
               i !== index &&
@@ -1649,7 +1613,6 @@ export default function IssueDocumentChange() {
             }
           });
 
-          // Add new conditional fields
           conditionalFields.forEach((condField) => {
             if (!existingConditionalFieldNames.includes(condField.name)) {
               const oldValue = findNestedFieldValue(
@@ -1673,10 +1636,10 @@ export default function IssueDocumentChange() {
                 conditionalAdditionalFields:
                   condField.conditionalAdditionalFields || {},
                 accept: condField.accept || ".pdf",
+                supportingDocument: null,
               };
               fieldsToAdd.push(newField);
 
-              // Validate the new field immediately
               validateField(
                 newField,
                 newField.newValue,
@@ -1691,14 +1654,12 @@ export default function IssueDocumentChange() {
             }
           });
 
-          // Update corrigendumFields
           let newCorrigendumFields = tempUpdated.filter(
             (_, i) => !fieldsToRemove.includes(i),
           );
           newCorrigendumFields = [...newCorrigendumFields, ...fieldsToAdd];
           setCorrigendumFields(newCorrigendumFields);
 
-          // Validate the changed field
           validateField(
             field,
             transformedValue,
@@ -1711,7 +1672,6 @@ export default function IssueDocumentChange() {
             }));
           });
 
-          // Revalidate all fields
           revalidateAllFields(
             newCorrigendumFields,
             { ...formData, [changedFieldName]: transformedValue },
@@ -1862,6 +1822,7 @@ export default function IssueDocumentChange() {
         transformationFunctions: fieldConfig.transformationFunctions || [],
         additionalFields: fieldConfig.additionalFields || {},
         accept: fieldConfig.accept || ".pdf",
+        supportingDocument: null,
       });
     };
 
@@ -1908,48 +1869,30 @@ export default function IssueDocumentChange() {
     [corrigendumFields, formData, referenceNumber, revalidateAllFields],
   );
 
-  // File handling functions
-  const handleFileChange = useCallback(
-    (event) => {
-      const selectedFiles = Array.from(event.target.files);
-      setFiles((prev) => [...prev, ...selectedFiles]);
-      setTouched((prev) => ({ ...prev, files: true }));
-      const error = validateFiles([...files, ...selectedFiles], serverFiles);
-      setErrors((prev) => ({ ...prev, files: error }));
-      event.target.value = "";
-    },
-    [files, serverFiles, validateFiles],
-  );
+  // --- NEW: handlers for per‑field supporting documents ---
+  const handleSupportingDocumentChange = (index, file) => {
+    const updated = [...corrigendumFields];
+    updated[index].supportingDocument = file; // store File object
+    setCorrigendumFields(updated);
 
-  const handleRemoveFile = useCallback(
-    (index) => {
-      setFiles((prev) => prev.filter((_, i) => i !== index));
-      setTouched((prev) => ({ ...prev, files: true }));
-      const error = validateFiles(
-        files.filter((_, i) => i !== index),
-        serverFiles,
-      );
-      setErrors((prev) => ({ ...prev, files: error }));
-    },
-    [files, serverFiles, validateFiles],
-  );
+    // Clear error for this field's document
+    setErrors((prev) => ({
+      ...prev,
+      [`${updated[index].name}-doc`]: null,
+    }));
+  };
 
-  const handleRemoveServerFile = useCallback(
-    (index) => {
-      setServerFiles((prev) => prev.filter((_, i) => i !== index));
-      setTouched((prev) => ({ ...prev, files: true }));
-      const error = validateFiles(
-        files,
-        serverFiles.filter((_, i) => i !== index),
-      );
-      setErrors((prev) => ({ ...prev, files: error }));
-    },
-    [files, serverFiles, validateFiles],
-  );
+  const handleRemoveSupportingDocument = (index) => {
+    const updated = [...corrigendumFields];
+    updated[index].supportingDocument = null;
+    setCorrigendumFields(updated);
 
-  const handleAddFileClick = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+    // Set error again
+    setErrors((prev) => ({
+      ...prev,
+      [`${updated[index].name}-doc`]: validateSupportingDocument(updated[index]),
+    }));
+  };
 
   const handleRemarksChange = useCallback((e) => {
     const value = e.target.value;
@@ -2045,6 +1988,11 @@ export default function IssueDocumentChange() {
               : null
             : field.newValue,
         additional_values: field.additionalValues || {},
+        supporting_document: field.supportingDocument
+          ? (typeof field.supportingDocument === 'string'
+            ? field.supportingDocument
+            : field.supportingDocument.name)
+          : null
       };
       return acc;
     }, {});
@@ -2068,7 +2016,7 @@ export default function IssueDocumentChange() {
       return;
     }
 
-    setTouched((prev) => ({ ...prev, remarks: true, files: true, type: true }));
+    setTouched((prev) => ({ ...prev, remarks: true, type: true }));
 
     const newErrors = await revalidateAllFields(
       corrigendumFields,
@@ -2078,11 +2026,24 @@ export default function IssueDocumentChange() {
     );
     setErrors(newErrors);
 
+    // --- NEW: Check if any field is missing a supporting document
+    const hasMissingDoc = corrigendumFields.some(
+      (field) => !field.supportingDocument
+    );
+
     const hasEmptyNewValue = corrigendumFields.some((field) => !field.newValue);
 
     const hasValidationErrors = Object.values(newErrors).some(
       (error) => error !== null && error !== undefined,
     );
+
+    if (hasMissingDoc) {
+      setErrors((prev) => ({
+        ...prev,
+        corrigendumFields: `All fields must have a supporting document uploaded.`,
+      }));
+      return;
+    }
 
     if (hasEmptyNewValue) {
       setErrors((prev) => ({
@@ -2091,6 +2052,7 @@ export default function IssueDocumentChange() {
       }));
       return;
     }
+
     if (hasValidationErrors) {
       setErrors((prev) => ({
         ...prev,
@@ -2130,13 +2092,13 @@ export default function IssueDocumentChange() {
         JSON.stringify(corrigendumObject),
       );
       if (existingCorrigendumId) formDataToSend.append("applicationId", existingCorrigendumId);
-      files.forEach((file, index) =>
-        formDataToSend.append(`verificationDocuments[${index}]`, file),
-      );
-      if (isEdit || existingCorrigendumId)
-        serverFiles.forEach((fileName, index) =>
-          formDataToSend.append(`serverFiles[${index}]`, fileName),
-        );
+
+      // --- NEW: Append per‑field supporting documents
+      corrigendumFields.forEach((field) => {
+        if (field.supportingDocument && typeof field.supportingDocument !== 'string') {
+          formDataToSend.append(`fieldSupportingDocuments[${field.name}]`, field.supportingDocument);
+        }
+      });
 
       const response = await axiosInstance.post(
         "/Officer/SubmitDocumentChange",
@@ -2196,11 +2158,9 @@ export default function IssueDocumentChange() {
     remarks,
     serviceId,
     existingCorrigendumId,
-    files,
-    serverFiles,
-    isEdit,
     generateCorrigendumObject,
     resetFormState,
+    revalidateAllFields,
   ]);
 
   if (loading) {
@@ -2313,13 +2273,6 @@ export default function IssueDocumentChange() {
             ? `Edit ${type}`
             : `Issue ${type || "Corrigendum/Correction"}`}
         </Typography>
-
-        {/* Show message if editing existing corrigendum */}
-        {/* {canEditExisting && (
-          <Alert severity="info" sx={{ mb: 3 }}>
-            You are editing an existing {type.toLowerCase()} at your level. You can update the fields and forward it.
-          </Alert>
-        )} */}
 
         <Box
           sx={{
@@ -2441,7 +2394,6 @@ export default function IssueDocumentChange() {
               </Typography>
             </Box>
 
-            {/* Only show add field section if user can edit document */}
             {canEditDocument && (
               <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 3 }}>
                 <StyledFormControl>
@@ -2508,7 +2460,6 @@ export default function IssueDocumentChange() {
               >
                 {/* Parent Field Row */}
                 <Grid container spacing={2} alignItems="center">
-                  {/* Field Name (Label) */}
                   <Grid item xs={12} md={3}>
                     <TextField
                       label="Field"
@@ -2520,7 +2471,6 @@ export default function IssueDocumentChange() {
                     />
                   </Grid>
 
-                  {/* Old Value */}
                   <Grid item xs={12} md={4}>
                     {field.type === "enclosure" ? (
                       <FormControl fullWidth>
@@ -2563,7 +2513,6 @@ export default function IssueDocumentChange() {
                     )}
                   </Grid>
 
-                  {/* New Value */}
                   <Grid item xs={12} md={4}>
                     {field.type === "select" ? (
                       <FormControl fullWidth error={!!errors[field.name]}>
@@ -2626,7 +2575,6 @@ export default function IssueDocumentChange() {
                     )}
                   </Grid>
 
-                  {/* Delete Button - Only show if user can edit document */}
                   <Grid item xs={12} md={1} sx={{ display: "flex", justifyContent: "center" }}>
                     {canEditDocument && (
                       <IconButton
@@ -2642,6 +2590,54 @@ export default function IssueDocumentChange() {
                     )}
                   </Grid>
                 </Grid>
+
+                {/* --- NEW: Supporting Document for this field (required) --- */}
+                <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      startIcon={<PictureAsPdfIcon />}
+                      disabled={!canEditDocument}
+                      color={errors[`${field.name}-doc`] ? "error" : "primary"}
+                    >
+                      Supporting Document for {field.label} *
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        hidden
+                        onChange={(e) => handleSupportingDocumentChange(index, e.target.files[0])}
+                      />
+                    </Button>
+                    {field.supportingDocument && (
+                      <>
+                        {typeof field.supportingDocument === 'string' ? (
+                          <FileNameTypography onClick={() => handleViewFile(field.supportingDocument, true)}>
+                            {field.supportingDocument}
+                          </FileNameTypography>
+                        ) : (
+                          <FileNameTypography onClick={() => handleViewFile(field.supportingDocument, false)}>
+                            {field.supportingDocument.name}
+                          </FileNameTypography>
+                        )}
+                        {canEditDocument && (
+                          <IconButton
+                            color="error"
+                            onClick={() => handleRemoveSupportingDocument(index)}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
+                      </>
+                    )}
+                  </Box>
+                  {errors[`${field.name}-doc`] && (
+                    <FormHelperText error sx={{ ml: 1 }}>
+                      {errors[`${field.name}-doc`]}
+                    </FormHelperText>
+                  )}
+                </Box>
+                {/* --- END NEW --- */}
 
                 {/* Render Additional / Conditional Fields */}
                 {field.additionalFields[field.newValue]?.map((addField) => (
@@ -2780,118 +2776,6 @@ export default function IssueDocumentChange() {
               </Typography>
             </Box>
 
-            {/* Supporting Documents Section */}
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle1" sx={{ mb: 1, color: "#333" }}>
-                Supporting Documents
-              </Typography>
-              {canEditDocument && (
-                <StyledButton
-                  variant="outlined"
-                  onClick={handleAddFileClick}
-                  sx={{ mb: 2 }}
-                >
-                  Upload Bank Passbook (First Page)
-                </StyledButton>
-              )}
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-                style={{ display: "none" }}
-                ref={fileInputRef}
-              />
-              {errors.files && (
-                <FormHelperText error sx={{ mt: 1, mb: 1 }}>
-                  {errors.files}
-                </FormHelperText>
-              )}
-              {(files.length > 0 || serverFiles.length > 0) && (
-                <Box
-                  sx={{
-                    mt: 1,
-                    display: "flex",
-                    flexDirection: "row",
-                    gap: 1,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {serverFiles.map((fileName, index) => (
-                    <Box
-                      key={`server-${index}`}
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        width: "max-content",
-                        backgroundColor: "#f0f0f0",
-                        padding: "8px 12px",
-                        border: "1px solid #000",
-                        borderRadius: "8px",
-                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)",
-                      }}
-                    >
-                      <FileNameTypography
-                        variant="caption"
-                        sx={{ pr: 2 }}
-                        onClick={() => handleViewFile(fileName, true)}
-                      >
-                        {fileName} (Server)
-                      </FileNameTypography>
-                      {canEditDocument && (
-                        <IconButton
-                          color="error"
-                          onClick={() => handleRemoveServerFile(index)}
-                          sx={{
-                            "&:hover": {
-                              backgroundColor: "rgba(211, 47, 47, 0.1)",
-                            },
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      )}
-                    </Box>
-                  ))}
-                  {files.map((file, index) => (
-                    <Box
-                      key={`local-${index}`}
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        width: "max-content",
-                        backgroundColor: "#f9f9f9",
-                        padding: "8px 12px",
-                        border: "1px solid #000",
-                        borderRadius: "8px",
-                        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)",
-                      }}
-                    >
-                      <FileNameTypography
-                        variant="caption"
-                        sx={{ pr: 2 }}
-                        onClick={() => handleViewFile(file, false)}
-                      >
-                        {file.name}
-                      </FileNameTypography>
-                      {canEditDocument && (
-                        <IconButton
-                          color="error"
-                          onClick={() => handleRemoveFile(index)}
-                          sx={{
-                            "&:hover": {
-                              backgroundColor: "rgba(211, 47, 47, 0.1)",
-                            },
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      )}
-                    </Box>
-                  ))}
-                </Box>
-              )}
-            </Box>
-
             <BasicModal
               open={openModal}
               Title="Document Preview"
@@ -2899,7 +2783,6 @@ export default function IssueDocumentChange() {
               pdf={selectedFileName}
             />
 
-            {/* Submit Button - Only show if user can edit document */}
             {canEditDocument && corrigendumFields.length > 0 && (
               <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
                 <StyledButton

@@ -12,22 +12,22 @@ namespace SahayataNidhi.Controllers.User
 {
     public partial class UserController
     {
-        public void ServiceSpecific(int ServiceId, JToken formDetails, string ReferenceNumber)
+        public void ServiceSpecific(int Serviceid, JToken formDetails, string ReferenceNumber)
         {
-            _logger.LogInformation($"--------- SERVICE ID: {ServiceId} ------------------------------");
-            if (ServiceId == 1)
+            _logger.LogInformation($"--------- SERVICE ID: {Serviceid} ------------------------------");
+            if (Serviceid == 1)
             {
                 var KindOfDisability = FindFieldRecursively(formDetails, "KindOfDisability");
                 if (KindOfDisability != null && (string)KindOfDisability!["value"]! == "TEMPORARY")
                 {
                     string ExpirationDate = (string)FindFieldRecursively(formDetails, "IfTemporaryDisabilityUdidCardValidUpto")!["value"]!;
-                    var expiringEligibility = new ApplicationsWithExpiringEligibility
+                    var expiringEligibility = new Applicationswithexpiringeligibility
                     {
-                        ServiceId = ServiceId,
+                        Serviceid = Serviceid,
                         ExpirationDate = ExpirationDate,
-                        ReferenceNumber = ReferenceNumber,
+                        Referencenumber = ReferenceNumber,
                     };
-                    dbcontext.ApplicationsWithExpiringEligibilities.Add(expiringEligibility);
+                    dbcontext.Applicationswithexpiringeligibility.Add(expiringEligibility);
                     dbcontext.SaveChanges();
                 }
             }
@@ -94,18 +94,18 @@ namespace SahayataNidhi.Controllers.User
             if (string.IsNullOrEmpty(ReferenceNumber))
             {
                 int count = GetCountPerDistrict(districtId, serviceId);
-                var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
-                var districtDetails = dbcontext.Districts.FirstOrDefault(s => s.DistrictId == districtId);
-                string districtShort = districtDetails!.DistrictShort!;
-                OfficerArea = districtDetails.DistrictName!;
-                var officerEditableField = service!.OfficerEditableField;
+                var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
+                var districtDetails = dbcontext.District.FirstOrDefault(s => s.Districtid == districtId);
+                string districtShort = districtDetails!.Districtshort!;
+                OfficerArea = districtDetails.Districtname!;
+                var officerEditableField = service!.Officereditablefield;
 
                 if (string.IsNullOrEmpty(officerEditableField))
                 {
                     return Json(new { status = false });
                 }
 
-                // Parse the OfficerEditableField JSON
+                // Parse the Officereditablefield JSON
                 var players = JArray.Parse(officerEditableField);
                 if (players.Count == 0)
                 {
@@ -145,27 +145,27 @@ namespace SahayataNidhi.Controllers.User
 
                 var workFlow = filteredWorkflow.ToString(Formatting.None);
                 var finYear = helper.GetCurrentFinancialYear();
-                var ReferenceNumberAlphaNumber = "JK-" + service.NameShort + "-" + districtShort + "/" + finYear + "/" + count;
+                var ReferenceNumberAlphaNumber = "JK-" + service.Nameshort + "-" + districtShort + "/" + finYear + "/" + count;
                 var random = new Random();
-                ReferenceNumber = "01" + service.ServiceId.ToString("D2") + districtDetails.DistrictId.ToString("D2") + finYear.Split("-")[1] + random.Next(100, 1000) + count;
+                ReferenceNumber = "01" + service.Serviceid.ToString("D2") + districtDetails.Districtid.ToString("D2") + finYear.Split("-")[1] + random.Next(100, 1000) + count;
 
                 var createdAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
 
                 _logger.LogInformation("$ ------ Form Details with File Paths: ------" + formDetailsObj.ToString());
 
                 // Store the updated JSON (with file paths) in the database.
-                var newFormDetails = new CitizenApplication
+                var newFormDetails = new CitizenApplications
                 {
-                    ReferenceNumber = ReferenceNumber,
-                    ReferenceNumberAlphanumeric = ReferenceNumberAlphaNumber,
+                    Referencenumber = ReferenceNumber,
+                    Referencenumberalphanumeric = ReferenceNumberAlphaNumber,
                     CitizenId = userId,
-                    ServiceId = serviceId,
-                    DistrictUidForBank = null,
-                    FormDetails = formDetailsObj.ToString(),
-                    CurrentPlayer = 0,
-                    WorkFlow = workFlow!,
+                    Serviceid = serviceId,
+                    Districtuidforbank = null,
+                    Formdetails = formDetailsObj.ToString(),
+                    Currentplayer = 0,
+                    Workflow = workFlow!,
                     Status = status,
-                    DataType = "new",
+                    Datatype = "new",
                     CreatedAt = createdAt
                 };
 
@@ -173,8 +173,8 @@ namespace SahayataNidhi.Controllers.User
             }
             else
             {
-                var application = dbcontext.CitizenApplications.FirstOrDefault(a => a.ReferenceNumber == ReferenceNumber);
-                application!.FormDetails = formDetailsObj.ToString();
+                var application = dbcontext.CitizenApplications.FirstOrDefault(a => a.Referencenumber == ReferenceNumber);
+                application!.Formdetails = formDetailsObj.ToString();
 
                 if (application.Status != status)
                 {
@@ -189,10 +189,10 @@ namespace SahayataNidhi.Controllers.User
             {
                 try
                 {
-                    var getServices = dbcontext.WebServices.FirstOrDefault(ws => ws.ServiceId == serviceId && ws.IsActive);
+                    var getServices = dbcontext.Webservice.FirstOrDefault(ws => ws.Serviceid == serviceId && ws.Isactive);
                     if (getServices != null)
                     {
-                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.OnAction);
+                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
                         if (onAction != null && onAction.Contains("Submission"))
                         {
                             // Instead of calling SendApiRequestAsync directly, push to background
@@ -203,10 +203,10 @@ namespace SahayataNidhi.Controllers.User
 
                                 try
                                 {
-                                    var fieldMapObj = JObject.Parse(getServices.FieldMappings);
+                                    var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
                                     var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
 
-                                    await SendApiRequestAsync(getServices.ApiEndpoint, fieldMap);
+                                    await SendApiRequestAsync(getServices.Apiendpoint, fieldMap);
                                     _logger.LogInformation($"API request sent in background for Reference: {ReferenceNumber}");
                                 }
                                 catch (Exception ex)
@@ -224,7 +224,7 @@ namespace SahayataNidhi.Controllers.User
 
                 string fullPath = await FetchAcknowledgementDetails(ReferenceNumber);
                 string? fullName = GetFormFieldValue(formDetailsObj, "ApplicantName");
-                string? ServiceName = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId)!.ServiceName;
+                string? ServiceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId)!.Servicename;
 
                 // Get email from form - check multiple possible field names
                 string? email = GetFormFieldValue(formDetailsObj, "Email")
@@ -235,7 +235,7 @@ namespace SahayataNidhi.Controllers.User
                 // Check if email is valid before attempting to send
                 if (!string.IsNullOrWhiteSpace(email) && IsValidEmail(email))
                 {
-                    var emailtemplate = JObject.Parse(dbcontext.EmailSettings.FirstOrDefault()!.Templates!);
+                    var emailtemplate = JObject.Parse(dbcontext.Emailsettings.FirstOrDefault()!.Templates!);
                     string template = emailtemplate["Submission"]!.ToString();
 
                     var placeholders = new Dictionary<string, string>
@@ -322,7 +322,7 @@ namespace SahayataNidhi.Controllers.User
             }
         }
 
-   
+
         // Helper method to validate email format
         private static bool IsValidEmail(string email)
         {
@@ -388,12 +388,12 @@ namespace SahayataNidhi.Controllers.User
             var submittedFormDetails = JObject.Parse(formDetailsJson);
 
             var application = dbcontext.CitizenApplications
-                .FirstOrDefault(a => a.ReferenceNumber == referenceNumber);
+                .FirstOrDefault(a => a.Referencenumber == referenceNumber);
 
             if (application == null)
                 return Json(new { status = false, message = "Application not found" });
 
-            var existingFormDetails = JObject.Parse(application.FormDetails ?? "{}");
+            var existingFormDetails = JObject.Parse(application.Formdetails ?? "{}");
 
             // === 1. Location Change Detection ===
             int shiftedFrom = GetShiftedFromTo(JsonConvert.SerializeObject(existingFormDetails["Location"] ?? new JObject()));
@@ -505,12 +505,12 @@ namespace SahayataNidhi.Controllers.User
             }
 
             // === 3. Save ONLY the updated existingFormDetails (preserves untouched fields) ===
-            application.FormDetails = existingFormDetails.ToString();
-            application.AdditionalDetails = null;
+            application.Formdetails = existingFormDetails.ToString();
+            application.Additionaldetails = null;
 
-            // === 4. WorkFlow & History ===
-            var workFlow = JsonConvert.DeserializeObject<JArray>(application.WorkFlow ?? "[]");
-            var currentOfficer = workFlow?.FirstOrDefault(o => (int?)o["playerId"] == application.CurrentPlayer);
+            // === 4. Workflow & History ===
+            var workFlow = JsonConvert.DeserializeObject<JArray>(application.Workflow ?? "[]");
+            var currentOfficer = workFlow?.FirstOrDefault(o => (int?)o["playerId"] == application.Currentplayer);
             if (currentOfficer != null)
             {
                 currentOfficer["status"] = "pending";
@@ -522,7 +522,7 @@ namespace SahayataNidhi.Controllers.User
                 }
             }
 
-            application.WorkFlow = workFlow?.ToString();
+            application.Workflow = workFlow?.ToString();
             application.CreatedAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
 
             string locationLevel = GetFormFieldValue(existingFormDetails, "Tehsil") != null ? "Tehsil" : "District";
@@ -551,7 +551,7 @@ namespace SahayataNidhi.Controllers.User
                 if (string.IsNullOrWhiteSpace(referenceNumber))
                     return BadRequest(new { status = false, message = "Reference number is required." });
 
-                if (!int.TryParse(form["ServiceId"].ToString(), out int serviceId))
+                if (!int.TryParse(form["Serviceid"].ToString(), out int serviceId))
                     return BadRequest(new { status = false, message = "Invalid service ID." });
 
                 string remarks = form["remarks"].ToString() ?? string.Empty;
@@ -560,19 +560,19 @@ namespace SahayataNidhi.Controllers.User
                     : null;
 
                 // Retrieve service and application
-                var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+                var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
                 if (service == null)
                     return BadRequest(new { status = false, message = $"Service with ID {serviceId} not found." });
 
-                var application = dbcontext.CitizenApplications.FirstOrDefault(a => a.ReferenceNumber == referenceNumber);
+                var application = dbcontext.CitizenApplications.FirstOrDefault(a => a.Referencenumber == referenceNumber);
                 if (application == null)
                     return BadRequest(new { status = false, message = $"Application with reference number '{referenceNumber}' not found." });
 
-                // Parse formFields from FormDetails
+                // Parse formFields from Formdetails
                 JToken formFields;
                 try
                 {
-                    formFields = JToken.Parse(application.FormDetails ?? "{}");
+                    formFields = JToken.Parse(application.Formdetails ?? "{}");
                 }
                 catch (JsonException ex)
                 {
@@ -660,31 +660,31 @@ namespace SahayataNidhi.Controllers.User
                     ["DSWO"] = new JArray()
                 };
 
-                // Parse location from FormDetails
+                // Parse location from Formdetails
                 JObject formDetails;
                 try
                 {
-                    formDetails = JObject.Parse(application.FormDetails ?? "{}");
+                    formDetails = JObject.Parse(application.Formdetails ?? "{}");
                 }
                 catch (JsonException ex)
                 {
-                    return BadRequest(new { status = false, message = $"Failed to parse FormDetails: {ex.Message}" });
+                    return BadRequest(new { status = false, message = $"Failed to parse Formdetails: {ex.Message}" });
                 }
 
                 if (!formDetails.TryGetValue("Location", out JToken? locationToken) || locationToken.Type == JTokenType.Null)
-                    return BadRequest(new { status = false, message = "'Location' property is missing or null in FormDetails." });
+                    return BadRequest(new { status = false, message = "'Location' property is missing or null in Formdetails." });
 
                 string location = locationToken.ToString();
 
-                // Parse OfficerEditableField for workflow
+                // Parse Officereditablefield for workflow
                 JArray players;
                 try
                 {
-                    players = JArray.Parse(service.OfficerEditableField ?? "[]");
+                    players = JArray.Parse(service.Officereditablefield ?? "[]");
                 }
                 catch (JsonException ex)
                 {
-                    return BadRequest(new { status = false, message = $"Failed to parse OfficerEditableField: {ex.Message}" });
+                    return BadRequest(new { status = false, message = $"Failed to parse Officereditablefield: {ex.Message}" });
                 }
 
                 if (players.Count == 0)
@@ -694,19 +694,19 @@ namespace SahayataNidhi.Controllers.User
                 var locationObj = JArray.Parse(location);
                 int districtId = Convert.ToInt32(locationObj.First(l => l["name"]!.ToString() == "District")!["value"]);
                 var finYear = helper.GetCurrentFinancialYear();
-                var districtDetails = dbcontext.Districts.FirstOrDefault(s => s.DistrictId == districtId);
+                var districtDetails = dbcontext.District.FirstOrDefault(s => s.Districtid == districtId);
                 if (districtDetails == null)
                     return BadRequest(new { status = false, message = $"District with ID {districtId} not found." });
 
-                string districtShort = districtDetails.DistrictShort!;
+                string districtShort = districtDetails.Districtshort!;
 
                 // Get count for corrigendum - we need to implement this method for PostgreSQL
                 int count = GetCountPerDistrict(districtId, serviceId, "Amendment");
 
                 string corrigendumNumber = string.Format(
                     "01{0:D2}{1:D2}{2}{3}{4:D4}",
-                    service.ServiceId,
-                    districtDetails.DistrictId,
+                    service.Serviceid,
+                    districtDetails.Districtid,
                     "03",
                     finYear.Split('-')[1],
                     count + 1
@@ -751,18 +751,18 @@ namespace SahayataNidhi.Controllers.User
                 // Create new corrigendum
                 var corrigendum = new Corrigendum
                 {
-                    CorrigendumId = corrigendumNumber,
-                    ReferenceNumber = referenceNumber,
+                    Corrigendumid = corrigendumNumber,
+                    Referencenumber = referenceNumber,
                     Location = location,
-                    CorrigendumFields = JsonConvert.SerializeObject(corrigendumFields),
-                    WorkFlow = workFlowJson,
-                    CurrentPlayer = 0,
+                    Corrigendumfields = JsonConvert.SerializeObject(corrigendumFields),
+                    Workflow = workFlowJson,
+                    Currentplayer = 0,
                     History = JsonConvert.SerializeObject(new List<dynamic> { historyEntry }),
                     Status = "Initiated",
                     Type = "Amendment",
                 };
 
-                dbcontext.Corrigendums.Add(corrigendum);
+                dbcontext.Corrigendum.Add(corrigendum);
                 await dbcontext.SaveChangesAsync();
 
                 return Json(new
@@ -813,10 +813,10 @@ namespace SahayataNidhi.Controllers.User
 
         //         // For PostgreSQL, use direct Entity Framework query
         //         var count = dbcontext.CitizenApplications
-        //             .Where(a => a.ServiceId == serviceId)
-        //             .Where(a => a.FormDetails != null &&
-        //                        (a.FormDetails.Contains($"\"District\":\"{districtId}\"") ||
-        //                         a.FormDetails.Contains($"\"District\":{districtId}")))
+        //             .Where(a => a.Serviceid == serviceId)
+        //             .Where(a => a.Formdetails != null &&
+        //                        (a.Formdetails.Contains($"\"District\":\"{districtId}\"") ||
+        //                         a.Formdetails.Contains($"\"District\":{districtId}")))
         //             .Where(a => a.CreatedAt != null && a.CreatedAt.Contains(finYear))
         //             .Count();
 

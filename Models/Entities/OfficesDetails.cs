@@ -5,19 +5,19 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Officesdetails
 {
-    public int StateCode { get; set; }
+    public int Statecode { get; set; }
 
-    public int DivisionCode { get; set; }
+    public int Divisioncode { get; set; }
 
-    public int DistrictCode { get; set; }
+    public int Districtcode { get; set; }
 
-    public int AreaCode { get; set; }
+    public int Areacode { get; set; }
 
-    public string AreaName { get; set; } = null!;
+    public string Areaname { get; set; } = null!;
 
-    public string OfficeName { get; set; } = null!;
+    public string Officename { get; set; } = null!;
 
-    public int OfficeType { get; set; }
+    public int Officetype { get; set; }
 
     public virtual Offices OfficetypeNavigation { get; set; } = null!;
 }

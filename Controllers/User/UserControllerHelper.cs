@@ -37,7 +37,7 @@ namespace SahayataNidhi.Controllers.User
         [HttpGet]
         public IActionResult GetDistricts()
         {
-            var districts = dbcontext.Districts.ToList();
+            var districts = dbcontext.District.ToList();
             return Json(new { status = true, districts });
         }
 
@@ -46,8 +46,8 @@ namespace SahayataNidhi.Controllers.User
         {
             // Fetch only required fields from Users table
             var officerDetailsJsons = dbcontext.Users
-                .Where(u => u.UserType == "Officer" && u.AdditionalDetails != null)
-                .Select(u => u.AdditionalDetails)
+                .Where(u => u.Usertype == "Officer" && u.Additionaldetails != null)
+                .Select(u => u.Additionaldetails)
                 .ToList(); // Materialize data first
 
             // Now parse JSON and filter in-memory
@@ -62,8 +62,8 @@ namespace SahayataNidhi.Controllers.User
                 .ToList();
 
             // Fetch matched districts
-            var districts = dbcontext.Districts
-                .Where(d => districtIds.Contains(d.DistrictId))
+            var districts = dbcontext.District
+                .Where(d => districtIds.Contains(d.Districtid))
                 .ToList();
 
             return Json(new { status = true, districts });
@@ -72,22 +72,22 @@ namespace SahayataNidhi.Controllers.User
         [HttpGet]
         public IActionResult GetTehsils(string districtId)
         {
-            int.TryParse(districtId, out int DistrictId);
-            var tehsils = dbcontext.Tehsils.Where(u => u.DistrictId == DistrictId).ToList();
+            int.TryParse(districtId, out int Districtid);
+            var tehsils = dbcontext.Tehsil.Where(u => u.Districtid == Districtid).ToList();
             return Json(new { status = true, tehsils });
         }
 
         [HttpGet]
         public string GetDistrictName(int districtId)
         {
-            string? districtName = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == districtId)!.DistrictName;
+            string? districtName = dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)!.Districtname;
             return districtName!;
         }
 
         [HttpGet]
         public string GetTehsilName(int tehsilId)
         {
-            string? tehsilName = dbcontext.Tehsils.FirstOrDefault(d => d.TehsilId == tehsilId)!.TehsilName;
+            string? tehsilName = dbcontext.Tehsil.FirstOrDefault(d => d.Tehsilid == tehsilId)!.Tehsilname;
             return tehsilName!;
         }
 
@@ -117,29 +117,29 @@ namespace SahayataNidhi.Controllers.User
             {
                 _logger.LogError($"Error getting next application count: {ex.Message}");
                 // Fallback: Get current count and increment
-                var existing = dbcontext.ApplicationPerDistricts
-                    .FirstOrDefault(a => a.DistrictId == districtId &&
-                                        a.ServiceId == serviceId &&
-                                        a.FinancialYear == financialYear &&
+                var existing = dbcontext.Applicationperdistrict
+                    .FirstOrDefault(a => a.Districtid == districtId &&
+                                        a.Serviceid == serviceId &&
+                                        a.Financialyear == financialYear &&
                                         (type == null || a.Type == type));
 
                 if (existing != null)
                 {
-                    existing.CountValue++;
+                    existing.Countvalue++;
                     dbcontext.SaveChanges();
-                    return existing.CountValue;
+                    return existing.Countvalue;
                 }
                 else
                 {
-                    var newEntry = new ApplicationPerDistrict
+                    var newEntry = new Applicationperdistrict
                     {
-                        DistrictId = districtId,
-                        ServiceId = serviceId,
-                        FinancialYear = financialYear,
+                        Districtid = districtId,
+                        Serviceid = serviceId,
+                        Financialyear = financialYear,
                         Type = type,
-                        CountValue = 1
+                        Countvalue = 1
                     };
-                    dbcontext.ApplicationPerDistricts.Add(newEntry);
+                    dbcontext.Applicationperdistrict.Add(newEntry);
                     dbcontext.SaveChanges();
                     return 1;
                 }
@@ -154,17 +154,17 @@ namespace SahayataNidhi.Controllers.User
             {
                 case "Tehsil":
                     accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
+                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
                     if (districtForDivision == null)
                         return string.Empty;
                     return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
@@ -180,15 +180,15 @@ namespace SahayataNidhi.Controllers.User
             switch (accessLevel)
             {
                 case "Tehsil":
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
-                    var districtForDivision = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
+                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
                     if (districtForDivision == null)
                         return string.Empty;
                     return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
@@ -225,11 +225,11 @@ namespace SahayataNidhi.Controllers.User
         public IActionResult GetServiceContent(int serviceId)
         {
             // Retrieve the serviceId from the JWT claims or other mechanisms if necessary.
-            var service = dbcontext.Services.FirstOrDefault(ser => ser.ServiceId == serviceId);
+            var service = dbcontext.Services.FirstOrDefault(ser => ser.Serviceid == serviceId);
 
             if (service != null)
             {
-                return Json(new { status = true, service.ServiceName, service.FormElement, service.ServiceId });
+                return Json(new { status = true, service.Servicename, service.Formelement, service.Serviceid });
             }
             else
             {
@@ -255,7 +255,7 @@ namespace SahayataNidhi.Controllers.User
             return "";
         }
 
-        private dynamic GetFormattedValue(dynamic item, JObject data, CitizenApplication details)
+        private dynamic GetFormattedValue(dynamic item, JObject data, CitizenApplications details)
         {
             if (item == null)
                 return new { Label = "[No Label]", Value = "[Item is null]" };
@@ -392,22 +392,22 @@ namespace SahayataNidhi.Controllers.User
             }
             if (fieldName.Contains("Muncipality", StringComparison.OrdinalIgnoreCase)
              && int.TryParse(s, out int muncipalityId))
-                return dbcontext.Muncipalities.FirstOrDefault(m => m.MuncipalityId == muncipalityId)!.MuncipalityName!;
+                return dbcontext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == muncipalityId)!.Muncipalityname!;
             if (fieldName.Contains("Ward", StringComparison.OrdinalIgnoreCase)
             && int.TryParse(s, out int WardId))
-                return dbcontext.Wards.FirstOrDefault(m => m.WardCode == WardId)!.WardNo.ToString()!;
+                return dbcontext.Wards.FirstOrDefault(m => m.Wardcode == WardId)!.Wardno.ToString()!;
             if (fieldName.Contains("Block", StringComparison.OrdinalIgnoreCase)
            && int.TryParse(s, out int BlockId))
-                return dbcontext.Blocks.FirstOrDefault(m => m.BlockId == BlockId)!.BlockName!;
+                return dbcontext.Blocks.FirstOrDefault(m => m.Blockid == BlockId)!.Blockname!;
             if (fieldName.Contains("HalqaPanchayat", StringComparison.OrdinalIgnoreCase)
                  && int.TryParse(s, out int HalqaPanchayatId))
-                return dbcontext.HalqaPanchayats.FirstOrDefault(m => m.HalqaPanchayatId == HalqaPanchayatId)!.HalqaPanchayatName!;
+                return dbcontext.Halqapanchayat.FirstOrDefault(m => m.Halqapanchayatid == HalqaPanchayatId)!.Halqapanchayatname!;
             if (fieldName.Contains("Village", StringComparison.OrdinalIgnoreCase)
                  && int.TryParse(s, out int VillageId))
-                return dbcontext.Villages.FirstOrDefault(m => m.VillageId == VillageId)!.VillageName!;
+                return dbcontext.Villages.FirstOrDefault(m => m.Villageid == VillageId)!.Villagename!;
             if (fieldName.Contains("BankName", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int BankId))
-                return dbcontext.Banks.FirstOrDefault(b => b.Id == BankId)?.BankName ?? "Unknown Bank";
+                return dbcontext.Bank.FirstOrDefault(b => b.Id == BankId)?.Bankname ?? "Unknown Bank";
 
             return s;
         }
@@ -425,13 +425,13 @@ namespace SahayataNidhi.Controllers.User
                             int value = Convert.ToInt32(field["value"]);
 
                             if (fieldName == "Tehsil")
-                                return dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == value)?.TehsilName ?? "Unknown Tehsil";
+                                return dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == value)?.Tehsilname ?? "Unknown Tehsil";
 
                             else if (fieldName == "District")
-                                return dbcontext.Districts.FirstOrDefault(d => d.DistrictId == value)?.DistrictName ?? "Unknown District";
+                                return dbcontext.District.FirstOrDefault(d => d.Districtid == value)?.Districtname ?? "Unknown District";
 
                             else if (fieldName.EndsWith("Tehsil"))
-                                return dbcontext.Tehsils.FirstOrDefault(t => t.TehsilId == value)?.TehsilName ?? "Unknown Tehsil";
+                                return dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == value)?.Tehsilname ?? "Unknown Tehsil";
 
 
                             else
@@ -445,10 +445,10 @@ namespace SahayataNidhi.Controllers.User
 
         public dynamic GetSanctionDetails(string applicationId, string serviceId)
         {
-            var formdetails = dbcontext.CitizenApplications.FirstOrDefault(fd => fd.ReferenceNumber == applicationId);
+            var formdetails = dbcontext.CitizenApplications.FirstOrDefault(fd => fd.Referencenumber == applicationId);
             // Get the Letters JSON string
             var lettersJson = dbcontext.Services
-                         .FirstOrDefault(s => s.ServiceId == Convert.ToInt32(formdetails!.ServiceId))?.Letters;
+                         .FirstOrDefault(s => s.Serviceid == Convert.ToInt32(formdetails!.Serviceid))?.Letters;
 
             var parsed = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(lettersJson!);
             dynamic? sanctionSection = parsed!.TryGetValue("Sanction", out var sanction) ? sanction : null;
@@ -456,10 +456,10 @@ namespace SahayataNidhi.Controllers.User
             var sanctionLetterFor = sanctionSection.sanctionLetterFor;
 
             var details = dbcontext.CitizenApplications
-                .FirstOrDefault(ca => ca.ReferenceNumber == applicationId);
+                .FirstOrDefault(ca => ca.Referencenumber == applicationId);
 
 
-            var formData = JsonConvert.DeserializeObject<JObject>(details!.FormDetails!);
+            var formData = JsonConvert.DeserializeObject<JObject>(details!.Formdetails!);
 
             // Final key-value pair list for the PDF
             var pdfFields = new Dictionary<string, string>();
@@ -479,13 +479,13 @@ namespace SahayataNidhi.Controllers.User
         {
             // 1) Load the application record
             var details = dbcontext.CitizenApplications
-                .FirstOrDefault(ca => ca.ReferenceNumber == applicationId)
+                .FirstOrDefault(ca => ca.Referencenumber == applicationId)
                 ?? throw new InvalidOperationException("Application not found.");
 
-            string serviceName = dbcontext.Services.FirstOrDefault(s => s.ServiceId == details.ServiceId)?.ServiceName!;
+            string serviceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == details.Serviceid)?.Servicename!;
             // 2) Load and parse the Letters JSON from the related service
             var lettersJson = (dbcontext.Services
-                .FirstOrDefault(s => s.ServiceId == Convert.ToInt32(details.ServiceId))?.Letters) ?? throw new InvalidOperationException("No letters JSON configured for this service.");
+                .FirstOrDefault(s => s.Serviceid == Convert.ToInt32(details.Serviceid))?.Letters) ?? throw new InvalidOperationException("No letters JSON configured for this service.");
             var parsedLetters = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(lettersJson!)
                 ?? throw new InvalidOperationException("Letters JSON parsing failed.");
 
@@ -496,14 +496,14 @@ namespace SahayataNidhi.Controllers.User
             var tableFields = (IEnumerable<dynamic>)ackSection.tableFields;
 
             // 4) Deserialize the form data for field lookup
-            var formData = JsonConvert.DeserializeObject<JObject>(details.FormDetails!)
+            var formData = JsonConvert.DeserializeObject<JObject>(details.Formdetails!)
                 ?? throw new InvalidOperationException("Form details parsing failed.");
 
             // 5) Build the key-value list for the PDF
             var acknowledgementDetails = new OrderedDictionary();
 
             // Add Reference Number explicitly
-            // acknowledgementDetails["REFERENCE NUMBER"] = details.ReferenceNumber;
+            // acknowledgementDetails["REFERENCE NUMBER"] = details.Referencenumber;
 
             // Add all fields from tableFields config (replace if duplicate keys)
             foreach (var fieldConfig in tableFields)
@@ -571,15 +571,15 @@ namespace SahayataNidhi.Controllers.User
                         {
                             if (lookupKey.Equals("District", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int districtId))
                             {
-                                actualValue = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == districtId)?.DistrictName;
+                                actualValue = dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)?.Districtname;
                             }
                             else if (lookupKey.Equals("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int tehsilId))
                             {
-                                actualValue = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == tehsilId)?.TehsilName;
+                                actualValue = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == tehsilId)?.Tehsilname;
                             }
                             else if (lookupKey.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int otherTehsilId))
                             {
-                                actualValue = dbcontext.Tehsils.FirstOrDefault(t => t.TehsilId == otherTehsilId)?.TehsilName;
+                                actualValue = dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == otherTehsilId)?.Tehsilname;
                             }
                             else
                             {
@@ -646,20 +646,20 @@ namespace SahayataNidhi.Controllers.User
 
         public async Task<IActionResult> DisplayFile(string fileName)
         {
-            var fileModel = await dbcontext.UserDocuments
-                .FirstOrDefaultAsync(f => f.FileName == fileName);
+            var fileModel = await dbcontext.Userdocuments
+                .FirstOrDefaultAsync(f => f.Filename == fileName);
 
             if (fileModel == null)
             {
                 return NotFound("File not found.");
             }
 
-            if (!fileModel.FileType.StartsWith("image/") && fileModel.FileType != "application/pdf")
+            if (!fileModel.Filetype.StartsWith("image/") && fileModel.Filetype != "application/pdf")
             {
                 return BadRequest("File is not an image or PDF.");
             }
 
-            return File(fileModel.FileData, fileModel.FileType);
+            return File(fileModel.Filedata, fileModel.Filetype);
         }
     }
 }

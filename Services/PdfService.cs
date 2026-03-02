@@ -29,11 +29,11 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
 
         if (accessLevel == "Tehsil")
         {
-            areaName = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode)!.TehsilName!;
+            areaName = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode)!.Tehsilname!;
         }
         else if (accessLevel == "District")
         {
-            areaName = dbcontext.Districts.FirstOrDefault(t => t.DistrictId == accessCode)!.DistrictName!;
+            areaName = dbcontext.District.FirstOrDefault(t => t.Districtid == accessCode)!.Districtname!;
         }
         else if (accessLevel == "Division")
         {
@@ -45,15 +45,15 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
     public string GetBranchOffice(string applicationId)
     {
         var citizenDetails = dbcontext.CitizenApplications
-            .FirstOrDefault(ca => ca.ReferenceNumber == applicationId);
+            .FirstOrDefault(ca => ca.Referencenumber == applicationId);
 
-        if (citizenDetails == null || string.IsNullOrEmpty(citizenDetails.FormDetails))
+        if (citizenDetails == null || string.IsNullOrEmpty(citizenDetails.Formdetails))
             throw new Exception("Application not found or form data missing.");
 
-        int serviceId = citizenDetails.ServiceId;
+        int serviceId = citizenDetails.Serviceid;
 
         // Deserialize form data
-        var formdata = JsonConvert.DeserializeObject<JObject>(citizenDetails.FormDetails!);
+        var formdata = JsonConvert.DeserializeObject<JObject>(citizenDetails.Formdetails!);
 
         // Extract District -> Division
         var locationArray = formdata!["Location"] as JArray;
@@ -63,12 +63,12 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
         if (districtValue == null)
             throw new Exception("District not found in form data.");
 
-        string division = dbcontext.Districts
-            .FirstOrDefault(d => d.DistrictId == districtValue)!.Division == 1 ? "Jammu" : "Kashmir";
+        string division = dbcontext.District
+            .FirstOrDefault(d => d.Districtid == districtValue)!.Division == 1 ? "Jammu" : "Kashmir";
 
         // Get bank details JSON
         var bankDetailsJson = dbcontext.Services
-            .FirstOrDefault(s => s.ServiceId == serviceId)?.BankDetails;
+            .FirstOrDefault(s => s.Serviceid == serviceId)?.Bankdetails;
 
         if (string.IsNullOrEmpty(bankDetailsJson))
             throw new Exception("Bank details not found.");

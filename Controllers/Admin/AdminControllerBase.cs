@@ -21,16 +21,16 @@ namespace SahayataNidhi.Controllers.Admin
         {
             base.OnActionExecuted(context);
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var Admin = dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
-            var additionalDetails = JsonConvert.DeserializeObject<Dictionary<string, object>>(Admin?.AdditionalDetails ?? "{}");
+            var Admin = dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
+            var additionalDetails = JsonConvert.DeserializeObject<Dictionary<string, object>>(Admin?.Additionaldetails ?? "{}");
             string AdminDesignation = additionalDetails!.TryGetValue("Role", out var roleObj) ? roleObj?.ToString() ?? "Unknown" : "Unknown";
             int departmentId = Convert.ToInt32(additionalDetails["Department"]);
-            var department = dbcontext.Departments.FirstOrDefault(d => d.DepartmentId == departmentId);
+            var department = dbcontext.Departments.FirstOrDefault(d => d.Departmentid == departmentId);
             string Profile = Admin!.Profile!;
             ViewData["AdminType"] = AdminDesignation;
             ViewData["UserName"] = Admin!.Username;
             ViewData["Profile"] = Profile == "" ? "/assets/dummyDocs/formImage.jpg" : Profile;
-            ViewData["Department"] = department?.DepartmentName ?? "Unknown";
+            ViewData["Department"] = department?.Departmentname ?? "Unknown";
         }
 
         public OfficerDetailsModal? GetOfficerDetails()

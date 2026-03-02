@@ -1,20 +1,21 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class UserDocument
+public partial class Userdocuments
 {
-    public int FileId { get; set; }
+    public int Fileid { get; set; }
 
-    public string FileName { get; set; } = null!;
+    public string Filename { get; set; } = null!;
 
-    public string FileType { get; set; } = null!;
+    public string Filetype { get; set; } = null!;
 
-    public int FileSize { get; set; }
+    public int Filesize { get; set; }
 
-    public byte[] FileData { get; set; } = null!;
+    public byte[] Filedata { get; set; } = null!;
 
-    public string? DocumentType { get; set; }
+    public string? Documenttype { get; set; }
 
-    public DateTime UpdatedAt { get; set; }
+    public DateTime Updatedat { get; set; }
 }

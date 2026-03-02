@@ -7,13 +7,13 @@ public partial class Certificates
 {
     public int Uuid { get; set; }
 
-    public int OfficerId { get; set; }
+    public int Officerid { get; set; }
 
-    public byte[]? SerialNumber { get; set; }
+    public byte[]? Serialnumber { get; set; }
 
-    public string? CertifiyingAuthority { get; set; }
+    public string? Certifiyingauthority { get; set; }
 
-    public DateTime? ExpirationDate { get; set; }
+    public DateTime? Expirationdate { get; set; }
 
-    public string? RegisteredDate { get; set; }
+    public string? Registereddate { get; set; }
 }

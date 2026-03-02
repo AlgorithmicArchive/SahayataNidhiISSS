@@ -25,7 +25,7 @@ namespace SahayataNidhi.Controllers.Officer
             base.OnActionExecuted(context);
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var officer = dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+            var officer = dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
             string profile = officer?.Profile ?? "/resources/dummyDocs/formImage.jpg";
 
             ViewData["UserType"] = "Officer";
@@ -77,14 +77,14 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 new("@AccessLevel", NpgsqlDbType.Varchar) { Value = accessLevel },
                 new("@AccessCode", NpgsqlDbType.Integer) { Value = accessCode ?? DBNull.Value },
-                new("@ServiceId", NpgsqlDbType.Integer) { Value = int.Parse(serviceId) },
+                new("@Serviceid", NpgsqlDbType.Integer) { Value = int.Parse(serviceId) },
                 new("@TakenBy", NpgsqlDbType.Varchar) { Value = DBNull.Value },
                 new("@DivisionCode", NpgsqlDbType.Integer) { Value = divisionCode ?? DBNull.Value }
             };
 
             var counts = dbcontext.Database
                 .SqlQueryRaw<MainStatusCounts>(
-                    "SELECT * FROM get_main_application_status_count(@AccessLevel, @AccessCode, @ServiceId, @TakenBy, @DivisionCode)",
+                    "SELECT * FROM get_main_application_status_count(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)",
                     parameters.ToArray()
                 )
                 .AsEnumerable()
@@ -361,7 +361,7 @@ namespace SahayataNidhi.Controllers.Officer
                 .ToList();
 
             long totalRecords = response.FirstOrDefault()?.TotalRecords ?? 0;
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == int.Parse(serviceId));
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == int.Parse(serviceId));
 
             if (service == null)
             {
@@ -390,7 +390,7 @@ namespace SahayataNidhi.Controllers.Officer
                 }
 
                 var formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails ?? "{}");
-                string serviceName = service.ServiceName!;
+                string serviceName = service.Servicename!;
                 string status = details.Status ?? "Unknown";
 
                 var applicationObject = new
@@ -442,17 +442,17 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 case "Tehsil":
                     accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
+                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
                     if (districtForDivision == null)
                         return string.Empty;
                     return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
@@ -539,12 +539,12 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 new NpgsqlParameter("@AccessLevel", NpgsqlDbType.Varchar) { Value = accessLevel },
                 new NpgsqlParameter("@AccessCode", NpgsqlDbType.Integer) { Value = accessCode },
-                new NpgsqlParameter("@ServiceId", NpgsqlDbType.Integer) { Value = int.Parse(serviceId) },
+                new NpgsqlParameter("@Serviceid", NpgsqlDbType.Integer) { Value = int.Parse(serviceId) },
                 new NpgsqlParameter("@TakenBy", NpgsqlDbType.Varchar) { Value = DBNull.Value },
                 new NpgsqlParameter("@DivisionCode", NpgsqlDbType.Integer) { Value = divisionCode }
             };
 
-                    var countSql = "SELECT * FROM get_main_application_status_count(@AccessLevel, @AccessCode, @ServiceId, @TakenBy, @DivisionCode)";
+                    var countSql = "SELECT * FROM get_main_application_status_count(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)";
 
                     Console.WriteLine($"DEBUG: Count SQL: {countSql}");
                     Console.WriteLine($"DEBUG: Count Parameters:");
@@ -718,7 +718,7 @@ namespace SahayataNidhi.Controllers.Officer
 
                 // Get service details
                 var service = dbcontext.Services
-                    .FirstOrDefault(s => s.ServiceId == int.Parse(serviceId));
+                    .FirstOrDefault(s => s.Serviceid == int.Parse(serviceId));
 
                 if (service == null)
                 {
@@ -726,7 +726,7 @@ namespace SahayataNidhi.Controllers.Officer
                     return NotFound("Service not found.");
                 }
 
-                string serviceName = service.ServiceName ?? "Unknown Service";
+                string serviceName = service.Servicename ?? "Unknown Service";
                 Console.WriteLine($"DEBUG: Service name: {serviceName}");
 
                 // Determine if sanction date column should be shown
@@ -917,23 +917,23 @@ namespace SahayataNidhi.Controllers.Officer
             }
 
             var application = await dbcontext.CitizenApplications
-                .FirstOrDefaultAsync(ca => ca.ReferenceNumber == ApplicationId);
+                .FirstOrDefaultAsync(ca => ca.Referencenumber == ApplicationId);
 
             if (application == null)
             {
                 return NotFound("Application not found.");
             }
 
-            var players = JsonConvert.DeserializeObject<JArray>(application.WorkFlow!);
-            int currentPlayerIndex = (int)application.CurrentPlayer!;
+            var players = JsonConvert.DeserializeObject<JArray>(application.Workflow!);
+            int currentPlayerIndex = (int)application.Currentplayer!;
             var currentPlayer = players!.FirstOrDefault(o => (int)o["playerId"]! == currentPlayerIndex);
 
-            var history = await dbcontext.ActionHistories
-                .Where(ah => ah.ReferenceNumber == ApplicationId && !ah.ActionTaken.Contains("Withheld"))
-                .OrderBy(ah => ah.ActionTakenDate)
+            var history = await dbcontext.Actionhistory
+                .Where(ah => ah.Referencenumber == ApplicationId && !ah.Actiontaken.Contains("Withheld"))
+                .OrderBy(ah => ah.Actiontakendate)
                 .ToListAsync();
 
-            var formDetails = JsonConvert.DeserializeObject<dynamic>(application.FormDetails!);
+            var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
 
             var columns = new List<dynamic>
             {
@@ -949,14 +949,14 @@ namespace SahayataNidhi.Controllers.Officer
 
             foreach (var item in history)
             {
-                string officerArea = GetOfficerAreaForHistory(item.LocationLevel!, item.LocationValue.ToString()!);
+                string officerArea = GetOfficerAreaForHistory(item.Locationlevel!, item.Locationvalue.ToString()!);
                 data.Add(new
                 {
                     sno = index++,
-                    actionTaker = item.ActionTaker != "Citizen" ? item.ActionTaker + " " + officerArea : item.ActionTaker,
-                    actionTaken = item.ActionTaken == "ReturnToCitizen" ? "Returned to citizen for correction" : item.ActionTaken,
+                    actionTaker = item.Actiontaker != "Citizen" ? item.Actiontaker + " " + officerArea : item.Actiontaker,
+                    actionTaken = item.Actiontaken == "ReturnToCitizen" ? "Returned to citizen for correction" : item.Actiontaken,
                     remarks = item.Remarks ?? "",
-                    actionTakenOn = item.ActionTakenDate?.ToString() ?? "",
+                    actionTakenOn = item.Actiontakendate?.ToString() ?? "",
                 });
             }
 
@@ -989,8 +989,8 @@ namespace SahayataNidhi.Controllers.Officer
 
             return locationLevel switch
             {
-                "Tehsil" => dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == locId)?.TehsilName ?? "",
-                "District" => dbcontext.Districts.FirstOrDefault(d => d.DistrictId == locId)?.DistrictName ?? "",
+                "Tehsil" => dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == locId)?.Tehsilname ?? "",
+                "District" => dbcontext.District.FirstOrDefault(d => d.Districtid == locId)?.Districtname ?? "",
                 "Division" => locId == 1 ? "Jammu" : "Kashmir",
                 _ => ""
             };

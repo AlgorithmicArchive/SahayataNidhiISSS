@@ -32,15 +32,15 @@ namespace SendEmails
         {
             try
             {
-                var emailSettings = dbcontext.EmailSettings.FirstOrDefault();
+                var emailSettings = dbcontext.Emailsettings.FirstOrDefault();
                 if (emailSettings == null)
                     throw new InvalidOperationException("Email settings not found.");
 
-                string senderEmail = emailSettings.SenderEmail!;
+                string senderEmail = emailSettings.Senderemail!;
                 string? key = _configuration["Encryption:Key"];
                 string password = _encryptionService.Decrypt(emailSettings.Password!, key!);
 
-                using var client = new SmtpClient(emailSettings.SmtpServer, emailSettings.SmtpPort)
+                using var client = new SmtpClient(emailSettings.Smtpserver, emailSettings.Smtpport)
                 {
                     EnableSsl = true,
                     Credentials = new NetworkCredential(senderEmail, password),

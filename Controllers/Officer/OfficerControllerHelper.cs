@@ -35,12 +35,12 @@ namespace SahayataNidhi.Controllers.Officer
 
         public string GetDistrictName(int districtId)
         {
-            return dbcontext.Districts.FirstOrDefault(d => d.DistrictId == districtId)?.DistrictName ?? string.Empty;
+            return dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)?.Districtname ?? string.Empty;
         }
 
         public string GetTehsilName(int tehsilId)
         {
-            return dbcontext.Tehsils.FirstOrDefault(d => d.TehsilId == tehsilId)?.TehsilName ?? string.Empty;
+            return dbcontext.Tehsil.FirstOrDefault(d => d.Tehsilid == tehsilId)?.Tehsilname ?? string.Empty;
         }
 
         private static string? GetFormFieldValue(JObject formDetailsObj, string fieldName)
@@ -87,32 +87,32 @@ namespace SahayataNidhi.Controllers.Officer
         {
             var financialYear = helper.GetCurrentFinancialYear();
 
-            var result = dbcontext.ApplicationPerDistricts
-                .Where(a => a.DistrictId == districtId
-                         && a.ServiceId == serviceId
-                         && a.FinancialYear == financialYear
+            var result = dbcontext.Applicationperdistrict
+                .Where(a => a.Districtid == districtId
+                         && a.Serviceid == serviceId
+                         && a.Financialyear == financialYear
                          && a.Type == "Corrigendum")
                 .FirstOrDefault();
 
             if (result == null)
             {
-                result = new ApplicationPerDistrict
+                result = new Applicationperdistrict
                 {
-                    DistrictId = districtId,
-                    ServiceId = serviceId,
-                    FinancialYear = financialYear,
+                    Districtid = districtId,
+                    Serviceid = serviceId,
+                    Financialyear = financialYear,
                     Type = "Corrigendum",
-                    CountValue = 1
+                    Countvalue = 1
                 };
-                dbcontext.ApplicationPerDistricts.Add(result);
+                dbcontext.Applicationperdistrict.Add(result);
             }
             else
             {
-                result.CountValue++;
+                result.Countvalue++;
             }
 
             dbcontext.SaveChanges();
-            return result.CountValue;
+            return result.Countvalue;
         }
 
         private dynamic GetFormattedValue(dynamic item, JObject data)
@@ -252,31 +252,31 @@ namespace SahayataNidhi.Controllers.Officer
 
             if (fieldName.Equals("Tehsil", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int tid))
-                return dbcontext.TswoTehsils.FirstOrDefault(m => m.TehsilId == tid)?.TehsilName ?? "";
+                return dbcontext.Tswotehsil.FirstOrDefault(m => m.Tehsilid == tid)?.Tehsilname ?? "";
 
             if (fieldName.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase)
                && int.TryParse(s, out int Tid))
-                return dbcontext.Tehsils.FirstOrDefault(m => m.TehsilId == Tid)?.TehsilName ?? "";
+                return dbcontext.Tehsil.FirstOrDefault(m => m.Tehsilid == Tid)?.Tehsilname ?? "";
 
             if (fieldName.Contains("Muncipality", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int mid))
-                return dbcontext.Muncipalities.FirstOrDefault(m => m.MuncipalityId == mid)?.MuncipalityName ?? "";
+                return dbcontext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == mid)?.Muncipalityname ?? "";
 
             if (fieldName.Contains("Block", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int bid))
-                return dbcontext.Blocks.FirstOrDefault(m => m.BlockId == bid)?.BlockName ?? "";
+                return dbcontext.Blocks.FirstOrDefault(m => m.Blockid == bid)?.Blockname ?? "";
 
             if (fieldName.Contains("Ward", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int wid))
-                return dbcontext.Wards.FirstOrDefault(m => m.WardCode == wid)?.WardNo.ToString() ?? "";
+                return dbcontext.Wards.FirstOrDefault(m => m.Wardcode == wid)?.Wardno.ToString() ?? "";
 
             if (fieldName.Contains("Village", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int vid))
-                return dbcontext.Villages.FirstOrDefault(m => m.VillageId == vid)?.VillageName ?? "";
+                return dbcontext.Villages.FirstOrDefault(m => m.Villageid == vid)?.Villagename ?? "";
 
             if (fieldName.Contains("BankName", StringComparison.OrdinalIgnoreCase)
                 && int.TryParse(s, out int BankId))
-                return dbcontext.Banks.FirstOrDefault(b => b.Id == BankId)?.BankName ?? "Unknown Bank";
+                return dbcontext.Bank.FirstOrDefault(b => b.Id == BankId)?.Bankname ?? "Unknown Bank";
 
             return s;
         }
@@ -288,12 +288,12 @@ namespace SahayataNidhi.Controllers.Officer
             try
             {
                 var certificateDetails = dbcontext.Certificates
-                    .Where(ce => ce.OfficerId == officer.UserId)
+                    .Where(ce => ce.Officerid == officer.UserId)
                     .Select(c => new
                     {
-                        serial_number = BitConverter.ToString(c.SerialNumber!).Replace("-", ""),
-                        certifying_authority = c.CertifiyingAuthority,
-                        expiration_date = c.ExpirationDate
+                        serial_number = BitConverter.ToString(c.Serialnumber!).Replace("-", ""),
+                        certifying_authority = c.Certifiyingauthority,
+                        expiration_date = c.Expirationdate
                     })
                     .FirstOrDefault();
 
@@ -359,15 +359,15 @@ namespace SahayataNidhi.Controllers.Officer
                         {
                             if (lookupKey.Equals("District", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int districtId))
                             {
-                                actualValue = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == districtId)?.DistrictName;
+                                actualValue = dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)?.Districtname;
                             }
                             else if (lookupKey.Equals("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int tehsilId))
                             {
-                                actualValue = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == tehsilId)?.TehsilName;
+                                actualValue = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == tehsilId)?.Tehsilname;
                             }
                             else if (lookupKey.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int otherTehsilId))
                             {
-                                actualValue = dbcontext.Tehsils.FirstOrDefault(t => t.TehsilId == otherTehsilId)?.TehsilName;
+                                actualValue = dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == otherTehsilId)?.Tehsilname;
                             }
                             else
                             {
@@ -408,8 +408,8 @@ namespace SahayataNidhi.Controllers.Officer
                 return formDetailsToken;
 
             // Fetch sanctioned corrigendums
-            var corrigendums = dbcontext.Corrigendums
-                .Where(co => co.ReferenceNumber == applicationId && co.Status == "Sanctioned")
+            var corrigendums = dbcontext.Corrigendum
+                .Where(co => co.Referencenumber == applicationId && co.Status == "Sanctioned")
                 .ToList();
 
             // Ensure Documents section exists
@@ -450,7 +450,7 @@ namespace SahayataNidhi.Controllers.Officer
             { "label", "Corrigendum Sanction Letter" },
             { "name", "Corrigendum Sanction Letter" },
             { "Enclosure", "Corrigendum Sanction Letter" },
-            { "File", corrigendum.CorrigendumId.Replace("/", "_") + "_CorrigendumSanctionLetter.pdf" }
+            { "File", corrigendum.Corrigendumid.Replace("/", "_") + "_CorrigendumSanctionLetter.pdf" }
         });
             }
 
@@ -538,27 +538,27 @@ namespace SahayataNidhi.Controllers.Officer
             }
             else if (name.Equals("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int tehsilId))
             {
-                return dbcontext.TswoTehsils.FirstOrDefault(m => m.TehsilId == tehsilId)?.TehsilName ?? "";
+                return dbcontext.Tswotehsil.FirstOrDefault(m => m.Tehsilid == tehsilId)?.Tehsilname ?? "";
             }
-            else if (name.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int TehsilId))
+            else if (name.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int Tehsilid))
             {
-                return GetTehsilName(TehsilId);
+                return GetTehsilName(Tehsilid);
             }
             else if (name.Contains("Muncipality", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int muncipalityId))
             {
-                return dbcontext.Muncipalities.FirstOrDefault(m => m.MuncipalityId == muncipalityId)?.MuncipalityName ?? "";
+                return dbcontext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == muncipalityId)?.Muncipalityname ?? "";
             }
             else if (name.Contains("Block", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int BlockId))
             {
-                return dbcontext.Blocks.FirstOrDefault(m => m.BlockId == BlockId)?.BlockName ?? "";
+                return dbcontext.Blocks.FirstOrDefault(m => m.Blockid == BlockId)?.Blockname ?? "";
             }
             else if (name.Contains("Ward", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int WardId))
             {
-                return dbcontext.Wards.FirstOrDefault(m => m.WardCode == WardId)?.WardNo.ToString() ?? "";
+                return dbcontext.Wards.FirstOrDefault(m => m.Wardcode == WardId)?.Wardno.ToString() ?? "";
             }
-            else if (name.Contains("Village", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int VillageId))
+            else if (name.Contains("Village", StringComparison.OrdinalIgnoreCase) && int.TryParse(value, out int Villageid))
             {
-                return dbcontext.Villages.FirstOrDefault(m => m.VillageId == VillageId)?.VillageName ?? "";
+                return dbcontext.Villages.FirstOrDefault(m => m.Villageid == Villageid)?.Villagename ?? "";
             }
 
             return value;
@@ -572,17 +572,17 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 case "Tehsil":
                     accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
+                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
                     if (districtForDivision == null)
                         return string.Empty;
                     return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
@@ -596,9 +596,9 @@ namespace SahayataNidhi.Controllers.Officer
         private void UpdateOfficerActionFormLabels(JObject officerClone, dynamic formDetails)
         {
             var officerRoles = dbcontext.Users
-                .Where(u => u.UserType == "Officer" && u.AdditionalDetails != null)
+                .Where(u => u.Usertype == "Officer" && u.Additionaldetails != null)
                 .AsEnumerable()
-                .Select(u => JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(u.AdditionalDetails!))
+                .Select(u => JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(u.Additionaldetails!))
                 .Where(details => details != null && details.ContainsKey("AccessLevel"))
                 .Select(details => details!["AccessLevel"])
                 .Distinct()
@@ -635,20 +635,20 @@ namespace SahayataNidhi.Controllers.Officer
             var lookupMap = new Dictionary<string, Func<int, string>>
             {
                 { "District", GetDistrictName },
-                { "Tehsil", id=>dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == id)?.TehsilName ?? "" },
-                { "PresentTehsil", id => dbcontext.Tehsils.FirstOrDefault(t => t.TehsilId == id)?.TehsilName ?? "" },
-                { "PermanentTehsil", id => dbcontext.Tehsils.FirstOrDefault(t => t.TehsilId == id)?.TehsilName ?? "" },
-                { "Muncipality", id => dbcontext.Muncipalities.FirstOrDefault(m => m.MuncipalityId == id)?.MuncipalityName ?? "" },
-                { "Block", id => dbcontext.Blocks.FirstOrDefault(m => m.BlockId == id)?.BlockName ?? "" },
-                { "HalqaPanchayat", id => dbcontext.HalqaPanchayats.FirstOrDefault(m => m.HalqaPanchayatId == id)?.HalqaPanchayatName ?? "" },
-                { "Village", id => dbcontext.Villages.FirstOrDefault(m => m.VillageId == id)?.VillageName ?? "" },
-                { "WardNo", id => dbcontext.Wards.FirstOrDefault(w => w.WardCode == id)?.WardNo.ToString() ?? "" },
+                { "Tehsil", id=>dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == id)?.Tehsilname ?? "" },
+                { "PresentTehsil", id => dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == id)?.Tehsilname ?? "" },
+                { "PermanentTehsil", id => dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == id)?.Tehsilname ?? "" },
+                { "Muncipality", id => dbcontext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == id)?.Muncipalityname ?? "" },
+                { "Block", id => dbcontext.Blocks.FirstOrDefault(m => m.Blockid == id)?.Blockname ?? "" },
+                { "HalqaPanchayat", id => dbcontext.Halqapanchayat.FirstOrDefault(m => m.Halqapanchayatid == id)?.Halqapanchayatname ?? "" },
+                { "Village", id => dbcontext.Villages.FirstOrDefault(m => m.Villageid == id)?.Villagename ?? "" },
+                { "WardNo", id => dbcontext.Wards.FirstOrDefault(w => w.Wardcode == id)?.Wardno.ToString() ?? "" },
             };
 
             if (doBankName)
             {
                 lookupMap["BankName"] =
-                    id => dbcontext.Banks.FirstOrDefault(b => b.Id == id)?.BankName ?? "";
+                    id => dbcontext.Bank.FirstOrDefault(b => b.Id == id)?.Bankname ?? "";
             }
 
             foreach (var section in formDetails.Children<JProperty>())
@@ -697,12 +697,12 @@ namespace SahayataNidhi.Controllers.Officer
             switch (accessLevel)
             {
                 case "Tehsil":
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
                     return accessCode == 1 ? "Jammu" : "Kashmir";
@@ -753,12 +753,12 @@ namespace SahayataNidhi.Controllers.Officer
                 nextOfficer["canPull"] = false;
         }
 
-        private void InjectEditableActionForm(JObject currentOfficerClone, Service? serviceDetails, int currentPlayer)
+        private void InjectEditableActionForm(JObject currentOfficerClone, Services? serviceDetails, int currentPlayer)
         {
-            if (string.IsNullOrWhiteSpace(serviceDetails?.OfficerEditableField))
+            if (string.IsNullOrWhiteSpace(serviceDetails?.Officereditablefield))
                 return;
 
-            var editableFields = JsonConvert.DeserializeObject<List<JObject>>(serviceDetails.OfficerEditableField);
+            var editableFields = JsonConvert.DeserializeObject<List<JObject>>(serviceDetails.Officereditablefield);
             int playerId = (int)currentOfficerClone["playerId"]!;
 
             var match = editableFields?.FirstOrDefault(f => (int)f["playerId"]! == playerId);
@@ -1071,11 +1071,11 @@ namespace SahayataNidhi.Controllers.Officer
             return correctionList;
         }
 
-        public async Task NotifyExpiringEligibilities(string? ServiceId, int pageIndex = 0, int pageSize = 10)
+        public async Task NotifyExpiringEligibilities(string? Serviceid, int pageIndex = 0, int pageSize = 10)
         {
-            if (!int.TryParse(ServiceId, out int serviceId))
+            if (!int.TryParse(Serviceid, out int serviceId))
             {
-                _logger.LogWarning("Invalid ServiceId provided");
+                _logger.LogWarning("Invalid Serviceid provided");
                 return;
             }
 
@@ -1104,12 +1104,12 @@ namespace SahayataNidhi.Controllers.Officer
 
             foreach (var application in applications)
             {
-                var formDetailsObj = JToken.Parse(application.FormDetails ?? "{}");
+                var formDetailsObj = JToken.Parse(application.Formdetails ?? "{}");
                 string applicantName = GetFieldValue("ApplicantName", formDetailsObj);
                 string email = GetFieldValue("Email", formDetailsObj);
 
-                var expiringApplication = dbcontext.ApplicationsWithExpiringEligibilities
-                    .FirstOrDefault(ae => ae.ReferenceNumber == application.ReferenceNumber);
+                var expiringApplication = dbcontext.Applicationswithexpiringeligibility
+                    .FirstOrDefault(ae => ae.Referencenumber == application.Referencenumber);
 
                 if (expiringApplication != null && !string.IsNullOrEmpty(email))
                 {
@@ -1121,7 +1121,7 @@ namespace SahayataNidhi.Controllers.Officer
                         <p><strong>{applicantName}</strong>,</p>
                         <p>
                             This is a reminder that your UDID Card linked to application reference number 
-                            <strong>{application.ReferenceNumber}</strong> is expiring on <strong>{expirationDate:dd MMM yyyy}</strong>.
+                            <strong>{application.Referencenumber}</strong> is expiring on <strong>{expirationDate:dd MMM yyyy}</strong>.
                         </p>
                         <p>
                             Please renew your UDID card and update your application if a new one has been issued.

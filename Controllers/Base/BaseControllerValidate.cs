@@ -35,7 +35,7 @@ namespace SahayataNidhi.Controllers
         public IActionResult MobileNumberAlreadyExist([FromForm] IFormCollection form)
         {
             string MobileNumber = form["MobileNumber"].ToString();
-            var isMobileNumberInUsers = dbcontext.Users.FirstOrDefault(u => u.MobileNumber == MobileNumber);
+            var isMobileNumberInUsers = dbcontext.Users.FirstOrDefault(u => u.Mobilenumber == MobileNumber);
             if (isMobileNumberInUsers == null)
                 return Json(new { status = false });
             else
@@ -75,7 +75,7 @@ namespace SahayataNidhi.Controllers
 
                 // Exclude current application from the duplicates
                 var otherApplications = applications
-                    .Where(app => string.IsNullOrWhiteSpace(applicationId) || app.ReferenceNumber != applicationId)
+                    .Where(app => string.IsNullOrWhiteSpace(applicationId) || app.Referencenumber != applicationId)
                     .ToList();
 
                 _logger.LogInformation($"----------- Found {otherApplications.Count} other applications for account {accNo}. -----------------");
@@ -220,7 +220,7 @@ namespace SahayataNidhi.Controllers
                 if (int.TryParse(bankNameOrId, out int bankId))
                 {
                     // It's an ID, get bank name from database
-                    var bank = dbcontext.Banks.FirstOrDefault(b => b.Id == bankId);
+                    var bank = dbcontext.Bank.FirstOrDefault(b => b.Id == bankId);
                     if (bank == null)
                     {
                         return Json(new
@@ -229,7 +229,7 @@ namespace SahayataNidhi.Controllers
                             message = "Bank not found with the provided ID."
                         });
                     }
-                    actualBankName = bank.BankName;
+                    actualBankName = bank.Bankname;
                 }
                 else
                 {
@@ -237,7 +237,7 @@ namespace SahayataNidhi.Controllers
                     actualBankName = bankNameOrId;
 
                     // Optional: Verify the bank exists in database
-                    var bankExists = dbcontext.Banks.Any(b => b.BankName == actualBankName);
+                    var bankExists = dbcontext.Bank.Any(b => b.Bankname == actualBankName);
                     if (!bankExists)
                     {
                         return Json(new
@@ -249,7 +249,7 @@ namespace SahayataNidhi.Controllers
                 }
 
                 // Execute PostgreSQL function using FromSqlInterpolated
-                var result = dbcontext.BankDetails
+                var result = dbcontext.Bankdetails
                     .FromSqlInterpolated($@"
                         SELECT * FROM validate_ifsc(
                             {actualBankName}, 
@@ -288,7 +288,7 @@ namespace SahayataNidhi.Controllers
                 });
             }
         }
-    
-    
+
+
     }
 }

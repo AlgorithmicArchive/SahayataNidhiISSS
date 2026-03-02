@@ -44,7 +44,7 @@ namespace SahayataNidhi.Controllers
         public override void OnActionExecuted(ActionExecutedContext context)
         {
             base.OnActionExecuted(context);
-            ViewData["UserType"] = "";
+            ViewData["Usertype"] = "";
         }
 
         // JAN PARICHAY SETUP
@@ -157,7 +157,7 @@ namespace SahayataNidhi.Controllers
 
                 _logger.LogInformation("Decrypting payload...");
                 var janUser = await _helper.DecryptStringAsync(encryptedPayload);
-                _logger.LogInformation("Decryption SUCCESS. User: {UserId}", janUser.UserId);
+                _logger.LogInformation("Decryption SUCCESS. User: {Userid}", janUser.UserId);
 
                 if (janUser?.ClientToken == null)
                 {
@@ -179,8 +179,8 @@ namespace SahayataNidhi.Controllers
                     return StatusCode(500, new { status = false, response = "User creation failed" });
                 }
 
-                localUser.UserType = char.ToUpper(localUser.UserType![0])
-                     + localUser.UserType[1..];
+                localUser.Usertype = char.ToUpper(localUser.Usertype![0])
+                     + localUser.Usertype[1..];
 
                 var jwt = _helper.GenerateJwt(localUser, janUser.ClientToken);
 
@@ -221,31 +221,31 @@ namespace SahayataNidhi.Controllers
 
 
 
-                var actualUserType = localUser.UserType;
-                ssoResponse.userType = localUser.UserType;
+                var actualUserType = localUser.Usertype;
+                ssoResponse.userType = localUser.Usertype;
                 ssoResponse.actualUserType = actualUserType;
                 ssoResponse.username = localUser.Username;
-                ssoResponse.userId = localUser.UserId;
+                ssoResponse.userId = localUser.Userid;
                 ssoResponse.designation = janUser?.Designation ?? "";
                 ssoResponse.department = _helper.GetDepartment(localUser);
                 ssoResponse.profile = localUser.Profile ?? "/assets/images/profile.jpg";
                 ssoResponse.email = janUser?.Email;
 
-                if (localUser.UserType != "Citizen")
+                if (localUser.Usertype != "Citizen")
                 {
-                    // Check if AdditionalDetails exists and is not null
-                    if (!string.IsNullOrEmpty(localUser.AdditionalDetails))
+                    // Check if Additionaldetails exists and is not null
+                    if (!string.IsNullOrEmpty(localUser.Additionaldetails))
                     {
                         try
                         {
-                            var AdditionalDetails = JsonConvert.DeserializeObject<dynamic>(localUser.AdditionalDetails);
+                            var Additionaldetails = JsonConvert.DeserializeObject<dynamic>(localUser.Additionaldetails);
 
                             // Check if "Validate" property exists and is not null
-                            if (AdditionalDetails != null && AdditionalDetails!.Validate != null)
+                            if (Additionaldetails != null && Additionaldetails!.Validate != null)
                             {
                                 // Try to parse as bool, default to false if parsing fails
                                 bool isValidated = false;
-                                bool.TryParse(AdditionalDetails!.Validate.ToString(), out isValidated);
+                                bool.TryParse(Additionaldetails!.Validate.ToString(), out isValidated);
 
                                 if (!isValidated)
                                 {
@@ -255,14 +255,14 @@ namespace SahayataNidhi.Controllers
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "Failed to parse AdditionalDetails for user {UserId}", localUser.UserId);
+                            _logger.LogWarning(ex, "Failed to parse Additionaldetails for user {Userid}", localUser.Userid);
                             // If parsing fails, treat as unvalidated Citizen
                             ssoResponse.userType = "Citizen";
                         }
                     }
                     else
                     {
-                        // If AdditionalDetails is null/empty, treat as unvalidated Citizen
+                        // If Additionaldetails is null/empty, treat as unvalidated Citizen
                         ssoResponse.userType = "Citizen";
                     }
                 }
@@ -413,16 +413,16 @@ namespace SahayataNidhi.Controllers
 
             var accounts = users.Select(u => new
             {
-                userId = u.UserId,
+                userId = u.Userid,
                 username = u.Username,
                 maskedUsername = MaskUsername(u.Username!),
-                userType = u.UserType
+                userType = u.Usertype
             }).ToList();
 
             string fullName = users.First().Name ?? "User";
             string currentDateTime = DateTime.Now.AddHours(5.5)
                 .ToString("dd MMM yyyy, hh:mm tt") + " IST";
-            string accountsList = string.Join(", ", users.Select(u => $"{MaskUsername(u.Username!)} (Type: {u.UserType})"));
+            string accountsList = string.Join(", ", users.Select(u => $"{MaskUsername(u.Username!)} (Type: {u.Usertype})"));
 
             string htmlMessage = $@"
             <div style='font-family: Arial, sans-serif;'>
@@ -430,7 +430,7 @@ namespace SahayataNidhi.Controllers
                 <p>Dear {fullName},</p>
                 <p>The following accounts are associated with your email:</p>
                 <ul>
-                    {string.Join("", users.Select(u => $"<li><strong>{MaskUsername(u.Username!)}</strong> (Type: {u.UserType})</li>"))}
+                    {string.Join("", users.Select(u => $"<li><strong>{MaskUsername(u.Username!)}</strong> (Type: {u.Usertype})</li>"))}
                 </ul>
                 <p>Please select an account in the application to proceed with the password reset.</p>
                 <p>This information was requested on {currentDateTime}.</p>
@@ -466,13 +466,13 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = "User ID is required." });
             }
 
-            var user = _dbContext.Users.FirstOrDefault(u => u.Email == email && u.UserId == Convert.ToInt32(userId));
+            var user = _dbContext.Users.FirstOrDefault(u => u.Email == email && u.Userid == Convert.ToInt32(userId));
             if (user == null)
             {
                 return Json(new { status = false, message = "No account found with this email and user ID." });
             }
 
-            string otpKey = $"otp:{user.UserId}";
+            string otpKey = $"otp:{user.Userid}";
             string userName = user.Name ?? "User";
             string otp = GenerateOTP(6);
             _otpStore.StoreOtp(otpKey, otp);
@@ -481,7 +481,7 @@ namespace SahayataNidhi.Controllers
             <div style='font-family: Arial, sans-serif;'>
                 <h2 style='color: #2e6c80;'>Your OTP Code for Password Reset</h2>
                 <p>Dear {userName},</p>
-                <p>Use the following One-Time Password (OTP) to reset your password for account with Username: {MaskUsername(user.Username!)} (Type: {user.UserType}). It is valid for <strong>5 minutes</strong>.</p>
+                <p>Use the following One-Time Password (OTP) to reset your password for account with Username: {MaskUsername(user.Username!)} (Type: {user.Usertype}). It is valid for <strong>5 minutes</strong>.</p>
                 <div style='font-size: 24px; font-weight: bold; color: #333; margin: 20px 0;'>{otp}</div>
                 <p>If you did not request a password reset, please ignore this email.</p>
                 <br />
@@ -518,7 +518,7 @@ namespace SahayataNidhi.Controllers
             string fullName = users.First().Name ?? "User";
             string currentDateTime = DateTime.Now.AddHours(5.5)
                 .ToString("dd MMM yyyy, hh:mm tt") + " IST";
-            string usernamesList = string.Join(", ", users.Select(u => $"{u.Username} (Type: {u.UserType})"));
+            string usernamesList = string.Join(", ", users.Select(u => $"{u.Username} (Type: {u.Usertype})"));
 
             string htmlMessage = $@"
             <div style='font-family: Arial, sans-serif;'>
@@ -526,7 +526,7 @@ namespace SahayataNidhi.Controllers
                 <p>{fullName},</p>
                 <p>Your usernames are:</p>
                 <ul>
-                    {string.Join("", users.Select(u => $"<li><strong>{u.Username}</strong> (Type: {u.UserType})</li>"))}
+                    {string.Join("", users.Select(u => $"<li><strong>{u.Username}</strong> (Type: {u.Usertype})</li>"))}
                 </ul>
                 <p>This information was requested on {currentDateTime}.</p>
                 <p>If you did not request this, please contact support immediately.</p>
@@ -550,7 +550,7 @@ namespace SahayataNidhi.Controllers
         {
             public int Result { get; set; }
             public string? Message { get; set; }
-            public int UserId { get; set; }
+            public int Userid { get; set; }
         }
 
         [HttpPost]
@@ -560,7 +560,7 @@ namespace SahayataNidhi.Controllers
             string userId = form["userId"].ToString();
             string otp = form["otp"].ToString();
             string newPassword = form["newPassword"].ToString();
-            _logger.LogInformation($"------------------ Email: {email} UserId: {userId} OTP: {otp} PASSWORD: {newPassword} -------------------------------");
+            _logger.LogInformation($"------------------ Email: {email} Userid: {userId} OTP: {otp} PASSWORD: {newPassword} -------------------------------");
 
             if (string.IsNullOrEmpty(email) || !Regex.IsMatch(email, @"^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$"))
             {
@@ -582,13 +582,13 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = "Password must be at least 8 characters long." });
             }
 
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email && u.UserId == Convert.ToInt32(userId));
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email && u.Userid == Convert.ToInt32(userId));
             if (user == null)
             {
                 return Json(new { status = false, message = "No account found with this email and user ID." });
             }
 
-            string otpKey = $"otp:{user.UserId}";
+            string otpKey = $"otp:{user.Userid}";
             var storedOtp = _otpStore.RetrieveOtp(otpKey);
 
             if (storedOtp == null || storedOtp != otp)
@@ -615,18 +615,18 @@ namespace SahayataNidhi.Controllers
                 if (resetResult != null && resetResult.Result == 1)
                 {
                     _otpStore.RetrieveOtp(otpKey); // Clear OTP after successful reset
-                    _auditService.InsertLog(HttpContext, "Reset Password", "Password reset successfully.", user.UserId, "Success");
+                    _auditService.InsertLog(HttpContext, "Reset Password", "Password reset successfully.", user.Userid, "Success");
                     return Json(new { status = true, message = resetResult.Message });
                 }
                 else
                 {
-                    _auditService.InsertLog(HttpContext, "Reset Password", "Failed to reset password.", user.UserId, "Failure");
+                    _auditService.InsertLog(HttpContext, "Reset Password", "Failed to reset password.", user.Userid, "Failure");
                     return Json(new { status = false, message = resetResult?.Message ?? "Failed to reset password." });
                 }
             }
             catch (Exception ex)
             {
-                _auditService.InsertLog(HttpContext, "Reset Password", $"An error occurred: {ex.Message}", user.UserId, "Failure");
+                _auditService.InsertLog(HttpContext, "Reset Password", $"An error occurred: {ex.Message}", user.Userid, "Failure");
                 return Json(new { status = false, message = $"An error occurred: {ex.Message}" });
             }
         }
@@ -681,25 +681,25 @@ namespace SahayataNidhi.Controllers
             if (user == null)
                 return Json(new { status = false, response = "Invalid Username or Password." });
 
-            if (!user.IsEmailValid)
+            if (!user.Isemailvalid)
                 return Json(new { status = false, response = "Email Not Verified.", isEmailVerified = false, email = user.Email });
 
-            _logger.LogInformation($"User {user.Username} ({user.UserId}) is attempting to log in.");
+            _logger.LogInformation($"User {user.Username} ({user.Userid}) is attempting to log in.");
 
-            var actualUserType = user.UserType;
-            var displayedUserType = user.UserType;
+            var actualUserType = user.Usertype;
+            var displayedUserType = user.Usertype;
 
             string designation = "";
             string department = "";
-            _logger.LogInformation($"---------- User {user.Username} is of type {user.UserType}. Checking AdditionalDetails for validation status. ---------");
+            _logger.LogInformation($"---------- User {user.Username} is of type {user.Usertype}. Checking Additionaldetails for validation status. ---------");
 
-            if (user.UserType == "Officer" || user.UserType == "Admin")
+            if (user.Usertype == "Officer" || user.Usertype == "Admin")
             {
-                if (!string.IsNullOrWhiteSpace(user.AdditionalDetails))
+                if (!string.IsNullOrWhiteSpace(user.Additionaldetails))
                 {
                     try
                     {
-                        var details = JsonConvert.DeserializeObject<Dictionary<string, JToken>>(user.AdditionalDetails);
+                        var details = JsonConvert.DeserializeObject<Dictionary<string, JToken>>(user.Additionaldetails);
                         if (details != null)
                         {
                             if (details.TryGetValue("Validate", out var validatedToken) && !validatedToken.Value<bool>())
@@ -712,13 +712,13 @@ namespace SahayataNidhi.Controllers
                                 designation = roleToken.ToString();
                             }
 
-                            if (user.UserType == "Admin" && details.TryGetValue("Department", out var deptToken))
+                            if (user.Usertype == "Admin" && details.TryGetValue("Department", out var deptToken))
                             {
                                 if (int.TryParse(deptToken.ToString(), out int deptId))
                                 {
                                     department = _dbContext.Departments
-                                                    .FirstOrDefault(d => d.DepartmentId == deptId)?
-                                                    .DepartmentName ?? "";
+                                                    .FirstOrDefault(d => d.Departmentid == deptId)?
+                                                    .Departmentname ?? "";
                                 }
                             }
                         }
@@ -729,7 +729,7 @@ namespace SahayataNidhi.Controllers
 
             var claims = new List<Claim>
             {
-                new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+                new(ClaimTypes.NameIdentifier, user.Userid.ToString()),
                 new(ClaimTypes.Name,           user.Username!),
                 new(ClaimTypes.Role,           displayedUserType!),
                 new("Profile",                 user.Profile!)
@@ -750,17 +750,17 @@ namespace SahayataNidhi.Controllers
             var token = new JwtSecurityTokenHandler().CreateToken(tokenDescriptor);
             var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
 
-            var newSession = new UserSession
+            var newSession = new Usersessions
             {
-                SessionId = Guid.NewGuid(),
-                UserId = user.UserId,
-                JwtToken = tokenString,
-                LoginTime = DateTime.Now,
-                LastActivityTime = DateTime.Now
+                Sessionid = Guid.NewGuid(),
+                Userid = user.Userid,
+                Jwttoken = tokenString,
+                Logintime = DateTime.Now,
+                Lastactivitytime = DateTime.Now
             };
 
             await _sessionRepo.AddSessionAsync(newSession);
-            _auditService.InsertLog(HttpContext, "Login", "User logged in.", user.UserId, "Success");
+            _auditService.InsertLog(HttpContext, "Login", "User logged in.", user.Userid, "Success");
 
             return Json(new
             {
@@ -770,7 +770,7 @@ namespace SahayataNidhi.Controllers
                 actualUserType = actualUserType,
                 profile = user.Profile,
                 username = user.Username,
-                userId = user.UserId,
+                userId = user.Userid,
                 designation,
                 department
             });
@@ -806,7 +806,7 @@ namespace SahayataNidhi.Controllers
             {
                 status = true,
                 token = tokenString,
-                userType = user.UserType ?? "",
+                userType = user.Usertype ?? "",
                 profile = user.Profile ?? "",
                 username = username ?? "",
                 designation = User.FindFirst("Designation")?.Value ?? ""
@@ -843,7 +843,7 @@ namespace SahayataNidhi.Controllers
             {
                 status = true,
                 token = tokenString,
-                userType = user.UserType ?? "",
+                userType = user.Usertype ?? "",
                 profile = user.Profile ?? "",
                 username = username ?? "",
                 designation = User.FindFirst("Designation")?.Value ?? ""
@@ -896,20 +896,20 @@ namespace SahayataNidhi.Controllers
             };
 
             var Profile = new NpgsqlParameter("p_profile", "");
-            var UserType = new NpgsqlParameter("p_usertype", "Citizen");
+            var Usertype = new NpgsqlParameter("p_usertype", "Citizen");
             var backupCodesParam = new NpgsqlParameter("p_backupcodes", JsonConvert.SerializeObject(backupCodes));
-            var AdditionalDetails = new NpgsqlParameter("p_additionaldetails", JsonConvert.SerializeObject(additionalDetails));
+            var Additionaldetails = new NpgsqlParameter("p_additionaldetails", JsonConvert.SerializeObject(additionalDetails));
             var registeredDate = new NpgsqlParameter("p_registereddate", DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt"));
 
             var result = await _dbContext.Users.FromSqlRaw(
                 "SELECT * FROM registeruser({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9})",
                 fullName.Value, username.Value, password.Value, email.Value, mobileNumber.Value,
-                Profile.Value, UserType.Value, backupCodesParam.Value, AdditionalDetails.Value, registeredDate.Value
+                Profile.Value, Usertype.Value, backupCodesParam.Value, Additionaldetails.Value, registeredDate.Value
             ).ToListAsync();
 
             if (result.Count != 0)
             {
-                result[0].IsEmailValid = true;
+                result[0].Isemailvalid = true;
                 await _dbContext.SaveChangesAsync();
                 return Json(new { status = true, response = "Registration Successful." });
             }
@@ -958,12 +958,12 @@ namespace SahayataNidhi.Controllers
 
                 if (existingUser != null)
                 {
-                    if (existingUser.UserType != "Citizen")
+                    if (existingUser.Usertype != "Citizen")
                         return Json(new { status = false, message = "Email already registered as non-Citizen." });
 
-                    var currentDetails = string.IsNullOrEmpty(existingUser.AdditionalDetails)
+                    var currentDetails = string.IsNullOrEmpty(existingUser.Additionaldetails)
                         ? new { }
-                        : JsonConvert.DeserializeObject(existingUser.AdditionalDetails) ?? new { };
+                        : JsonConvert.DeserializeObject(existingUser.Additionaldetails) ?? new { };
 
                     var mergedDetails = new
                     {
@@ -972,17 +972,17 @@ namespace SahayataNidhi.Controllers
                     };
 
                     existingUser.Username = username;
-                    existingUser.MobileNumber = mobileNumber;
-                    existingUser.UserType = "Officer";
-                    existingUser.AdditionalDetails = JsonConvert.SerializeObject(mergedDetails);
-                    existingUser.RegisteredDate = registeredDate;
+                    existingUser.Mobilenumber = mobileNumber;
+                    existingUser.Usertype = "Officer";
+                    existingUser.Additionaldetails = JsonConvert.SerializeObject(mergedDetails);
+                    existingUser.Registereddate = registeredDate;
 
                     await _dbContext.SaveChangesAsync();
 
                     return Json(new
                     {
                         status = true,
-                        userId = existingUser.UserId,
+                        userId = existingUser.Userid,
                         message = "Upgraded from Citizen to Officer successfully."
                     });
                 }
@@ -1020,7 +1020,7 @@ namespace SahayataNidhi.Controllers
                         return Json(new
                         {
                             status = true,
-                            userId = result[0].UserId,
+                            userId = result[0].Userid,
                             message = "Officer registered successfully."
                         });
                     }
@@ -1071,12 +1071,12 @@ namespace SahayataNidhi.Controllers
 
             if (!verified && !string.IsNullOrEmpty(backupCode) && !string.IsNullOrEmpty(userId))
             {
-                var user = _dbContext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
-                if (user?.BackupCodes != null)
+                var user = _dbContext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
+                if (user?.Backupcodes != null)
                 {
                     try
                     {
-                        var codes = JsonConvert.DeserializeObject<Dictionary<string, List<string>>>(user.BackupCodes)
+                        var codes = JsonConvert.DeserializeObject<Dictionary<string, List<string>>>(user.Backupcodes)
                                     ?? new Dictionary<string, List<string>>();
 
                         if (codes.TryGetValue("unused", out var unused) &&
@@ -1086,7 +1086,7 @@ namespace SahayataNidhi.Controllers
                             unused.Remove(backupCode);
                             used.Add(backupCode);
 
-                            user.BackupCodes = JsonConvert.SerializeObject(codes);
+                            user.Backupcodes = JsonConvert.SerializeObject(codes);
                             _dbContext.SaveChanges();
 
                             verified = true;
@@ -1095,7 +1095,7 @@ namespace SahayataNidhi.Controllers
                     }
                     catch (System.Text.Json.JsonException ex)
                     {
-                        _logger.LogError(ex, "Failed to parse backup codes for user {UserId}", userId);
+                        _logger.LogError(ex, "Failed to parse backup codes for user {Userid}", userId);
                     }
                 }
             }
@@ -1124,12 +1124,12 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = "No account found with this email." });
             }
 
-            if (user.IsEmailValid)
+            if (user.Isemailvalid)
             {
                 return Json(new { status = false, message = "Email is already verified." });
             }
 
-            string otpKey = $"email_verify_otp:{user.UserId}";
+            string otpKey = $"email_verify_otp:{user.Userid}";
             string otp = GenerateOTP(7);
             _otpStore.StoreOtp(otpKey, otp);
 
@@ -1159,13 +1159,13 @@ namespace SahayataNidhi.Controllers
             var user = _dbContext.Users.FirstOrDefault(u => u.Email == email);
             if (user == null) return Json(new { status = false, message = "User not found" });
 
-            string otpKey = $"email_verify_otp:{user.UserId}";
+            string otpKey = $"email_verify_otp:{user.Userid}";
             var storedOtp = _otpStore.RetrieveOtp(otpKey);
 
             if (storedOtp == null || storedOtp != otp)
                 return Json(new { status = false, message = "Invalid or expired OTP." });
 
-            user.IsEmailValid = true;
+            user.Isemailvalid = true;
             _dbContext.SaveChanges();
 
             return Json(new { status = true, message = "Email verified successfully." });
@@ -1234,7 +1234,7 @@ namespace SahayataNidhi.Controllers
         [HttpGet]
         public IActionResult GetDistricts()
         {
-            var districts = _dbContext.Districts.ToList();
+            var districts = _dbContext.District.ToList();
             return Json(new { status = true, districts });
         }
 
@@ -1243,7 +1243,7 @@ namespace SahayataNidhi.Controllers
         {
             if (int.TryParse(districtId, out int districtIdParsed))
             {
-                var tehsils = _dbContext.Tehsils.Where(u => u.DistrictId == districtIdParsed).ToList();
+                var tehsils = _dbContext.Tehsil.Where(u => u.Districtid == districtIdParsed).ToList();
                 return Json(new { status = true, tehsils });
             }
             return Json(new { status = false, response = "Invalid district ID." });
@@ -1259,7 +1259,7 @@ namespace SahayataNidhi.Controllers
         [HttpGet]
         public IActionResult GetDesignations(string deparmentId)
         {
-            var designations = _dbContext.OfficersDesignations.Where(des => des.DepartmentId == Convert.ToInt32(deparmentId)).ToList();
+            var designations = _dbContext.Officersdesignations.Where(des => des.Departmentid == Convert.ToInt32(deparmentId)).ToList();
             return Json(new { status = true, designations });
         }
 
@@ -1322,14 +1322,14 @@ namespace SahayataNidhi.Controllers
         [HttpGet]
         public IActionResult CheckEmail(string email, string userType)
         {
-            bool exists = _dbContext.Users.Any(u => u.Email == email && u.UserType == userType);
+            bool exists = _dbContext.Users.Any(u => u.Email == email && u.Usertype == userType);
             return Json(new { status = true, isUnique = !exists });
         }
 
         [HttpGet]
         public IActionResult CheckMobileNumber(string number, string userType)
         {
-            bool exists = _dbContext.Users.Any(u => u.MobileNumber == number && u.UserType == userType);
+            bool exists = _dbContext.Users.Any(u => u.Mobilenumber == number && u.Usertype == userType);
             return Json(new { status = true, isUnique = !exists });
         }
 

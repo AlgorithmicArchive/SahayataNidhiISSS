@@ -15,7 +15,7 @@ namespace SahayataNidhi.Controllers
         {
             // Fetch all services from the database
             var services = dbcontext.Services
-                                    .OrderBy(s => s.ServiceId)
+                                    .OrderBy(s => s.Serviceid)
                                     .ToList();
 
             var totalRecords = services.Count;
@@ -40,12 +40,12 @@ namespace SahayataNidhi.Controllers
 
             foreach (var item in pagedData)
             {
-                // Safely handle nullable DepartmentId
+                // Safely handle nullable Departmentid
                 var department = "N/A";
-                if (item.DepartmentId.HasValue)
+                if (item.Departmentid.HasValue)
                 {
-                    var dept = dbcontext.Departments.FirstOrDefault(d => d.DepartmentId == item.DepartmentId.Value);
-                    department = dept?.DepartmentName ?? "N/A";
+                    var dept = dbcontext.Departments.FirstOrDefault(d => d.Departmentid == item.Departmentid.Value);
+                    department = dept?.Departmentname ?? "N/A";
                 }
 
                 var actions = new List<dynamic>
@@ -60,7 +60,7 @@ namespace SahayataNidhi.Controllers
                     new
                     {
                         id = (pageIndex * pageSize) + index + 2,
-                        tooltip = (bool)item.ActiveForOfficers! ? "Deactivate for Officers" : "Activate for Officers",
+                        tooltip = (bool)item.Activeforofficers! ? "Deactivate for Officers" : "Activate for Officers",
                         color = "#A8E6CF",
                         actionFunction = "ToggleServiceActiveForOfficers"
                     }
@@ -69,11 +69,11 @@ namespace SahayataNidhi.Controllers
                 data.Add(new
                 {
                     sno = (pageIndex * pageSize) + index + 1,
-                    servicename = item.ServiceName,
+                    servicename = item.Servicename,
                     department = department,
-                    serviceId = item.ServiceId,
+                    serviceId = item.Serviceid,
                     isActive = item.Active,
-                    isActiveForOfficers = item.ActiveForOfficers,
+                    isActiveForOfficers = item.Activeforofficers,
                     customActions = actions,
                 });
 
@@ -92,7 +92,7 @@ namespace SahayataNidhi.Controllers
         public IActionResult GetWebServicesDashboard(int pageIndex = 0, int pageSize = 10)
         {
             // Fetch all services from the database
-            var webServices = dbcontext.WebServices
+            var webServices = dbcontext.Webservice
                                        .Include(ws => ws.Service) // Assuming navigation property
                                        .ToList();
 
@@ -118,14 +118,14 @@ namespace SahayataNidhi.Controllers
 
             foreach (var item in pagedData)
             {
-                var serviceName = dbcontext.Services.FirstOrDefault(s => s.ServiceId == item.ServiceId)?.ServiceName ?? "N/A";
+                var serviceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == item.Serviceid)?.Servicename ?? "N/A";
 
                 var actions = new List<dynamic>
                 {
                     new
                     {
                         id = (pageIndex * pageSize) + index + 1,
-                        tooltip = item.IsActive ? "Deactivate" : "Activate",
+                        tooltip = item.Isactive ? "Deactivate" : "Activate",
                         color = "#F0C38E",
                         actionFunction = "ToggleWebServiceActivation"
                     }
@@ -135,10 +135,10 @@ namespace SahayataNidhi.Controllers
                 {
                     sno = (pageIndex * pageSize) + index + 1,
                     servicename = serviceName,
-                    webservicename = item.WebServiceName,
+                    webservicename = item.Webservicename,
                     customActions = actions,
                     webserviceId = item.Id,
-                    isActive = item.IsActive
+                    isActive = item.Isactive
                 });
 
                 index++;
@@ -157,8 +157,8 @@ namespace SahayataNidhi.Controllers
         {
             try
             {
-                var webService = dbcontext.WebServices
-                    .FirstOrDefault(ws => ws.ServiceId == serviceId);
+                var webService = dbcontext.Webservice
+                    .FirstOrDefault(ws => ws.Serviceid == serviceId);
 
                 if (webService == null)
                 {
@@ -170,14 +170,15 @@ namespace SahayataNidhi.Controllers
                     status = true,
                     config = new
                     {
-                        webService.Id, // Added WebServiceId
-                        webService.ServiceId,
-                        webService.WebServiceName,
-                        webService.ApiEndpoint,
-                        webService.OnAction,
-                        webService.FieldMappings,
-                        webService.CreatedAt,
-                        webService.UpdatedAt
+                        id = webService.Id,
+                        serviceId = webService.Serviceid,
+                        webServiceName = webService.Webservicename,
+                        apiEndpoint = webService.Apiendpoint,
+                        onAction = webService.Onaction,
+                        fieldMappings = webService.Fieldmappings,
+                        headers = webService.Headers,          // ← ADD THIS LINE
+                        createdAt = webService.Createdat,
+                        updatedAt = webService.Updatedat
                     }
                 });
             }
@@ -187,11 +188,10 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = $"Error fetching configuration: {ex.Message}" });
             }
         }
-
         [HttpGet]
         public IActionResult GetLetterDetails(int serviceId, string objField)
         {
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (service == null || string.IsNullOrWhiteSpace(service.Letters))
             {
                 return NotFound("Service or Letters data not found.");
@@ -225,14 +225,14 @@ namespace SahayataNidhi.Controllers
             }
 
             // Fetch the service
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == parsedServiceId);
-            if (service == null || string.IsNullOrWhiteSpace(service.FormElement))
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == parsedServiceId);
+            if (service == null || string.IsNullOrWhiteSpace(service.Formelement))
             {
                 return BadRequest(new { status = false, message = "Service not found or no form elements found." });
             }
 
             // Parse the JSON into a JToken
-            JToken root = JToken.Parse(service.FormElement);
+            JToken root = JToken.Parse(service.Formelement);
 
             // Extract sections and fields
             var sections = new List<object>();
@@ -306,7 +306,7 @@ namespace SahayataNidhi.Controllers
             }
 
             // Get column names from DbContext
-            var entityType = dbcontext.Model.FindEntityType(typeof(CitizenApplication));
+            var entityType = dbcontext.Model.FindEntityType(typeof(CitizenApplications));
             if (entityType == null)
             {
                 return BadRequest(new { status = false, message = "Entity not found in DbContext." });
@@ -333,9 +333,9 @@ namespace SahayataNidhi.Controllers
             }
 
             var service = dbcontext.Services
-                .FirstOrDefault(s => s.ServiceId == serviceIdInt);
+                .FirstOrDefault(s => s.Serviceid == serviceIdInt);
 
-            if (service == null || string.IsNullOrWhiteSpace(service.FormElement))
+            if (service == null || string.IsNullOrWhiteSpace(service.Formelement))
             {
                 return BadRequest(new { error = "No form elements found for the given serviceId." });
             }
@@ -356,7 +356,7 @@ namespace SahayataNidhi.Controllers
                 // For PostgreSQL, we can also use direct SQL if needed for complex parsing
                 // But for simple operations, the existing logic works fine
                 // Parse the JSON string
-                JToken root = JToken.Parse(service.FormElement);
+                JToken root = JToken.Parse(service.Formelement);
 
                 // Extract form names from JSON with validation
                 var formNames = root
@@ -404,14 +404,14 @@ namespace SahayataNidhi.Controllers
             }
 
             // Fetch the service from the database
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == serviceId);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
             if (service == null)
             {
                 return Json(new { status = false, message = "Service not found." });
             }
 
-            // Check if DocumentFields exist
-            if (string.IsNullOrEmpty(service.DocumentFields))
+            // Check if Documentfields exist
+            if (string.IsNullOrEmpty(service.Documentfields))
             {
                 return Json(new
                 {
@@ -425,10 +425,10 @@ namespace SahayataNidhi.Controllers
                 });
             }
 
-            // Deserialize DocumentFields
+            // Deserialize Documentfields
             try
             {
-                var documentFields = JsonConvert.DeserializeObject<Dictionary<string, List<object>>>(service.DocumentFields);
+                var documentFields = JsonConvert.DeserializeObject<Dictionary<string, List<object>>>(service.Documentfields);
                 if (documentFields == null)
                 {
                     return Json(new
@@ -473,7 +473,7 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = "Invalid service ID or email type." });
             }
 
-            var service = dbcontext.EmailSettings.FirstOrDefault(s => s.Id == serviceId);
+            var service = dbcontext.Emailsettings.FirstOrDefault(s => s.Id == serviceId);
             if (service == null)
             {
                 return Json(new { status = false, message = "Service not found." });
@@ -515,8 +515,8 @@ namespace SahayataNidhi.Controllers
 
                 var service = await dbcontext.Services
                     .AsNoTracking()
-                    .Where(s => s.ServiceId == serviceId)
-                    .Select(s => new { s.SubmissionLimitConfig })
+                    .Where(s => s.Serviceid == serviceId)
+                    .Select(s => new { s.Submissionlimitconfig })
                     .FirstOrDefaultAsync();
 
                 if (service == null)
@@ -526,7 +526,7 @@ namespace SahayataNidhi.Controllers
 
                 try
                 {
-                    var config = JsonConvert.DeserializeObject<dynamic>(service.SubmissionLimitConfig!);
+                    var config = JsonConvert.DeserializeObject<dynamic>(service.Submissionlimitconfig!);
                     return Ok(new { status = true, config });
                 }
                 catch (JsonException ex)

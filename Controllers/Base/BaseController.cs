@@ -32,15 +32,15 @@ namespace SahayataNidhi.Controllers
             string storageValue = form["storageValue"].ToString();
 
             var userId = Convert.ToInt32(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-            var userDetails = dbcontext.Users.FirstOrDefault(u => u.UserId == userId);
+            var userDetails = dbcontext.Users.FirstOrDefault(u => u.Userid == userId);
 
-            if (userDetails == null || string.IsNullOrWhiteSpace(userDetails.AdditionalDetails))
+            if (userDetails == null || string.IsNullOrWhiteSpace(userDetails.Additionaldetails))
             {
                 return BadRequest("User not found or AdditionalDetails is empty.");
             }
 
             // Parse AdditionalDetails as JSON
-            var additionalDetails = JObject.Parse(userDetails.AdditionalDetails);
+            var additionalDetails = JObject.Parse(userDetails.Additionaldetails);
 
             if (additionalDetails.TryGetValue("TableSettings", out JToken? tableSettingsToken) &&
                 tableSettingsToken is JObject tableSettings)
@@ -58,7 +58,7 @@ namespace SahayataNidhi.Controllers
             }
 
             // ✅ Important: Save updated JSON back to user object
-            userDetails.AdditionalDetails = additionalDetails.ToString();
+            userDetails.Additionaldetails = additionalDetails.ToString();
 
             // Persist changes
             dbcontext.SaveChanges();

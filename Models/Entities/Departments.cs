@@ -5,7 +5,7 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Departments
 {
-    public int DepartmentId { get; set; }
+    public int Departmentid { get; set; }
 
-    public string DepartmentName { get; set; } = null!;
+    public string Departmentname { get; set; } = null!;
 }

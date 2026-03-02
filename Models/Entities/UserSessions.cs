@@ -3,15 +3,15 @@ using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class UserSession
+public partial class Usersessions
 {
-    public Guid SessionId { get; set; }
+    public Guid Sessionid { get; set; }
 
-    public int UserId { get; set; }
+    public int Userid { get; set; }
 
-    public string JwtToken { get; set; } = null!;
+    public string Jwttoken { get; set; } = null!;
 
-    public DateTime LoginTime { get; set; }
+    public DateTime Logintime { get; set; }
 
-    public DateTime LastActivityTime { get; set; }
+    public DateTime Lastactivitytime { get; set; }
 }

@@ -41,7 +41,7 @@ namespace SahayataNidhi.Controllers.User
         {
             base.OnActionExecuted(context);
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var citizen = dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userIdClaim);
+            var citizen = dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userIdClaim);
 
             ViewData["UserType"] = "Citizen";
             ViewData["UserName"] = citizen?.Username;
@@ -60,8 +60,8 @@ namespace SahayataNidhi.Controllers.User
 
             var ServiceList = services.Select(service => new
             {
-                service.ServiceId,
-                service.ServiceName
+                service.Serviceid,
+                service.Servicename
             }).ToList();
 
             return Json(new { status = true, ServiceList });
@@ -104,14 +104,14 @@ namespace SahayataNidhi.Controllers.User
                 // Direct database insertion into Feedback table
                 var feedback = new Models.Entities.Feedback
                 {
-                    UserId = userId,
+                    Userid = userId,
                     Description = message, // Assuming Description field is for the message
                     Files = serviceRelatedJson, // Using Files field to store service-related JSON
                     Status = "Pending",
-                    CreatedOn = DateTime.Now
+                    Createdon = DateTime.Now
                 };
 
-                dbcontext.Feedbacks.Add(feedback);
+                dbcontext.Feedback.Add(feedback);
                 dbcontext.SaveChanges();
 
                 return RedirectToAction("Index");

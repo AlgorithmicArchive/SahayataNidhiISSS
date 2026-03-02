@@ -7,11 +7,11 @@ public partial class Tehsil
 {
     public int Uuid { get; set; }
 
-    public int DistrictId { get; set; }
+    public int Districtid { get; set; }
 
-    public int TehsilId { get; set; }
+    public int Tehsilid { get; set; }
 
-    public string? TehsilName { get; set; }
+    public string? Tehsilname { get; set; }
 
-    public bool? IsTswo { get; set; }
+    public bool? Istswo { get; set; }
 }

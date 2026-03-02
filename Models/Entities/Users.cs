@@ -5,7 +5,7 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Users
 {
-    public int UserId { get; set; }
+    public int Userid { get; set; }
 
     public string? Name { get; set; }
 
@@ -15,19 +15,19 @@ public partial class Users
 
     public byte[]? Password { get; set; }
 
-    public string? MobileNumber { get; set; }
+    public string? Mobilenumber { get; set; }
 
     public string? Profile { get; set; }
 
-    public string? UserType { get; set; }
+    public string? Usertype { get; set; }
 
-    public string? BackupCodes { get; set; }
+    public string? Backupcodes { get; set; }
 
-    public string? AdditionalDetails { get; set; }
+    public string? Additionaldetails { get; set; }
 
-    public bool IsEmailValid { get; set; }
+    public bool Isemailvalid { get; set; }
 
-    public string? RegisteredDate { get; set; }
+    public string? Registereddate { get; set; }
 
-    public virtual ICollection<AuditLogs> AuditLogs { get; set; } = new List<AuditLogs>();
+    public virtual ICollection<Auditlogs> Auditlogs { get; set; } = new List<Auditlogs>();
 }

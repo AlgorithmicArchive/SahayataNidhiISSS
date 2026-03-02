@@ -148,8 +148,7 @@ const StyledFormControl = styled(FormControl)`
   }
 `;
 
-// ==================== Sub‑Components ====================
-// InputCell (memoized)
+// ==================== Sub‑Components (Memoized) ====================
 const InputCell = React.memo(({ row, inputValues, setInputValues }) => {
   const [localValue, setLocalValue] = useState(inputValues[row.original.sno] || "");
 
@@ -192,7 +191,6 @@ const InputCell = React.memo(({ row, inputValues, setInputValues }) => {
   );
 });
 
-// UserTypeSelect (memoized)
 const UserTypeSelect = React.memo(({ row, onChange }) => {
   const [value, setValue] = useState(row.original.userType || "Officer");
 
@@ -216,6 +214,48 @@ const UserTypeSelect = React.memo(({ row, onChange }) => {
         <MenuItem value="Admin">Admin</MenuItem>
       </Select>
     </FormControl>
+  );
+});
+
+const ActionsCell = React.memo(({ row, actionFunctions, inputValues }) => {
+  const actions = row.original.customActions;
+
+  if (!Array.isArray(actions)) {
+    return (
+      <Typography variant="body2" sx={{ fontWeight: 600, color: "#1f2937" }}>
+        {actions}
+      </Typography>
+    );
+  }
+
+  return (
+    <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+      {actions.map((action, index) => (
+        <Tooltip key={index} title={action.tooltipText} arrow>
+          <Button
+            sx={{
+              width: "max-content",
+              background: "linear-gradient(to right, #10B582, #0D9588)",
+              color: "#fff",
+              fontWeight: 600,
+            }}
+            onClick={() =>
+              actionFunctions[action.actionFunction]?.(
+                row,
+                action,
+                {
+                  inputValue: inputValues[row.original.sno] || "",
+                  allInputValues: inputValues,
+                }
+              )
+            }
+            aria-label={`${action.name || action.tooltip} for row ${row.original.sno}`}
+          >
+            {action.name || action.tooltip}
+          </Button>
+        </Tooltip>
+      ))}
+    </Box>
   );
 });
 
@@ -254,7 +294,7 @@ const ServerSideTable = React.forwardRef(
       selectedAction,
       setSelectedAction,
       Title,
-      searchableFields = ["referenceNumber", "applicantName"], // fields to search on server
+      searchableFields = ["referenceNumber", "applicantName"],
     },
     ref
   ) => {
@@ -275,18 +315,22 @@ const ServerSideTable = React.forwardRef(
     const [downloadType, setDownloadType] = useState(null);
     const [inputValues, setInputValues] = useState({});
 
-    // Global filter (built‑in MRT search)
+    // Global filter
     const [globalFilter, setGlobalFilter] = useState("");
     const debouncedGlobalFilter = useDebounce(globalFilter, 500);
 
-    // Storage key for column settings
+    // Storage key
     const storageKey = Title.toLowerCase()
       .replace(/(?:^\w|[A-Z]|\b\w)/g, (word, index) =>
         index === 0 ? word.toLowerCase() : word.toUpperCase()
       )
       .replace(/\s+/g, "");
 
-    // ---------- Refs to avoid dependency loops ----------
+    // State to track if settings have been loaded and if loading succeeded
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [settingsLoadSuccess, setSettingsLoadSuccess] = useState(false);
+
+    // Refs for dependencies
     const paginationRef = useRef(pagination);
     const globalFilterRef = useRef(debouncedGlobalFilter);
     const extraParamsRef = useRef(extraParams);
@@ -309,7 +353,134 @@ const ServerSideTable = React.forwardRef(
       searchableFieldsRef.current = searchableFields;
     }, [searchableFields]);
 
-    // ---------- Data fetching (stable) ----------
+    // ---------- Load saved column settings on mount ----------
+    useEffect(() => {
+      const fetchTableSettings = async () => {
+        try {
+          const response = await axiosInstance.get("/Base/GetTableSettings", {
+            params: { storageKey },
+          });
+          if (response.data?.status && response.data?.tableSettings) {
+            const raw = response.data.tableSettings;
+            console.log("Raw tableSettings:", raw);
+
+            // If it's already an object (maybe API returns parsed JSON)
+            if (typeof raw === 'object' && raw !== null) {
+              console.log("Settings already parsed:", raw);
+              if (raw.savedColumnOrder) setColumnOrder(raw.savedColumnOrder);
+              if (raw.savedColumnVisibility) setColumnVisibility(raw.savedColumnVisibility);
+              setSettingsLoadSuccess(true);
+            }
+            // If it's a non‑empty string, try to parse
+            else if (typeof raw === 'string' && raw.trim() !== '') {
+              try {
+                const savedSettings = JSON.parse(raw);
+                console.log("Parsed saved settings:", savedSettings);
+                if (savedSettings.savedColumnOrder) setColumnOrder(savedSettings.savedColumnOrder);
+                if (savedSettings.savedColumnVisibility)
+                  setColumnVisibility(savedSettings.savedColumnVisibility);
+                setSettingsLoadSuccess(true);
+              } catch (parseError) {
+                console.error("Failed to parse tableSettings:", parseError, "Raw value:", raw);
+                setSettingsLoadSuccess(false);
+              }
+            } else {
+              // Empty string or other falsy – no saved settings
+              console.log("No saved settings (empty or falsy)");
+              setSettingsLoadSuccess(false);
+            }
+          } else {
+            // No settings in response
+            console.log("No settings in response");
+            setSettingsLoadSuccess(false);
+          }
+        } catch (error) {
+          console.error("Error fetching table settings:", error);
+          setSettingsLoadSuccess(false);
+        } finally {
+          setSettingsLoaded(true);
+        }
+      };
+      fetchTableSettings();
+    }, [storageKey]);
+
+    // ---------- Once settings are loaded and columns are available, ensure order/visibility includes all columns ----------
+    useEffect(() => {
+      if (!settingsLoaded || columns.length === 0) return;
+
+      console.log("Merging columns. Current columnOrder:", columnOrder);
+      console.log("Current columns:", columns.map(c => c.accessorKey));
+
+      // Merge column order: keep saved order (migrating old "actions" key), append any new columns
+      setColumnOrder((prevOrder) => {
+        const newColumnKeys = columns.map((c) => c.accessorKey);
+        if (prevOrder.length === 0) {
+          // No saved order yet – create default order with Actions first if it exists
+          const actionsKey = 'mrt-row-actions';
+          console.log("No saved order, building default. actionsKey found?", newColumnKeys.includes(actionsKey));
+          if (newColumnKeys.includes(actionsKey)) {
+            // Put Actions first, then the others in original order (except Actions)
+            const others = newColumnKeys.filter(key => key !== actionsKey);
+            const defaultOrder = [actionsKey, ...others];
+            console.log("Default order with Actions first:", defaultOrder);
+            return defaultOrder;
+          }
+          console.log("Actions key not found, returning original order");
+          return newColumnKeys;
+        }
+        // Migrate any old "actions" key to "mrt-row-actions"
+        const adjustedPrev = prevOrder.map(key => key === "actions" ? "mrt-row-actions" : key);
+        // Keep existing order, add any new columns at the end
+        const merged = [...adjustedPrev];
+        newColumnKeys.forEach((key) => {
+          if (!merged.includes(key)) merged.push(key);
+        });
+        // Remove any keys that no longer exist
+        const filtered = merged.filter((key) => newColumnKeys.includes(key));
+        console.log("Merged columnOrder (from saved):", filtered);
+        return filtered;
+      });
+
+      // Merge column visibility: preserve saved visibility, set new columns visible
+      setColumnVisibility((prev) => {
+        const newVis = { ...prev };
+        columns.forEach((col) => {
+          if (!(col.accessorKey in newVis)) {
+            newVis[col.accessorKey] = true;
+          }
+        });
+        // Remove keys for columns that no longer exist
+        Object.keys(newVis).forEach((key) => {
+          if (!columns.some((c) => c.accessorKey === key)) delete newVis[key];
+        });
+        return newVis;
+      });
+    }, [settingsLoaded, columns]);
+
+    // ---------- Save column settings whenever they change ----------
+    const saveColumnSettings = useCallback(async () => {
+      // Only save if settings have been loaded successfully at least once
+      if (!settingsLoadSuccess) return;
+      const formData = new FormData();
+      formData.append("storageKey", storageKey);
+      formData.append(
+        "storageValue",
+        JSON.stringify({
+          savedColumnOrder: columnOrder,
+          savedColumnVisibility: columnVisibility,
+        })
+      );
+      console.log("Saving column settings:", { columnOrder, columnVisibility });
+      await axiosInstance.post("/Base/SaveTableSettings", formData);
+    }, [columnOrder, columnVisibility, storageKey, settingsLoadSuccess]);
+
+    useEffect(() => {
+      if (columnOrder.length > 0 || Object.keys(columnVisibility).length > 0) {
+        saveColumnSettings();
+      }
+    }, [columnOrder, columnVisibility, saveColumnSettings]);
+
+    // ---------- Data fetching ----------
     const fetchData = useCallback(async () => {
       const currentUrl = urlRef.current;
       if (!currentUrl) {
@@ -325,7 +496,6 @@ const ServerSideTable = React.forwardRef(
           ...extraParamsRef.current,
         };
 
-        // Add search if active
         if (globalFilterRef.current) {
           params.searchQuery = globalFilterRef.current;
           params.searchFields = JSON.stringify(searchableFieldsRef.current);
@@ -378,6 +548,37 @@ const ServerSideTable = React.forwardRef(
           });
         }
 
+        // Add Actions column with the key "mrt-row-actions" for compatibility with saved settings
+        if (hasAnyActions) {
+          updatedColumns.push({
+            accessorKey: "mrt-row-actions",
+            header: "Actions",
+            size: 200,
+            enableSorting: false,
+            enableColumnFilter: false,
+            Cell: ({ row }) => (
+              <ActionsCell
+                row={row}
+                actionFunctions={actionFunctions}
+                inputValues={inputValues}
+              />
+            ),
+          });
+        }
+
+        // --- PROVISIONAL DEFAULT ORDER ---
+        // If no column order has been set yet and settings haven't loaded, set a default order with Actions first.
+        if (columnOrder.length === 0 && !settingsLoaded && hasAnyActions) {
+          const actionsKey = 'mrt-row-actions';
+          const newColumnKeys = updatedColumns.map(c => c.accessorKey);
+          if (newColumnKeys.includes(actionsKey)) {
+            const others = newColumnKeys.filter(key => key !== actionsKey);
+            const defaultOrder = [actionsKey, ...others];
+            console.log("Setting provisional default order (Actions first):", defaultOrder);
+            setColumnOrder(defaultOrder);
+          }
+        }
+
         setHasActions(hasAnyActions);
         setColumns(updatedColumns);
         setInboxData(json.data || []);
@@ -385,34 +586,6 @@ const ServerSideTable = React.forwardRef(
         setTotalRecords(json.totalRecords || 0);
         setPageCount(Math.ceil((json.totalRecords || 0) / paginationRef.current.pageSize));
 
-        // Column order
-        setColumnOrder((prevOrder) => {
-          if (prevOrder.length === 0) return updatedColumns.map((col) => col.accessorKey);
-          const newOrder = [...prevOrder];
-          updatedColumns.forEach((col) => {
-            if (!newOrder.includes(col.accessorKey)) newOrder.push(col.accessorKey);
-          });
-          return newOrder.filter((key) => updatedColumns.some((col) => col.accessorKey === key));
-        });
-
-        // Column visibility
-        setColumnVisibility((prevVisibility) => {
-          if (Object.keys(prevVisibility).length === 0) {
-            const initial = {};
-            updatedColumns.forEach((col) => (initial[col.accessorKey] = true));
-            return initial;
-          }
-          const newVis = { ...prevVisibility };
-          updatedColumns.forEach((col) => {
-            if (!(col.accessorKey in newVis)) newVis[col.accessorKey] = true;
-          });
-          Object.keys(newVis).forEach((key) => {
-            if (!updatedColumns.some((col) => col.accessorKey === key)) delete newVis[key];
-          });
-          return newVis;
-        });
-
-        // Optional toast for search results
         if (globalFilterRef.current && json.totalRecords > 0) {
           toast.info(`Found ${json.totalRecords} matching records`, {
             position: "top-center",
@@ -432,9 +605,9 @@ const ServerSideTable = React.forwardRef(
       } finally {
         setIsLoading(false);
       }
-    }, []); // No dependencies – uses refs
+    }, [actionFunctions, inputValues, columnOrder.length, settingsLoaded, hasActions]);
 
-    // Trigger fetch when relevant state changes
+    // Trigger fetch
     useEffect(() => {
       fetchData();
     }, [
@@ -457,7 +630,7 @@ const ServerSideTable = React.forwardRef(
           const response = await axiosInstance.post("/Admin/UpdateUserType", formdata);
           if (response.data.status) {
             toast.success(response.data.message, { position: "top-center" });
-            fetchData(); // refresh after change
+            fetchData();
           } else {
             toast.error(response.data.message || "Update failed.", { position: "top-center" });
           }
@@ -468,47 +641,6 @@ const ServerSideTable = React.forwardRef(
       },
       [fetchData]
     );
-
-    // ---------- Column settings persistence ----------
-    useEffect(() => {
-      const fetchTableSettings = async () => {
-        try {
-          const response = await axiosInstance.get("/Base/GetTableSettings", {
-            params: { storageKey },
-          });
-          if (response.data?.status && response.data?.tableSettings) {
-            const savedSettings = JSON.parse(response.data.tableSettings);
-            if (savedSettings) {
-              if (savedSettings.savedColumnOrder) setColumnOrder(savedSettings.savedColumnOrder);
-              if (savedSettings.savedColumnVisibility)
-                setColumnVisibility(savedSettings.savedColumnVisibility);
-            }
-          }
-        } catch (error) {
-          console.error("Error fetching table settings:", error);
-        }
-      };
-      fetchTableSettings();
-    }, [storageKey]);
-
-    const saveColumnSettings = useCallback(async () => {
-      const formData = new FormData();
-      formData.append("storageKey", storageKey);
-      formData.append(
-        "storageValue",
-        JSON.stringify({
-          savedColumnOrder: columnOrder,
-          savedColumnVisibility: columnVisibility,
-        })
-      );
-      await axiosInstance.post("/Base/SaveTableSettings", formData);
-    }, [columnOrder, columnVisibility, storageKey]);
-
-    useEffect(() => {
-      if (columnOrder.length > 0 || Object.keys(columnVisibility).length > 0) {
-        saveColumnSettings();
-      }
-    }, [columnOrder, columnVisibility, saveColumnSettings]);
 
     // ---------- Download handlers ----------
     const handleDownload = async (format, scope) => {
@@ -594,7 +726,6 @@ const ServerSideTable = React.forwardRef(
       }
     };
 
-    // Memoized data/columns (optional, but good practice)
     const memoizedTableData = useMemo(() => tableData, [tableData]);
     const memoizedColumns = useMemo(() => columns, [columns]);
 
@@ -703,11 +834,11 @@ const ServerSideTable = React.forwardRef(
               isLoading,
               columnOrder,
               columnVisibility,
-              globalFilter, // built‑in search state
+              globalFilter,
               ...(canSanction && pendingApplications && { rowSelection }),
             }}
             onPaginationChange={setPagination}
-            onGlobalFilterChange={setGlobalFilter} // triggers server search
+            onGlobalFilterChange={setGlobalFilter}
             onRowSelectionChange={
               canSanction && pendingApplications ? setRowSelection : undefined
             }
@@ -783,45 +914,6 @@ const ServerSideTable = React.forwardRef(
                 <CircularProgress size={24} sx={{ color: "#1e88e5" }} aria-label="Loading" />
               )
             }
-            {...(hasActions && {
-              enableRowActions: true,
-              positionActionsColumn: "last",
-              renderRowActions: ({ row }) => (
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                  {Array.isArray(row.original.customActions) ? (
-                    row.original.customActions.map((action, index) => (
-                      <Tooltip key={index} title={action.tooltipText} arrow>
-                        <Button
-                          sx={{
-                            width: "max-content",
-                            background: "linear-gradient(to right, #10B582, #0D9588)",
-                            color: "#fff",
-                            fontWeight: 600,
-                          }}
-                          onClick={() =>
-                            actionFunctions[action.actionFunction]?.(
-                              row,
-                              action,
-                              {
-                                inputValue: inputValues[row.original.sno] || "",
-                                allInputValues: inputValues,
-                              }
-                            )
-                          }
-                          aria-label={`${action.name || action.tooltip} for row ${row.original.sno}`}
-                        >
-                          {action.name || action.tooltip}
-                        </Button>
-                      </Tooltip>
-                    ))
-                  ) : (
-                    <Typography variant="body2" sx={{ fontWeight: 600, color: "#1f2937" }}>
-                      {row.original.customActions}
-                    </Typography>
-                  )}
-                </Box>
-              ),
-            })}
             renderTopToolbarCustomActions={({ table }) => {
               const selectedRows = table.getSelectedRowModel().rows;
               if (canSanction && pendingApplications && viewType === "Inbox") {

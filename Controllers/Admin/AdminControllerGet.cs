@@ -125,8 +125,8 @@ namespace SahayataNidhi.Controllers.Admin
         {
             if (AccessLevel == "State") return "Jammu & Kashmir";
             else if (AccessLevel == "Division") return AccessCode == 1 ? "Jammu" : "Kashmir";
-            else if (AccessLevel == "District") return dbcontext.Districts.FirstOrDefault(d => d.DistrictId == AccessCode)!.DistrictName!;
-            else return dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == AccessCode)!.TehsilName!;
+            else if (AccessLevel == "District") return dbcontext.District.FirstOrDefault(d => d.Districtid == AccessCode)!.Districtname!;
+            else return dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == AccessCode)!.Tehsilname!;
         }
 
         [HttpGet]
@@ -263,29 +263,29 @@ namespace SahayataNidhi.Controllers.Admin
         {
             if (fieldName == "Tehsil")
             {
-                return dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == id)!.TehsilName!;
+                return dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == id)!.Tehsilname!;
             }
             else if (fieldName.EndsWith("Tehsil"))
             {
-                return dbcontext.Tehsils.FirstOrDefault(t => t.TehsilId == id)!.TehsilName!;
+                return dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == id)!.Tehsilname!;
             }
             else if (fieldName.Contains("District"))
             {
-                return dbcontext.Districts.FirstOrDefault(d => d.DistrictId == id)!.DistrictName!;
+                return dbcontext.District.FirstOrDefault(d => d.Districtid == id)!.Districtname!;
             }
             else if (fieldName.Contains("Muncipality"))
             {
-                return dbcontext.Muncipalities.FirstOrDefault(m => m.MuncipalityId == id)!.MuncipalityName!;
+                return dbcontext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == id)!.Muncipalityname!;
             }
             else if (fieldName.Contains("Block"))
             {
-                return dbcontext.Blocks.FirstOrDefault(b => b.BlockId == id)!.BlockName!;
+                return dbcontext.Blocks.FirstOrDefault(b => b.Blockid == id)!.Blockname!;
             }
             else if (fieldName.Contains("WardNo"))
             {
-                return dbcontext.Wards.FirstOrDefault(w => w.WardCode == id)!.WardNo.ToString()!;
+                return dbcontext.Wards.FirstOrDefault(w => w.Wardcode == id)!.Wardno.ToString()!;
             }
-            else return dbcontext.Villages.FirstOrDefault(v => v.VillageId == id)!.VillageName!;
+            else return dbcontext.Villages.FirstOrDefault(v => v.Villageid == id)!.Villagename!;
         }
 
         [HttpGet]
@@ -409,8 +409,8 @@ namespace SahayataNidhi.Controllers.Admin
         {
             var officer = GetOfficerDetails();
             var services = dbcontext.Services
-                .Where(s => s.DepartmentId == officer!.Department || officer.Department == null)
-                .OrderBy(s => s.ServiceName)
+                .Where(s => s.Departmentid == officer!.Department || officer.Department == null)
+                .OrderBy(s => s.Servicename)
                 .ToList();
 
             var totalCount = services.Count;
@@ -432,14 +432,14 @@ namespace SahayataNidhi.Controllers.Admin
             foreach (var item in pagedServices)
             {
                 int serialNo = (pageIndex * pageSize) + index + 1;
-                var department = dbcontext.Departments.FirstOrDefault(d => d.DepartmentId == item.DepartmentId)?.DepartmentName ?? "N/A";
+                var department = dbcontext.Departments.FirstOrDefault(d => d.Departmentid == item.Departmentid)?.Departmentname ?? "N/A";
 
                 var row = new
                 {
                     sno = serialNo,
-                    servicename = item.ServiceName,
+                    servicename = item.Servicename,
                     department,
-                    serviceId = item.ServiceId,
+                    serviceId = item.Serviceid,
                 };
 
                 data.Add(row);
@@ -556,20 +556,20 @@ namespace SahayataNidhi.Controllers.Admin
 
             if (officer.AccessLevel == "System")
             {
-                districts = dbcontext.Districts
-                    .Select(d => new { d.DistrictId, d.DistrictName })
+                districts = dbcontext.District
+                    .Select(d => new { d.Districtid, d.Districtname })
                     .ToList();
             }
             else if (officer.AccessLevel == "State")
             {
-                districts = dbcontext.Districts
-                    .Select(d => new { d.DistrictId, d.DistrictName })
+                districts = dbcontext.District
+                    .Select(d => new { d.Districtid, d.Districtname })
                     .ToList();
             }
             else if (officer.AccessLevel == "Division")
             {
-                districts = dbcontext.Districts
-                    .Select(d => new { d.DistrictId, d.DistrictName })
+                districts = dbcontext.District
+                    .Select(d => new { d.Districtid, d.Districtname })
                     .ToList();
             }
 
@@ -593,14 +593,14 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { error = "Officer details not found" });
                 }
 
-                var designations = dbcontext.OfficersDesignations
-                    .Where(d => d.DepartmentId == officer.Department)
+                var designations = dbcontext.Officersdesignations
+                    .Where(d => d.Departmentid == officer.Department)
                     .Select(d => new
                     {
                         DesignationId = d.Uuid,
                         Designation = d.Designation,
-                        DesignationShort = d.DesignationShort,
-                        AccessLevel = d.AccessLevel
+                        DesignationShort = d.Designationshort,
+                        AccessLevel = d.Accesslevel
                     })
                     .ToList();
 
@@ -657,8 +657,8 @@ namespace SahayataNidhi.Controllers.Admin
                 var departments = dbcontext.Departments
                     .Select(d => new
                     {
-                        DepartmentId = d.DepartmentId,
-                        DepartmentName = d.DepartmentName,
+                        DepartmentId = d.Departmentid,
+                        DepartmentName = d.Departmentname,
                     })
                     .ToList();
 
@@ -721,12 +721,12 @@ namespace SahayataNidhi.Controllers.Admin
                 }
 
                 var officesQuery = dbcontext.Offices
-                    .Where(o => o.DepartmentId == departmentId)
+                    .Where(o => o.Departmentid == departmentId)
                     .Select(o => new
                     {
-                        OfficeId = o.OfficeId,
-                        OfficeType = o.OfficeType,
-                        AccessLevel = o.AccessLevel
+                        OfficeId = o.Officeid,
+                        OfficeType = o.Officetype,
+                        AccessLevel = o.Accesslevel
                     });
 
                 var totalRecords = await officesQuery.CountAsync();
@@ -804,19 +804,19 @@ namespace SahayataNidhi.Controllers.Admin
                 if (departmentId <= 0)
                     return BadRequest(new { error = "User department not found." });
 
-                var query = from od in dbcontext.OfficesDetails
-                            join o in dbcontext.Offices on od.OfficeType equals o.OfficeId
-                            where o.DepartmentId == departmentId
+                var query = from od in dbcontext.Officesdetails
+                            join o in dbcontext.Offices on od.Officetype equals o.Officeid
+                            where o.Departmentid == departmentId
                             select new
                             {
-                                OfficeDetailId = od.StateCode + od.DivisionCode + od.DistrictCode + od.AreaCode,
-                                od.OfficeName,
-                                OfficeType = o.OfficeType,
-                                od.DivisionCode,
-                                od.DistrictCode,
-                                od.AreaCode,
-                                od.AreaName,
-                                AccessLevel = o.AccessLevel
+                                OfficeDetailId = od.Statecode + od.Divisioncode + od.Districtcode + od.Areacode,
+                                od.Officename,
+                                OfficeType = o.Officetype,
+                                od.Divisioncode,
+                                od.Districtcode,
+                                od.Areacode,
+                                od.Areaname,
+                                AccessLevel = o.Accesslevel
                             };
 
                 var totalRecords = await query.CountAsync();
@@ -839,12 +839,12 @@ namespace SahayataNidhi.Controllers.Admin
                 var data = pagedData.Select(x => new
                 {
                     officeDetailId = x.OfficeDetailId,
-                    officeName = x.OfficeName,
+                    officeName = x.Officename,
                     officeType = x.OfficeType,
-                    divisionCode = x.DivisionCode,
-                    districtCode = x.DistrictCode,
-                    areaCode = x.AreaCode,
-                    areaName = x.AreaName,
+                    divisionCode = x.Divisioncode,
+                    districtCode = x.Districtcode,
+                    areaCode = x.Areacode,
+                    areaName = x.Areaname,
                     accessLevel = x.AccessLevel,
                     customActions = new List<object>
                     {
@@ -867,7 +867,7 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                var query = dbcontext.Districts
+                var query = dbcontext.District
                     .AsQueryable();
 
                 if (divisionId.HasValue && divisionId.Value > 0)
@@ -876,8 +876,8 @@ namespace SahayataNidhi.Controllers.Admin
                 var districts = await query
                     .Select(d => new
                     {
-                        districtId = d.DistrictId,
-                        districtName = d.DistrictName
+                        districtId = d.Districtid,
+                        districtName = d.Districtname
                     })
                     .OrderBy(d => d.districtName)
                     .ToListAsync();
@@ -896,17 +896,17 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                var query = dbcontext.Tehsils
+                var query = dbcontext.Tehsil
                     .AsQueryable();
 
                 if (districtId.HasValue && districtId.Value > 0)
-                    query = query.Where(t => t.DistrictId == districtId.Value);
+                    query = query.Where(t => t.Districtid == districtId.Value);
 
                 var tehsils = await query
                     .Select(t => new
                     {
-                        tehsilId = t.TehsilId,
-                        tehsilName = t.TehsilName
+                        tehsilId = t.Tehsilid,
+                        tehsilName = t.Tehsilname
                     })
                     .OrderBy(t => t.tehsilName)
                     .ToListAsync();
@@ -929,13 +929,13 @@ namespace SahayataNidhi.Controllers.Admin
                     .AsQueryable();
 
                 if (districtId.HasValue && districtId.Value > 0)
-                    query = query.Where(b => b.DistrictId == districtId.Value);
+                    query = query.Where(b => b.Districtid == districtId.Value);
 
                 var blocks = await query
                     .Select(b => new
                     {
-                        blockId = b.BlockId,
-                        blockName = b.BlockName
+                        blockId = b.Blockid,
+                        blockName = b.Blockname
                     })
                     .OrderBy(b => b.blockName)
                     .ToListAsync();

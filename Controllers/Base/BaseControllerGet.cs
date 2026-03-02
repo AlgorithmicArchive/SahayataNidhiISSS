@@ -21,20 +21,20 @@ namespace SahayataNidhi.Controllers
         [HttpGet]
         public async Task<IActionResult> DisplayFile(string fileName)
         {
-            var fileModel = await dbcontext.UserDocuments
-                .FirstOrDefaultAsync(f => f.FileName == fileName);
+            var fileModel = await dbcontext.Userdocuments
+                .FirstOrDefaultAsync(f => f.Filename == fileName);
 
             if (fileModel == null)
             {
                 return NotFound("File not found.");
             }
 
-            if (!fileModel.FileType.StartsWith("image/") && fileModel.FileType != "application/pdf")
+            if (!fileModel.Filetype.StartsWith("image/") && fileModel.Filetype != "application/pdf")
             {
                 return BadRequest("File is not an image or PDF.");
             }
 
-            return File(fileModel.FileData, fileModel.FileType);
+            return File(fileModel.Filedata, fileModel.Filetype);
         }
 
         [HttpGet]
@@ -47,8 +47,8 @@ namespace SahayataNidhi.Controllers
                 return BadRequest(new { status = false, message = "Invalid user." });
             }
 
-            var userDetails = dbcontext.Users.FirstOrDefault(u => u.UserId == userId);
-            if (userDetails == null || string.IsNullOrWhiteSpace(userDetails.AdditionalDetails))
+            var userDetails = dbcontext.Users.FirstOrDefault(u => u.Userid == userId);
+            if (userDetails == null || string.IsNullOrWhiteSpace(userDetails.Additionaldetails))
             {
                 return NotFound(new { status = false, message = "User or settings not found." });
             }
@@ -57,11 +57,11 @@ namespace SahayataNidhi.Controllers
 
             try
             {
-                additionalDetails = JObject.Parse(userDetails.AdditionalDetails);
+                additionalDetails = JObject.Parse(userDetails.Additionaldetails);
             }
             catch (JsonReaderException)
             {
-                return BadRequest(new { status = false, message = "Malformed AdditionalDetails JSON." });
+                return BadRequest(new { status = false, message = "Malformed Additionaldetails JSON." });
             }
 
             if (additionalDetails.TryGetValue("TableSettings", out JToken? tableSettingsToken) &&
@@ -81,7 +81,7 @@ namespace SahayataNidhi.Controllers
             if (string.IsNullOrEmpty(userId))
             {
                 _logger.LogWarning(
-                    "GetOfficerDetails: UserId is null. User is not authenticated or NameIdentifier claim is missing."
+                    "GetOfficerDetails: Userid is null. User is not authenticated or NameIdentifier claim is missing."
                 );
                 return null;
             }
@@ -89,7 +89,7 @@ namespace SahayataNidhi.Controllers
             if (!int.TryParse(userId, out int parsedUserId))
             {
                 _logger.LogWarning(
-                    "GetOfficerDetails: Failed to parse UserId as integer. Value: {UserId}",
+                    "GetOfficerDetails: Failed to parse Userid as integer. Value: {Userid}",
                     userId
                 );
                 return null;
@@ -142,11 +142,10 @@ namespace SahayataNidhi.Controllers
         public IActionResult GetDesignations(string departmentId)
         {
             _logger.LogInformation($"------- Department ID: {departmentId} --------");
-            var designations = dbcontext.OfficersDesignations.Where(des => des.DepartmentId == Convert.ToInt32(departmentId)).ToList();
+            var designations = dbcontext.Officersdesignations.Where(des => des.Departmentid == Convert.ToInt32(departmentId)).ToList();
             return Json(new { status = true, designations });
         }
 
-        [HttpGet]
         [HttpGet]
         public IActionResult GetServices()
         {
@@ -169,7 +168,13 @@ namespace SahayataNidhi.Controllers
                 || officer.UserType == "Viewer")
             {
                 var services = dbcontext.Services.ToList();
-                return Json(new { status = true, services });
+                var service = services.Select(s => new
+                {
+                    serviceId = s.Serviceid,
+                    serviceName = s.Servicename,
+                    formElement = s.Formelement
+                }).ToArray();
+                return Json(new { status = true, services = service });
             }
 
             // ✅ CORRECT: parameterized PostgreSQL function call
@@ -181,7 +186,14 @@ namespace SahayataNidhi.Controllers
                 .AsEnumerable()
                 .ToList();
 
-            return Json(new { status = true, services = result });
+            var Services = result.Select(s => new
+            {
+                s.ServiceId,
+                s.ServiceName,
+            }).ToArray();
+
+
+            return Json(new { status = true, Services });
         }
 
 
@@ -191,20 +203,20 @@ namespace SahayataNidhi.Controllers
             var officer = GetOfficerDetails();
             if (officer == null)
             {
-                var District = dbcontext.Districts.ToList();
+                var District = dbcontext.District.ToList();
                 return Json(new { status = true, districts = District });
             }
 
             if (officer!.AccessLevel == "Tehsil")
             {
-                var tehsils = dbcontext.TswoTehsils.Where(t => t.TehsilId == officer.AccessCode).ToList();
+                var tehsils = dbcontext.Tswotehsil.Where(t => t.Tehsilid == officer.AccessCode).ToList();
                 return Json(new { status = true, tehsils });
             }
 
-            var districts = dbcontext.Districts.Where(d =>
+            var districts = dbcontext.District.Where(d =>
                 (officer.AccessLevel == "State") ||
                 (officer!.AccessLevel == "Division" && d.Division == officer.AccessCode) ||
-                (officer.AccessLevel == "District" && d.DistrictId == officer.AccessCode))
+                (officer.AccessLevel == "District" && d.Districtid == officer.AccessCode))
                 .ToList();
 
             return Json(new { status = true, districts });
@@ -216,18 +228,18 @@ namespace SahayataNidhi.Controllers
             List<District> districts;
             if (division != null)
             {
-                districts = dbcontext.Districts.Where(d => d.Division == Convert.ToInt32(division)).ToList();
+                districts = dbcontext.District.Where(d => d.Division == Convert.ToInt32(division)).ToList();
                 return Json(new { status = true, districts });
             }
-            districts = dbcontext.Districts.ToList();
+            districts = dbcontext.District.ToList();
             return Json(new { status = true, districts });
         }
 
         [HttpGet]
         public IActionResult GetTeshilForDistrict(string districtId)
         {
-            int DistrictId = Convert.ToInt32(districtId);
-            var tehsils = dbcontext.TswoTehsils.Where(u => u.DistrictId == DistrictId).ToList();
+            int Districtid = Convert.ToInt32(districtId);
+            var tehsils = dbcontext.Tswotehsil.Where(u => u.Districtid == Districtid).ToList();
             return Json(new { status = true, tehsils });
         }
 
@@ -284,51 +296,51 @@ namespace SahayataNidhi.Controllers
             switch (table)
             {
                 case "TehsilAll":
-                    data = dbcontext.Tehsils
-                     .Where(t => t.DistrictId == parentId)
-                     .Select(t => new { value = t.TehsilId, label = t.TehsilName }) // Optional: project only needed fields
+                    data = dbcontext.Tehsil
+                     .Where(t => t.Districtid == parentId)
+                     .Select(t => new { value = t.Tehsilid, label = t.Tehsilname }) // Optional: project only needed fields
                      .ToList();
                     break;
                 case "Tehsil":
-                    data = dbcontext.TswoTehsils
-                        .Where(t => t.DistrictId == parentId)
-                        .Select(t => new { value = t.TehsilId, label = t.TehsilName }) // Optional: project only needed fields
+                    data = dbcontext.Tswotehsil
+                        .Where(t => t.Districtid == parentId)
+                        .Select(t => new { value = t.Tehsilid, label = t.Tehsilname }) // Optional: project only needed fields
                         .ToList();
                     break;
 
                 case "Muncipality":
-                    data = dbcontext.Muncipalities.Where(m => m.DistrictId == parentId)
-                    .Select(m => new { value = m.MuncipalityId, label = m.MuncipalityName })
+                    data = dbcontext.Muncipalities.Where(m => m.Districtid == parentId)
+                    .Select(m => new { value = m.Muncipalityid, label = m.Muncipalityname })
                     .ToList();
                     break;
 
                 case "Block":
-                    data = dbcontext.Blocks.Where(m => m.DistrictId == parentId)
-                    .Select(m => new { value = m.BlockId, label = m.BlockName })
+                    data = dbcontext.Blocks.Where(m => m.Districtid == parentId)
+                    .Select(m => new { value = m.Blockid, label = m.Blockname })
                     .ToList();
                     break;
 
                 case "Ward":
                     data = dbcontext.Wards
-                    .Where(m => m.MuncipalityId == parentId)
-                    .OrderBy(m => m.WardCode) // 👈 Sorts by WardCode
+                    .Where(m => m.Muncipalityid == parentId)
+                    .OrderBy(m => m.Wardcode) // 👈 Sorts by WardCode
                     .Select(m => new
                     {
-                        value = m.WardCode,
-                        label = "Ward No " + m.WardNo
+                        value = m.Wardcode,
+                        label = "Ward No " + m.Wardno
                     })
                     .ToList();
                     break;
 
                 case "HalqaPanchayat":
-                    data = dbcontext.HalqaPanchayats.Where(m => m.BlockId == parentId)
-                            .Select(m => new { value = m.HalqaPanchayatId, label = m.HalqaPanchayatName })
+                    data = dbcontext.Halqapanchayat.Where(m => m.Blockid == parentId)
+                            .Select(m => new { value = m.Halqapanchayatid, label = m.Halqapanchayatname })
                             .ToList();
                     break;
 
                 case "Village":
-                    data = dbcontext.Villages.Where(m => m.HalqapanchayatId == parentId)
-                          .Select(m => new { value = m.VillageId, label = m.VillageName })
+                    data = dbcontext.Villages.Where(m => m.Halqapanchayatid == parentId)
+                          .Select(m => new { value = m.Villageid, label = m.Villagename })
                           .ToList();
                     break;
                 // Add other cases as needed
@@ -457,7 +469,7 @@ namespace SahayataNidhi.Controllers
         {
             try
             {
-                var banks = await dbcontext.Banks
+                var banks = await dbcontext.Bank
                     .ToListAsync();
                 return Ok(new { status = true, data = banks });
             }
@@ -473,12 +485,12 @@ namespace SahayataNidhi.Controllers
             try
             {
                 int BankId = Convert.ToInt32(bankId);
-                var bank = dbcontext.Banks
+                var bank = dbcontext.Bank
                     .FirstOrDefault(b => b.Id == BankId);
 
                 if (bank != null)
                 {
-                    return Ok(new { status = true, bankCode = bank.BankCode });
+                    return Ok(new { status = true, bankCode = bank.Bankcode });
                 }
                 else
                 {
@@ -496,13 +508,13 @@ namespace SahayataNidhi.Controllers
         {
             try
             {
-                string bankName = dbcontext.Banks
-                 .FirstOrDefault(b => b.Id == BankId)?.BankName ?? string.Empty;
+                string bankName = dbcontext.Bank
+                 .FirstOrDefault(b => b.Id == BankId)?.Bankname ?? string.Empty;
 
                 var pattern = $"%{bankName}%";
 
                 // PostgreSQL query using LIKE for pattern matching
-                var bankDetails = dbcontext.BankDetails
+                var bankDetails = dbcontext.Bankdetails
                     .FromSqlRaw(@"
                     SELECT *
                     FROM bankdetails
@@ -536,20 +548,20 @@ namespace SahayataNidhi.Controllers
                 return Json(new { url = $"{_config["AppSettings:FrontendUrl"]}/login" });
 
             // PRESERVE ORIGINAL USER TYPE
-            var actualUserType = localUser.UserType; // <-- This is the real role from DB
+            var actualUserType = localUser.Usertype; // <-- This is the real role from DB
 
             // Temporarily override for this session
-            localUser.UserType = isCitizen ? "Officer" : "Citizen";
+            localUser.Usertype = isCitizen ? "Officer" : "Citizen";
 
             var jwt = helper.GenerateJwt(localUser!, clientToken!);
 
             dynamic ssoResponse = new ExpandoObject();
             ssoResponse.status = true;
             ssoResponse.token = jwt;
-            ssoResponse.userType = localUser.UserType;           // <-- current (switched) view
+            ssoResponse.userType = localUser.Usertype;           // <-- current (switched) view
             ssoResponse.actualUserType = actualUserType;         // <-- original DB role
             ssoResponse.username = localUser.Username;
-            ssoResponse.userId = localUser.UserId;
+            ssoResponse.userId = localUser.Userid;
             ssoResponse.designation = "";
             ssoResponse.department = helper.GetDepartment(localUser!);
             ssoResponse.profile = localUser.Profile ?? "/assets/images/profile.jpg";

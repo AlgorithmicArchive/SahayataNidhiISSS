@@ -73,11 +73,11 @@ namespace SahayataNidhi.Controllers.Officer
 
                 var cert = new Models.Entities.Certificates
                 {
-                    OfficerId = officer.UserId,
-                    SerialNumber = serialBytes,
-                    CertifiyingAuthority = ca,
-                    ExpirationDate = expirationDate,
-                    RegisteredDate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
+                    Officerid = officer.UserId,
+                    Serialnumber = serialBytes,
+                    Certifiyingauthority = ca,
+                    Expirationdate = expirationDate,
+                    Registereddate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
                 };
 
                 dbcontext.Certificates.Add(cert);
@@ -107,7 +107,7 @@ namespace SahayataNidhi.Controllers.Officer
 
                 // Retrieve the certificate for the officer
                 var certificate = dbcontext.Certificates
-                    .Where(c => c.OfficerId == officer.UserId)
+                    .Where(c => c.Officerid == officer.UserId)
                     .FirstOrDefault();
 
                 if (certificate == null)
@@ -154,7 +154,7 @@ namespace SahayataNidhi.Controllers.Officer
 
                 // Verify the certificate belongs to the officer
                 var certificate = dbcontext.Certificates
-                    .FirstOrDefault(c => c.Uuid == certificateId && c.OfficerId == officer.UserId);
+                    .FirstOrDefault(c => c.Uuid == certificateId && c.Officerid == officer.UserId);
 
                 if (certificate == null)
                 {
@@ -188,13 +188,13 @@ namespace SahayataNidhi.Controllers.Officer
 
                 // Retrieve the certificate for the officer
                 var certificate = dbcontext.Certificates
-                    .Where(c => c.OfficerId == officer.UserId)
+                    .Where(c => c.Officerid == officer.UserId)
                     .Select(c => new
                     {
-                        serial_number = c.SerialNumber != null ? Convert.ToHexString(c.SerialNumber) : null,
-                        certifying_authority = c.CertifiyingAuthority,
-                        expiration_date = c.ExpirationDate,
-                        registered_date = c.RegisteredDate
+                        serial_number = c.Serialnumber != null ? Convert.ToHexString(c.Serialnumber) : null,
+                        certifying_authority = c.Certifiyingauthority,
+                        expiration_date = c.Expirationdate,
+                        registered_date = c.Registereddate
                     })
                     .FirstOrDefault();
 
@@ -241,8 +241,8 @@ namespace SahayataNidhi.Controllers.Officer
             try
             {
                 var certificate = dbcontext.Certificates
-                    .Where(c => c.OfficerId == officer.UserId)
-                    .Select(c => new { c.ExpirationDate })
+                    .Where(c => c.Officerid == officer.UserId)
+                    .Select(c => new { c.Expirationdate })
                     .FirstOrDefault();
 
                 if (certificate == null)
@@ -255,15 +255,15 @@ namespace SahayataNidhi.Controllers.Officer
                     });
                 }
 
-                bool isExpired = certificate.ExpirationDate.HasValue &&
-                                certificate.ExpirationDate.Value < DateTime.Now;
+                bool isExpired = certificate.Expirationdate.HasValue &&
+                                certificate.Expirationdate.Value < DateTime.Now;
 
                 return Json(new
                 {
                     success = true,
                     hasCertificate = true,
                     isExpired,
-                    expirationDate = certificate.ExpirationDate?.ToString("dd MMM yyyy"),
+                    expirationDate = certificate.Expirationdate?.ToString("dd MMM yyyy"),
                     message = isExpired ? "DSC has expired." : "DSC is valid."
                 });
             }

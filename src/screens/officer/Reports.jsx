@@ -18,7 +18,6 @@ import styled from "@emotion/styled";
 import ServerSideTable from "../../components/ServerSideTable";
 import axiosInstance from "../../axiosConfig";
 
-// Styled components
 const StyledCard = styled(Card)`
   background: linear-gradient(135deg, #ffffff, #f8f9fa);
   border-radius: 12px;
@@ -47,23 +46,31 @@ const StyledButton = styled(Button)`
 `;
 
 export default function Reports() {
-  const [district, setDistrict] = useState("");
+  const [district, setDistrict] = useState("");               // kept but no longer used
   const [service, setService] = useState("");
-  const [districts, setDistricts] = useState([]);
+  const [districts, setDistricts] = useState([]);            // kept but not rendered
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [isTehsil, setIsTehsil] = useState(false);
+  const [isTehsil, setIsTehsil] = useState(false);           // kept but not used
   const [isButtonDisabled, setIsButtonDisabled] = useState(true);
   const [showTable, setShowTable] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState("");
   const [reportType, setReportType] = useState("TehsilWise");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [applicationStatusList] = useState([
+    { value: "", label: "All Statuses" },
+    { value: "pending", label: "Pending" },
+    { value: "forwarded", label: "Forwarded" },
+    { value: "returned", label: "Returned" },
+    { value: "returntoedit", label: "Return to Edit" },
+    { value: "sanctioned", label: "Sanctioned" },
+    { value: "rejected", label: "Rejected" },
+  ]);
 
   const tableRef = useRef(null);
 
-  // Fetch districts and services
   useEffect(() => {
     const fetchDropdowns = async () => {
       setLoading(true);
@@ -113,14 +120,19 @@ export default function Reports() {
     fetchDropdowns();
   }, []);
 
-  // Update button disabled state dynamically
+  // 🔁 Updated button disable logic – district no longer required
   useEffect(() => {
     if (reportType === "AgeWise" || reportType === "PensionTypeWise") {
-      setIsButtonDisabled(!(district && service && startDate && endDate));
+      // Need service + both dates
+      setIsButtonDisabled(!(service && startDate && endDate));
+    } else if (reportType === "DetailedApplications") {
+      // Only service needed
+      setIsButtonDisabled(!service);
     } else {
-      setIsButtonDisabled(!(district && service));
+      // TehsilWise, GenderWise – only service needed (district removed)
+      setIsButtonDisabled(!service);
     }
-  }, [district, service, reportType, startDate, endDate]);
+  }, [service, reportType, startDate, endDate]);   // district removed from deps
 
   const handleDistrictChange = (event) => {
     setDistrict(event.target.value);
@@ -134,7 +146,8 @@ export default function Reports() {
     setReportType(event.target.value);
     setStartDate("");
     setEndDate("");
-    setShowTable(false); // Hide table when report type changes
+    setSelectedStatus("");
+    setShowTable(false);
   };
 
   const handleStartDateChange = (event) => {
@@ -145,15 +158,16 @@ export default function Reports() {
     setEndDate(event.target.value);
   };
 
+  const handleStatusChange = (event) => {
+    setSelectedStatus(event.target.value);
+  };
+
   const handleGetReports = () => {
     if (reportType === "AgeWise" || reportType === "PensionTypeWise") {
       if (!startDate || !endDate) {
         toast.error(
           "Please select both start and end dates for this report type.",
-          {
-            position: "top-right",
-            autoClose: 3000,
-          },
+          { position: "top-right", autoClose: 3000 }
         );
         return;
       }
@@ -166,34 +180,71 @@ export default function Reports() {
       }
     }
     setShowTable(true);
-    setSelectedStatus("");
     setTimeout(() => {
       tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   };
 
+  const getColumnsForReportType = () => {
+    switch (reportType) {
+      case "AgeWise":
+        return [
+          { accessorKey: "age", header: "Age" },
+          { accessorKey: "countOfApplicants", header: "Beneficiary Count" }
+        ];
+      case "PensionTypeWise":
+        return [
+          { accessorKey: "age", header: "Age" },
+          { accessorKey: "pensionType", header: "Pension Type" },
+          { accessorKey: "countOfApplicants", header: "Beneficiary Count" }
+        ];
+      case "GenderWise":
+        return [
+          { accessorKey: "gender", header: "Gender" },
+          { accessorKey: "countOfApplicants", header: "Beneficiary Count" }
+        ];
+      case "TehsilWise":
+        return [
+          { accessorKey: "tehsilName", header: "Tehsil Name" },
+          { accessorKey: "totalApplicationsSubmitted", header: "Total Applications Received" },
+          { accessorKey: "totalApplicationsPending", header: "Total Applications Pending" },
+          { accessorKey: "totalApplicationsReturnToEdit", header: "Pending With Citizens" },
+          { accessorKey: "totalApplicationsSanctioned", header: "Total Sanctioned" },
+          { accessorKey: "totalApplicationsRejected", header: "Total Rejected" },
+        ];
+      case "DetailedApplications":
+      default:
+        return [
+          { accessorKey: "districtname", header: "District" },
+          { accessorKey: "tswofficename", header: "TSWO Office" },
+          { accessorKey: "application_status", header: "Application Status" },
+          { accessorKey: "application_pending_with", header: "Application Pending With" },
+          { accessorKey: "referencenumber", header: "Reference Number" },
+          { accessorKey: "applicant_name", header: "Applicant Name" },
+          { accessorKey: "parentage", header: "Parentage" },
+          { accessorKey: "account_number", header: "Account Number" },
+          { accessorKey: "ifsc_code", header: "IFSC Code" },
+          { accessorKey: "bank_name", header: "Bank Name" },
+          { accessorKey: "branch_name", header: "Branch Name" },
+        ];
+    }
+  };
+
+  // 🎯 Only include AccessCode if a district is actually selected (which never happens now)
   const extraParams = {
-    AccessCode: district,
     ServiceId: service,
-    StatusType: selectedStatus,
+    StatusType: selectedStatus || null,
     ReportType: reportType,
-    ...(reportType === "AgeWise" || reportType === "PensionTypeWise"
-      ? { StartDate: startDate, EndDate: endDate }
-      : {}),
+    ...((reportType !== "DetailedApplications" && district) && { AccessCode: district }),
+    ...((reportType === "AgeWise" || reportType === "PensionTypeWise") && {
+      StartDate: startDate,
+      EndDate: endDate,
+    }),
   };
 
   if (loading) {
     return (
-      <Box
-        sx={{
-          width: "100%",
-          height: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          bgcolor: "#f8f9fa",
-        }}
-      >
+      <Box sx={{ width: "100%", height: "100vh", display: "flex", justifyContent: "center", alignItems: "center", bgcolor: "#f8f9fa" }}>
         <CircularProgress size={60} />
       </Box>
     );
@@ -201,24 +252,11 @@ export default function Reports() {
 
   if (error) {
     return (
-      <Box
-        sx={{
-          width: "100%",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          bgcolor: "#f8f9fa",
-        }}
-      >
+      <Box sx={{ width: "100%", height: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", bgcolor: "#f8f9fa" }}>
         <Typography color="error" variant="h6" sx={{ mb: 2 }}>
           {error}
         </Typography>
-        <StyledButton
-          variant="contained"
-          onClick={() => window.location.reload()}
-        >
+        <StyledButton variant="contained" onClick={() => window.location.reload()}>
           Retry
         </StyledButton>
       </Box>
@@ -226,54 +264,39 @@ export default function Reports() {
   }
 
   return (
-    <Box
-      sx={{
-        width: "100%",
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        p: { xs: 3, md: 5 },
-        bgcolor: "#f8f9fa",
-      }}
-    >
-      <Typography
-        variant="h4"
-        sx={{
-          mb: 5,
-          fontWeight: 700,
-          color: "#2d3748",
-          fontFamily: "'Inter', sans-serif",
-        }}
-      >
+    <Box sx={{ width: "100%", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", p: { xs: 3, md: 5 }, bgcolor: "#f8f9fa" }}>
+      <Typography variant="h4" sx={{ mb: 5, fontWeight: 700, color: "#2d3748", fontFamily: "'Inter', sans-serif" }}>
         Reports
       </Typography>
 
       <Container>
         <Row className="mb-4 justify-content-center">
-          <Col xs={12} md={4} lg={3}>
-            <FormControl fullWidth sx={{ mb: { xs: 2, md: 0 } }}>
-              <InputLabel id="district-select-label">
-                {isTehsil ? "Tehsil" : "District"}
-              </InputLabel>
-              <Select
-                labelId="district-select-label"
-                value={district}
-                label={isTehsil ? "Tehsil" : "District"}
-                onChange={handleDistrictChange}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              >
-                <MenuItem value="">
-                  <em>Please Select</em>
-                </MenuItem>
-                {districts.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+          {/* 🚫 District/Tehsil dropdown removed – commented out as requested */}
+          {/* {reportType !== "DetailedApplications" && (
+            <Col xs={12} md={4} lg={3}>
+              <FormControl fullWidth sx={{ mb: { xs: 2, md: 0 } }}>
+                <InputLabel id="district-select-label">
+                  {isTehsil ? "Tehsil" : "District"}
+                </InputLabel>
+                <Select
+                  labelId="district-select-label"
+                  value={district}
+                  label={isTehsil ? "Tehsil" : "District"}
+                  onChange={handleDistrictChange}
+                  sx={{ bgcolor: "#fff", borderRadius: "8px" }}
+                >
+                  <MenuItem value="">
+                    <em>Please Select</em>
                   </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Col>
+                  {districts.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Col>
+          )} */}
 
           <Col xs={12} md={4} lg={3}>
             <FormControl fullWidth sx={{ mb: { xs: 2, md: 0 } }}>
@@ -311,6 +334,7 @@ export default function Reports() {
                 <MenuItem value="PensionTypeWise">Pension Type Wise</MenuItem>
                 <MenuItem value="GenderWise">Gender Wise</MenuItem>
                 <MenuItem value="TehsilWise">Tehsil Wise</MenuItem>
+                <MenuItem value="DetailedApplications">Detailed Applications</MenuItem>
               </Select>
             </FormControl>
           </Col>
@@ -321,7 +345,7 @@ export default function Reports() {
             <Col xs={12} md={4} lg={3}>
               <TextField
                 fullWidth
-                label="Start Date"
+                label="Submission Start Date"
                 type="date"
                 value={startDate}
                 onChange={handleStartDateChange}
@@ -332,7 +356,7 @@ export default function Reports() {
             <Col xs={12} md={4} lg={3}>
               <TextField
                 fullWidth
-                label="End Date"
+                label="Submission End Date"
                 type="date"
                 value={endDate}
                 onChange={handleEndDateChange}
@@ -343,13 +367,32 @@ export default function Reports() {
           </Row>
         )}
 
+        {reportType === "DetailedApplications" && (
+          <Row className="mb-4 justify-content-center">
+            <Col xs={12} md={4} lg={3}>
+              <FormControl fullWidth>
+                <InputLabel id="status-select-label">Application Status</InputLabel>
+                <Select
+                  labelId="status-select-label"
+                  value={selectedStatus}
+                  label="Application Status"
+                  onChange={handleStatusChange}
+                  sx={{ bgcolor: "#fff", borderRadius: "8px" }}
+                >
+                  {applicationStatusList.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Col>
+          </Row>
+        )}
+
         <Row className="mb-5 justify-content-center">
           <Col xs="auto">
-            <StyledButton
-              variant="contained"
-              onClick={handleGetReports}
-              disabled={isButtonDisabled}
-            >
+            <StyledButton variant="contained" onClick={handleGetReports} disabled={isButtonDisabled}>
               Generate Reports
             </StyledButton>
           </Col>
@@ -360,17 +403,15 @@ export default function Reports() {
             <Col xs={12}>
               <StyledCard>
                 <CardContent>
-                  <Typography
-                    variant="h6"
-                    sx={{ mb: 3, fontWeight: 600, color: "#2d3748" }}
-                  >
-                    Application Reports
+                  <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#2d3748" }}>
+                    {reportType === "DetailedApplications" ? "Detailed Applications Report" : "Application Reports"}
                   </Typography>
                   <ServerSideTable
                     key={`${district}-${service}-${selectedStatus}-${reportType}-${startDate}-${endDate}`}
                     url={`/Officer/GetApplicationsForReports`}
                     Title={"Reports"}
                     extraParams={extraParams}
+                    columns={getColumnsForReportType()}
                   />
                 </CardContent>
               </StyledCard>

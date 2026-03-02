@@ -38,19 +38,19 @@ public class AuditLogService : IAuditLogService
             string device = _detection.Device.Type.ToString();
             string platform = _detection.Platform.Name.ToString();
 
-            var log = new AuditLogs
+            var log = new Auditlogs
             {
-                UserId = userId ?? 0,
+                Userid = userId ?? 0,
                 Action = action,
                 Description = description,
-                IpAddress = ipAddress,
+                Ipaddress = ipAddress,
                 Browser = $"{browser} {browserVersion}",
-                OperatingSystem = platform,
+                Operatingsystem = platform,
                 Device = device,
                 Status = status,
             };
 
-            _dbcontext.AuditLogs.Add(log);
+            _dbcontext.Auditlogs.Add(log);
             _dbcontext.SaveChanges();
 
         }

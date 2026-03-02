@@ -7,9 +7,9 @@ public partial class Villages
 {
     public int Uuid { get; set; }
 
-    public int? HalqapanchayatId { get; set; }
+    public int? Halqapanchayatid { get; set; }
 
-    public int? VillageId { get; set; }
+    public int? Villageid { get; set; }
 
-    public string? VillageName { get; set; }
+    public string? Villagename { get; set; }
 }

@@ -7,7 +7,7 @@ public partial class Bank
 {
     public int Id { get; set; }
 
-    public string BankName { get; set; } = null!;
+    public string Bankname { get; set; } = null!;
 
-    public string BankCode { get; set; } = null!;
+    public string Bankcode { get; set; } = null!;
 }

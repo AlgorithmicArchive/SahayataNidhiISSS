@@ -39,7 +39,9 @@ import {
   Stepper,
   Step,
   StepLabel,
+  Badge,
 } from "@mui/material";
+import { styled } from "@mui/material/styles";
 import DeleteIcon from "@mui/icons-material/Delete";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import SearchIcon from "@mui/icons-material/Search";
@@ -54,11 +56,42 @@ import LockIcon from "@mui/icons-material/Lock";
 import LockOpenIcon from "@mui/icons-material/LockOpen";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import WarningIcon from "@mui/icons-material/Warning";
 import ServiceSelectionForm from "../../components/ServiceSelectionForm";
 import { fetchServiceList } from "../../assets/fetch";
 import axiosInstance from "../../axiosConfig";
 import BasicModal from "../../components/BasicModal";
 import { useLocation } from "react-router-dom";
+
+// Styled components for better design
+const StyledCard = styled(Card)(({ theme }) => ({
+  borderRadius: 16,
+  boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+  border: `1px solid ${theme.palette.divider}`,
+  transition: "transform 0.2s, box-shadow 0.2s",
+  "&:hover": {
+    boxShadow: "0 12px 48px rgba(0,0,0,0.12)",
+  },
+}));
+
+const StyledDropzone = styled(Paper)(({ theme, error }) => ({
+  padding: theme.spacing(6),
+  textAlign: "center",
+  borderStyle: "dashed",
+  borderWidth: 2,
+  borderColor: error ? theme.palette.error.main : theme.palette.grey[300],
+  backgroundColor: error ? theme.palette.error.light : theme.palette.grey[50],
+  borderRadius: 12,
+  transition: "all 0.3s ease",
+  cursor: "pointer",
+  "&:hover": {
+    borderColor: theme.palette.primary.main,
+    backgroundColor: theme.palette.action.hover,
+    transform: "translateY(-2px)",
+    boxShadow: theme.shadows[4],
+  },
+}));
 
 export default function Withheld() {
   const location = useLocation();
@@ -73,7 +106,7 @@ export default function Withheld() {
     withheldType: "",
     withheldReason: "",
     files: [],
-    isWithheld: "yes", // Changed from boolean to string
+    isWithheld: "yes",
   });
   const [initialFormData, setInitialFormData] = useState(null);
   const [applicationDetails, setApplicationDetails] = useState(null);
@@ -94,6 +127,7 @@ export default function Withheld() {
   const [isFirstOfficer, setIsFirstOfficer] = useState(false);
   const [hasPendingReleaseRequest, setHasPendingReleaseRequest] = useState(false);
   const [pendingReleaseFromPlayer, setPendingReleaseFromPlayer] = useState("");
+  const [fileError, setFileError] = useState("");
 
   useEffect(() => {
     fetchServiceList(setServices);
@@ -123,19 +157,15 @@ export default function Withheld() {
     }
   }, [referenceNumber, serviceId, services, hasChecked, loading]);
 
-
   const handleServiceId = (serviceId) => {
     setServiceId(serviceId);
   };
 
   const scrollToError = () => {
     setTimeout(() => {
-      const errorElement = document.querySelector('.MuiAlert-root');
+      const errorElement = document.querySelector('.MuiAlert-root, [data-error="true"]');
       if (errorElement) {
-        errorElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
-        });
+        errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 100);
   };
@@ -169,6 +199,7 @@ export default function Withheld() {
     setCanChooseWithheldType(false);
     setCanChooseIsWithheld(false);
     setIsFirstOfficer(false);
+    setFileError("");
 
     try {
       const res = await axiosInstance.get("/Officer/GetWithheldApplication", {
@@ -210,13 +241,12 @@ export default function Withheld() {
         withheldFiles = [];
       }
 
-      // Determine default IsWithheld value
       const defaultIsWithheld = res.data.application?.isWithheld ? "yes" : "no";
 
       const newFormData = {
-        withheldType: res.data.application?.withheldType || "Temporary", // Default to Temporary
+        withheldType: res.data.application?.withheldType || "Temporary",
         withheldReason: res.data.application?.withheldReason || "",
-        files: withheldFiles,
+        files: [],
         isWithheld: defaultIsWithheld,
       };
 
@@ -226,7 +256,7 @@ export default function Withheld() {
       if (res.data.application) {
         setInitialFormData({
           ...newFormData,
-          isWithheld: defaultIsWithheld
+          files: withheldFiles,
         });
       }
 
@@ -266,6 +296,7 @@ export default function Withheld() {
       ...prev,
       files: [...prev.files, ...selectedFiles],
     }));
+    setFileError(""); // Clear any file error when adding files
   };
 
   const handleRemoveFile = (fileToRemove) => {
@@ -293,8 +324,9 @@ export default function Withheld() {
 
   const handleSave = async () => {
     setError("");
+    setFileError("");
 
-    // Validation logic
+    // Validation
     if (!formData.withheldType) {
       setError("Please select a Withheld Type.");
       scrollToError();
@@ -312,6 +344,14 @@ export default function Withheld() {
     }
     if (!action) {
       setError("Please select an action.");
+      scrollToError();
+      return;
+    }
+
+    // File validation - at least one document required
+    const totalFiles = existingFilesToKeep.length + formData.files.length;
+    if (totalFiles === 0) {
+      setFileError("At least one supporting document is required.");
       scrollToError();
       return;
     }
@@ -338,7 +378,7 @@ export default function Withheld() {
       }
     }
 
-    // Check for changes
+    // Check for changes if updating
     if (recordExists && initialFormData) {
       const hasFieldChanges =
         formData.withheldType !== initialFormData.withheldType ||
@@ -430,6 +470,7 @@ export default function Withheld() {
       setCanChooseWithheldType(false);
       setCanChooseIsWithheld(false);
       setIsFirstOfficer(false);
+      setFileError("");
 
       setTimeout(() => setSuccessMessage(""), 5000);
     } catch (err) {
@@ -470,6 +511,7 @@ export default function Withheld() {
     setCanChooseWithheldType(false);
     setCanChooseIsWithheld(false);
     setIsFirstOfficer(false);
+    setFileError("");
   };
 
   const formatKey = (key) => {
@@ -489,7 +531,7 @@ export default function Withheld() {
   };
 
   return (
-    <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1400, mx: "auto" }}>
+    <Box sx={{ p: { xs: 2, md: 4 }, maxWidth: 1400, mx: "auto" }}>
       {/* Header with Breadcrumbs */}
       <Box sx={{ mb: 4 }}>
         <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 2 }}>
@@ -513,11 +555,11 @@ export default function Withheld() {
             sx={{
               bgcolor: 'primary.main',
               mr: 2,
-              width: 56,
-              height: 56,
+              width: 64,
+              height: 64,
             }}
           >
-            <GavelIcon />
+            <GavelIcon sx={{ fontSize: 32 }} />
           </Avatar>
           <Box>
             <Typography
@@ -540,14 +582,7 @@ export default function Withheld() {
       </Box>
 
       {/* Search Section */}
-      <Card sx={{
-        mb: 4,
-        borderRadius: 3,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-        background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
-        border: '1px solid',
-        borderColor: 'divider',
-      }}>
+      <StyledCard sx={{ mb: 4 }}>
         <CardContent sx={{ p: 4 }}>
           <Typography variant="h6" sx={{
             mb: 3,
@@ -589,6 +624,7 @@ export default function Withheld() {
           <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
             <Button
               variant="contained"
+              size="large"
               startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SearchIcon />}
               onClick={handleCheck}
               disabled={loading || !services.length}
@@ -597,16 +633,13 @@ export default function Withheld() {
                 py: 1.5,
                 borderRadius: 2,
                 fontWeight: 600,
-                boxShadow: 2,
-                '&:hover': {
-                  boxShadow: 4,
-                }
               }}
             >
               {loading ? "Searching..." : "Search Application"}
             </Button>
             <Button
               variant="outlined"
+              size="large"
               startIcon={<ClearIcon />}
               onClick={handleClearForm}
               sx={{
@@ -619,7 +652,7 @@ export default function Withheld() {
             </Button>
           </Stack>
         </CardContent>
-      </Card>
+      </StyledCard>
 
       {/* Messages */}
       {successMessage && (
@@ -644,6 +677,7 @@ export default function Withheld() {
             borderRadius: 2,
             boxShadow: 1,
           }}
+          icon={<WarningIcon />}
         >
           <Typography fontWeight={600}>{error}</Typography>
         </Alert>
@@ -653,23 +687,17 @@ export default function Withheld() {
         <>
           {/* Application Details */}
           {applicationDetails && (
-            <Card sx={{
-              mb: 4,
-              borderRadius: 3,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-              border: '1px solid',
-              borderColor: 'divider',
-            }}>
+            <StyledCard sx={{ mb: 4 }}>
               <CardContent sx={{ p: 4 }}>
                 <Box sx={{
                   display: 'flex',
                   alignItems: 'center',
                   mb: 3,
                   pb: 2,
-                  borderBottom: '1px solid',
+                  borderBottom: '2px solid',
                   borderColor: 'divider'
                 }}>
-                  <DescriptionIcon sx={{ mr: 2, color: 'primary.main' }} />
+                  <DescriptionIcon sx={{ mr: 2, color: 'primary.main', fontSize: 28 }} />
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>
                     Application Details
                   </Typography>
@@ -725,6 +753,8 @@ export default function Withheld() {
                             sx={{
                               bgcolor: getWithheldTypeColor(application.withheldType) + '.light',
                               color: getWithheldTypeColor(application.withheldType) + '.dark',
+                              width: 48,
+                              height: 48,
                             }}
                           >
                             {application.withheldType === "Permanent" ? <LockIcon /> : <HistoryIcon />}
@@ -755,6 +785,8 @@ export default function Withheld() {
                             sx={{
                               bgcolor: getWithheldStatusColor(application.isWithheld ? "yes" : "no") + '.light',
                               color: getWithheldStatusColor(application.isWithheld ? "yes" : "no") + '.dark',
+                              width: 48,
+                              height: 48,
                             }}
                           >
                             {application.isWithheld ? <LockIcon /> : <LockOpenIcon />}
@@ -782,49 +814,49 @@ export default function Withheld() {
                     </Typography>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       {existingFilesToKeep.map((file, index) => (
-                        <Chip
+                        <Badge
                           key={index}
-                          label={file}
-                          onClick={() => handleFileClick(file)}
-                          onDelete={() => handleRemoveFile(file)}
-                          deleteIcon={<DeleteIcon />}
-                          icon={<VisibilityIcon />}
-                          variant="outlined"
-                          sx={{
-                            mb: 1,
-                            borderRadius: 1,
-                            '&:hover': {
-                              bgcolor: 'action.hover',
-                            }
-                          }}
-                        />
+                          color="primary"
+                          variant="dot"
+                          invisible={!file}
+                        >
+                          <Chip
+                            label={file}
+                            onClick={() => handleFileClick(file)}
+                            onDelete={() => handleRemoveFile(file)}
+                            deleteIcon={<DeleteIcon />}
+                            icon={<VisibilityIcon />}
+                            variant="outlined"
+                            sx={{
+                              mb: 1,
+                              borderRadius: 1,
+                              '&:hover': {
+                                bgcolor: 'action.hover',
+                              }
+                            }}
+                          />
+                        </Badge>
                       ))}
                     </Stack>
                   </>
                 )}
               </CardContent>
-            </Card>
+            </StyledCard>
           )}
 
           {/* Action History */}
           {tableData.length > 0 && (
-            <Card sx={{
-              mb: 4,
-              borderRadius: 3,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-              border: '1px solid',
-              borderColor: 'divider',
-            }}>
+            <StyledCard sx={{ mb: 4 }}>
               <CardContent sx={{ p: 4 }}>
                 <Box sx={{
                   display: 'flex',
                   alignItems: 'center',
                   mb: 3,
                   pb: 2,
-                  borderBottom: '1px solid',
+                  borderBottom: '2px solid',
                   borderColor: 'divider'
                 }}>
-                  <HistoryIcon sx={{ mr: 2, color: 'primary.main' }} />
+                  <HistoryIcon sx={{ mr: 2, color: 'primary.main', fontSize: 28 }} />
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>
                     Action History
                   </Typography>
@@ -875,17 +907,12 @@ export default function Withheld() {
                   </Table>
                 </TableContainer>
               </CardContent>
-            </Card>
+            </StyledCard>
           )}
 
           {/* Withheld Form */}
           {canCreate && (
-            <Card sx={{
-              borderRadius: 3,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.08)',
-              border: '1px solid',
-              borderColor: 'divider',
-            }}>
+            <StyledCard>
               <CardContent sx={{ p: 4 }}>
                 <Box sx={{
                   display: 'flex',
@@ -901,7 +928,9 @@ export default function Withheld() {
                       {recordExists ? "Update Withheld Application" : "Create Withheld Application"}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {isFirstOfficer ? "You are the first officer - You can modify all fields" : "You can only add remarks and take action"}
+                      {isFirstOfficer
+                        ? "You are the first officer – You can modify all fields"
+                        : "You can only add remarks and take action"}
                     </Typography>
                   </Box>
                 </Box>
@@ -918,7 +947,7 @@ export default function Withheld() {
                   </Alert>
                 )}
 
-                {/* Form Steps */}
+                {/* Stepper */}
                 <Stepper activeStep={1} alternativeLabel sx={{ mb: 6 }}>
                   <Step>
                     <StepLabel>Search & Verify</StepLabel>
@@ -932,12 +961,12 @@ export default function Withheld() {
                 </Stepper>
 
                 <Grid container spacing={4}>
-                  {/* Withheld Type - Only editable by first officer */}
+                  {/* Withheld Type */}
                   <Grid item xs={12} md={6}>
                     <FormControl fullWidth>
-                      <InputLabel>Withheld Type</InputLabel>
+                      <InputLabel>Withheld Type *</InputLabel>
                       <Select
-                        label="Withheld Type"
+                        label="Withheld Type *"
                         value={formData.withheldType}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -952,20 +981,21 @@ export default function Withheld() {
                         <MenuItem value="Temporary">Temporary</MenuItem>
                       </Select>
                       <FormHelperText>
-                        {!canChooseWithheldType ? "Only the first officer can modify this field" :
-                          formData.withheldType === "Permanent"
-                            ? "Application will be permanently withheld (Cannot be released)"
-                            : "Application will be temporarily withheld"}
+                        {!canChooseWithheldType
+                          ? "🔒 Only the first officer can modify this field"
+                          : formData.withheldType === "Permanent"
+                            ? "⚠️ Application will be permanently withheld (Cannot be released)"
+                            : "⏳ Application will be temporarily withheld"}
                       </FormHelperText>
                     </FormControl>
                   </Grid>
 
-                  {/* Is Withheld - Only editable by first officer */}
+                  {/* Is Withheld */}
                   <Grid item xs={12} md={6}>
                     <FormControl fullWidth>
-                      <InputLabel>Withheld Status</InputLabel>
+                      <InputLabel>Withheld Status *</InputLabel>
                       <Select
-                        label="Withheld Status"
+                        label="Withheld Status *"
                         value={formData.isWithheld}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -976,14 +1006,15 @@ export default function Withheld() {
                         disabled={!canChooseIsWithheld}
                         sx={{ borderRadius: 2 }}
                       >
-                        <MenuItem value="yes">Yes - Keep Withheld</MenuItem>
-                        <MenuItem value="no">No - Remove from Withheld</MenuItem>
+                        <MenuItem value="yes">Yes – Keep Withheld</MenuItem>
+                        <MenuItem value="no">No – Remove from Withheld</MenuItem>
                       </Select>
                       <FormHelperText>
-                        {!canChooseIsWithheld ? "Only the first officer can modify this field" :
-                          formData.isWithheld === "yes"
-                            ? "Application will remain/be withheld"
-                            : "Application will be released from withheld"}
+                        {!canChooseIsWithheld
+                          ? "🔒 Only the first officer can modify this field"
+                          : formData.isWithheld === "yes"
+                            ? "🔒 Application will remain/be withheld"
+                            : "🔓 Application will be released from withheld"}
                       </FormHelperText>
                     </FormControl>
                   </Grid>
@@ -991,7 +1022,7 @@ export default function Withheld() {
                   {/* Withheld Reason */}
                   <Grid item xs={12}>
                     <TextField
-                      label="Withheld Reason / Remarks"
+                      label="Withheld Reason / Remarks *"
                       fullWidth
                       multiline
                       rows={4}
@@ -1016,9 +1047,9 @@ export default function Withheld() {
                   {/* Action Selection */}
                   <Grid item xs={12} md={6}>
                     <FormControl fullWidth error={error.includes("action")}>
-                      <InputLabel>Select Action</InputLabel>
+                      <InputLabel>Select Action *</InputLabel>
                       <Select
-                        label="Select Action"
+                        label="Select Action *"
                         value={action}
                         onChange={(e) => setAction(e.target.value)}
                         sx={{ borderRadius: 2 }}
@@ -1056,11 +1087,12 @@ export default function Withheld() {
                     </FormControl>
                   </Grid>
 
-                  {/* File Upload */}
+                  {/* File Upload - Mandatory */}
                   <Grid item xs={12}>
                     <Box>
-                      <Typography variant="subtitle1" sx={{ mb: 3, fontWeight: 700 }}>
-                        Upload Supporting Documents (PDF only)
+                      <Typography variant="subtitle1" sx={{ mb: 3, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <AttachFileIcon />
+                        Supporting Documents (Required)
                       </Typography>
 
                       {existingFilesToKeep.length > 0 && (
@@ -1078,36 +1110,17 @@ export default function Withheld() {
                                 deleteIcon={<DeleteIcon />}
                                 icon={<VisibilityIcon />}
                                 variant="outlined"
-                                sx={{
-                                  mb: 1,
-                                  borderRadius: 1,
-                                }}
+                                sx={{ mb: 1, borderRadius: 1 }}
                               />
                             ))}
                           </Stack>
                         </Box>
                       )}
 
-                      <Paper
-                        variant="outlined"
-                        sx={{
-                          p: 6,
-                          textAlign: 'center',
-                          borderStyle: 'dashed',
-                          borderWidth: 2,
-                          borderColor: 'grey.300',
-                          backgroundColor: 'grey.50',
-                          borderRadius: 3,
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            borderColor: 'primary.main',
-                            backgroundColor: 'action.hover',
-                            transform: 'translateY(-2px)',
-                            boxShadow: 4,
-                          },
-                          cursor: 'pointer',
-                        }}
+                      <StyledDropzone
+                        error={!!fileError}
                         onClick={() => document.getElementById('file-upload').click()}
+                        data-error={!!fileError}
                       >
                         <input
                           id="file-upload"
@@ -1119,12 +1132,8 @@ export default function Withheld() {
                         />
                         <UploadFileIcon sx={{
                           fontSize: 64,
-                          color: 'grey.400',
+                          color: fileError ? 'error.main' : 'grey.400',
                           mb: 2,
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            color: 'primary.main',
-                          }
                         }} />
                         <Typography variant="h6" gutterBottom fontWeight={600}>
                           Click to upload or drag and drop
@@ -1132,7 +1141,12 @@ export default function Withheld() {
                         <Typography variant="body2" color="text.secondary">
                           PDF files only • Maximum file size: 10MB per file
                         </Typography>
-                      </Paper>
+                        {fileError && (
+                          <Typography variant="body2" color="error" sx={{ mt: 2, fontWeight: 600 }}>
+                            {fileError}
+                          </Typography>
+                        )}
+                      </StyledDropzone>
 
                       {formData.files.length > 0 && (
                         <Box sx={{ mt: 4 }}>
@@ -1186,11 +1200,8 @@ export default function Withheld() {
                         variant="outlined"
                         onClick={handleClearForm}
                         startIcon={<ClearIcon />}
-                        sx={{
-                          borderRadius: 2,
-                          px: 4,
-                          py: 1.5
-                        }}
+                        size="large"
+                        sx={{ borderRadius: 2, px: 4 }}
                       >
                         Cancel
                       </Button>
@@ -1199,16 +1210,8 @@ export default function Withheld() {
                         onClick={handleSave}
                         disabled={loading || !action}
                         startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
-                        sx={{
-                          px: 4,
-                          py: 1.5,
-                          borderRadius: 2,
-                          fontWeight: 600,
-                          boxShadow: 2,
-                          '&:hover': {
-                            boxShadow: 4,
-                          }
-                        }}
+                        size="large"
+                        sx={{ borderRadius: 2, px: 4, fontWeight: 600 }}
                       >
                         {recordExists ? "Update Application" : "Submit Application"}
                       </Button>
@@ -1216,7 +1219,7 @@ export default function Withheld() {
                   </Grid>
                 </Grid>
               </CardContent>
-            </Card>
+            </StyledCard>
           )}
         </>
       )}
@@ -1234,9 +1237,7 @@ export default function Withheld() {
         onClose={() => setConfirmDialogOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: { borderRadius: 3 }
-        }}
+        PaperProps={{ sx: { borderRadius: 3 } }}
       >
         <DialogTitle sx={{
           bgcolor: 'primary.main',
@@ -1289,6 +1290,13 @@ export default function Withheld() {
               />
             </Box>
 
+            <Box>
+              <Typography variant="body2" color="text.secondary">Documents</Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                Total documents: {existingFilesToKeep.length + formData.files.length}
+              </Typography>
+            </Box>
+
             {formData.isWithheld === "no" && (
               <Alert severity="warning" icon={<LockOpenIcon />}>
                 <Typography variant="subtitle2" fontWeight={600}>
@@ -1316,11 +1324,7 @@ export default function Withheld() {
           <Button
             onClick={() => setConfirmDialogOpen(false)}
             color="inherit"
-            sx={{
-              borderRadius: 2,
-              px: 3,
-              py: 1
-            }}
+            sx={{ borderRadius: 2, px: 3 }}
           >
             Cancel
           </Button>
@@ -1328,12 +1332,7 @@ export default function Withheld() {
             onClick={confirmSave}
             variant="contained"
             autoFocus
-            sx={{
-              borderRadius: 2,
-              px: 4,
-              py: 1,
-              fontWeight: 600
-            }}
+            sx={{ borderRadius: 2, px: 4, fontWeight: 600 }}
           >
             Confirm & Submit
           </Button>

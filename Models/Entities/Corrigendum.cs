@@ -5,17 +5,17 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Corrigendum
 {
-    public string CorrigendumId { get; set; } = null!;
+    public string Corrigendumid { get; set; } = null!;
 
-    public string ReferenceNumber { get; set; } = null!;
+    public string Referencenumber { get; set; } = null!;
 
     public string? Location { get; set; }
 
-    public string CorrigendumFields { get; set; } = null!;
+    public string Corrigendumfields { get; set; } = null!;
 
-    public string WorkFlow { get; set; } = null!;
+    public string Workflow { get; set; } = null!;
 
-    public int CurrentPlayer { get; set; }
+    public int Currentplayer { get; set; }
 
     public string? Type { get; set; }
 
@@ -23,8 +23,7 @@ public partial class Corrigendum
 
     public string? Status { get; set; }
 
-    public DateTime CreatedAt { get; set; }
+    public DateTime Createdat { get; set; }
 
-    // Navigation property
-    public virtual CitizenApplication ReferenceNumberNavigation { get; set; } = null!;
+    public virtual CitizenApplications ReferencenumberNavigation { get; set; } = null!;
 }

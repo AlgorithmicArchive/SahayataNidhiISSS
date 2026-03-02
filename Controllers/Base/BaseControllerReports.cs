@@ -18,15 +18,15 @@ namespace SahayataNidhi.Controllers
             switch (accessLevel)
             {
                 case "Tehsil":
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
-                    var districtForDivision = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
+                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
                     if (districtForDivision == null)
                         return string.Empty;
                     return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
@@ -45,17 +45,17 @@ namespace SahayataNidhi.Controllers
             {
                 case "Tehsil":
                     accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.TswoTehsils.FirstOrDefault(t => t.TehsilId == accessCode);
-                    return tehsil?.TehsilName ?? string.Empty;
+                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                    return tehsil?.Tehsilname ?? string.Empty;
 
                 case "District":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
-                    return district?.DistrictName ?? string.Empty;
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                    return district?.Districtname ?? string.Empty;
 
                 case "Division":
                     accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == accessCode);
+                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
                     if (districtForDivision == null)
                         return string.Empty;
                     return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
@@ -66,7 +66,7 @@ namespace SahayataNidhi.Controllers
             }
         }
 
-        public string GetApplications(string? scope, string? columnOrder, string? columnVisibility, int ServiceId, string? type, int pageIndex = 0, int pageSize = 10, string dataType = "new")
+        public string GetApplications(string? scope, string? columnOrder, string? columnVisibility, int Serviceid, string? type, int pageIndex = 0, int pageSize = 10, string dataType = "new")
         {
             var officerDetails = GetOfficerDetails();
 
@@ -75,18 +75,18 @@ namespace SahayataNidhi.Controllers
             var accessLevelParam = new NpgsqlParameter("p_access_level", officerDetails.AccessLevel);
             var accessCodeParam = new NpgsqlParameter("p_access_code", officerDetails.AccessCode);
             var applicationStatusParam = type != null ? new NpgsqlParameter("p_application_status", type) : new NpgsqlParameter("p_application_status", DBNull.Value);
-            var serviceIdParam = new NpgsqlParameter("p_service_id", ServiceId);
+            var serviceIdParam = new NpgsqlParameter("p_service_id", Serviceid);
             var pageIndexParam = new NpgsqlParameter("p_page_index", pageIndex);
             var pageSizeParam = new NpgsqlParameter("p_page_size", pageSize);
             var isPaginatedParam = new NpgsqlParameter("p_is_paginated", scope == "InView");
             var dataTypeParam = dataType != "new" ? new NpgsqlParameter("p_data_type", dataType) : new NpgsqlParameter("p_data_type", DBNull.Value);
 
-            List<CitizenApplication> response;
+            List<CitizenApplications> response;
 
-            var service = dbcontext.Services.FirstOrDefault(s => s.ServiceId == ServiceId);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == Serviceid);
             if (service == null) return JsonConvert.SerializeObject(new { data = new List<dynamic>(), columns = new List<dynamic>(), poolData = new List<dynamic>(), totalRecords = 0 });
 
-            var workflow = JsonConvert.DeserializeObject<List<dynamic>>(service.OfficerEditableField!);
+            var workflow = JsonConvert.DeserializeObject<List<dynamic>>(service.Officereditablefield!);
             dynamic authorities = workflow!.FirstOrDefault(p => p.designation == officerDetails.Role)!;
 
             if (type == "shifted")
@@ -94,12 +94,12 @@ namespace SahayataNidhi.Controllers
                 // For shifted applications - we'll need a separate PostgreSQL function or handle differently
                 // For now, we'll use direct query as fallback
                 response = dbcontext.CitizenApplications
-                    .Where(ca => ca.ServiceId == ServiceId)
+                    .Where(ca => ca.Serviceid == Serviceid)
                     .ToList()
                     .Where(ca =>
                     {
-                        var wf = JsonConvert.DeserializeObject<JArray>(ca.WorkFlow!);
-                        var currentPlayer = wf?.FirstOrDefault(o => (int)o["playerId"]! == ca.CurrentPlayer!);
+                        var wf = JsonConvert.DeserializeObject<JArray>(ca.Workflow!);
+                        var currentPlayer = wf?.FirstOrDefault(o => (int)o["playerId"]! == ca.Currentplayer!);
                         return currentPlayer != null && (string)currentPlayer["status"]! == "shifted";
                     })
                     .ToList();
@@ -170,10 +170,10 @@ namespace SahayataNidhi.Controllers
             List<dynamic> data = new List<dynamic>();
             List<dynamic> poolData = new List<dynamic>();
 
-            var poolList = dbcontext.Pools.FirstOrDefault(p =>
-                p.ServiceId == ServiceId &&
-                p.AccessLevel == officerDetails.AccessLevel &&
-                p.AccessCode == officerDetails.AccessCode
+            var poolList = dbcontext.Pool.FirstOrDefault(p =>
+                p.Serviceid == Serviceid &&
+                p.Accesslevel == officerDetails.AccessLevel &&
+                p.Accesscode == officerDetails.AccessCode
             );
 
             var pool = poolList != null && !string.IsNullOrWhiteSpace(poolList.List)
@@ -184,18 +184,18 @@ namespace SahayataNidhi.Controllers
 
             foreach (var details in response)
             {
-                var formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails!);
-                var officers = JsonConvert.DeserializeObject<JArray>(details.WorkFlow!);
-                var currentPlayer = details.CurrentPlayer;
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(details.Formdetails!);
+                var officers = JsonConvert.DeserializeObject<JArray>(details.Workflow!);
+                var currentPlayer = details.Currentplayer;
 
-                var latestHistory = dbcontext.ActionHistories
-                    .Where(h => h.ReferenceNumber == details.ReferenceNumber)
+                var latestHistory = dbcontext.Actionhistory
+                    .Where(h => h.Referencenumber == details.Referencenumber)
                     .AsEnumerable()
-                    .OrderByDescending(h => DateTime.ParseExact(h.ActionTakenDate, "dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture))
+                    .OrderByDescending(h => DateTime.ParseExact(h.Actiontakendate, "dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture))
                     .FirstOrDefault();
 
                 var parsedDate = latestHistory != null
-                    ? DateTime.ParseExact(latestHistory.ActionTakenDate, "dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture)
+                    ? DateTime.ParseExact(latestHistory.Actiontakendate, "dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture)
                     : DateTime.MinValue;
 
                 // Custom Actions logic (simplified)
@@ -216,9 +216,9 @@ namespace SahayataNidhi.Controllers
                     switch ((string)col.accessorKey)
                     {
                         case "sno": item["sno"] = snoCounter++; break;
-                        case "referenceNumber": item["referenceNumber"] = details.ReferenceNumber; break;
+                        case "referenceNumber": item["referenceNumber"] = details.Referencenumber; break;
                         case "applicantName": item["applicantName"] = GetFieldValue("ApplicantName", formDetails); break;
-                        case "serviceName": item["serviceName"] = dbcontext.Services.FirstOrDefault(s => s.ServiceId == details.ServiceId)?.ServiceName; break;
+                        case "serviceName": item["serviceName"] = dbcontext.Services.FirstOrDefault(s => s.Serviceid == details.Serviceid)?.Servicename; break;
                         case "status": item["status"] = details.Status; break;
                         case "submissionDate": item["submissionDate"] = details.CreatedAt; break;
                         case "actionTakenOn": item["actionTakenOn"] = parsedDate == DateTime.MinValue ? null : parsedDate.ToString("dd MMM yyyy hh:mm:ss tt"); break;
@@ -229,7 +229,7 @@ namespace SahayataNidhi.Controllers
                 if (type == "shifted")
                     data.Add(item);
                 else
-                    (pool!.Contains(details.ReferenceNumber) && type == "pending" ? poolData : data).Add(item);
+                    (pool!.Contains(details.Referencenumber) && type == "pending" ? poolData : data).Add(item);
             }
 
             var result = Json(new
@@ -246,15 +246,15 @@ namespace SahayataNidhi.Controllers
 
         public async Task<string> GetApplicationHistory(string? scope, string? columnOrder, string? columnVisibility, string ApplicationId, int page, int size)
         {
-            var application = await dbcontext.CitizenApplications.FirstOrDefaultAsync(ca => ca.ReferenceNumber == ApplicationId);
+            var application = await dbcontext.CitizenApplications.FirstOrDefaultAsync(ca => ca.Referencenumber == ApplicationId);
 
-            var players = JsonConvert.DeserializeObject<JArray>(application!.WorkFlow!);
-            var formDetails = JsonConvert.DeserializeObject<dynamic>(application.FormDetails!);
-            int currentPlayerIndex = (int)application.CurrentPlayer!;
+            var players = JsonConvert.DeserializeObject<JArray>(application!.Workflow!);
+            var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
+            int currentPlayerIndex = (int)application.Currentplayer!;
             var currentPlayer = players?.FirstOrDefault(o => (int)o["playerId"]! == currentPlayerIndex);
 
-            var fullHistory = await dbcontext.ActionHistories
-                .Where(ah => ah.ReferenceNumber == ApplicationId)
+            var fullHistory = await dbcontext.Actionhistory
+                .Where(ah => ah.Referencenumber == ApplicationId)
                 .ToListAsync();
 
             // Apply scope-based filtering
@@ -290,20 +290,20 @@ namespace SahayataNidhi.Controllers
 
             foreach (var his in history)
             {
-                var officerArea = GetOfficerAreaForHistory(his.LocationLevel!, his.LocationValue);
+                var officerArea = GetOfficerAreaForHistory(his.Locationlevel!, his.Locationvalue);
 
                 dynamic item = new ExpandoObject();
                 var itemDict = (IDictionary<string, object?>)item;
 
                 itemDict["sno"] = index;
-                itemDict["actionTaker"] = his.ActionTaker != "Citizen"
-                    ? $"{his.ActionTaker} {officerArea}"
-                    : his.ActionTaker;
-                itemDict["actionTaken"] = his.ActionTaken == "ReturnToCitizen"
+                itemDict["actionTaker"] = his.Actiontaker != "Citizen"
+                    ? $"{his.Actiontaker} {officerArea}"
+                    : his.Actiontaker;
+                itemDict["actionTaken"] = his.Actiontaken == "ReturnToCitizen"
                     ? "Returned to citizen for correction"
-                    : his.ActionTaken;
+                    : his.Actiontaken;
                 itemDict["remarks"] = his.Remarks;
-                itemDict["actionTakenOn"] = his.ActionTakenDate;
+                itemDict["actionTakenOn"] = his.Actiontakendate;
 
                 data.Add(item);
                 index++;
@@ -414,17 +414,17 @@ namespace SahayataNidhi.Controllers
 
             foreach (var application in pagedApplications)
             {
-                var formDetails = JsonConvert.DeserializeObject<dynamic>(application.FormDetails!);
-                var officers = JsonConvert.DeserializeObject<JArray>(application.WorkFlow!);
-                var currentPlayer = application.CurrentPlayer;
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
+                var officers = JsonConvert.DeserializeObject<JArray>(application.Workflow!);
+                var currentPlayer = application.Currentplayer;
                 string officerDesignation = (string)officers![currentPlayer!]!["designation"]!;
                 string offierAccessLevel = (string)officers![currentPlayer!]!["accessLevel"]!;
                 string officerStatus = (string)officers![currentPlayer!]!["status"]!;
                 string officerArea = GetOfficerArea(offierAccessLevel, formDetails);
 
                 string serviceName = dbcontext.Services
-                    .FirstOrDefault(s => s.ServiceId == application.ServiceId)?
-                    .ServiceName ?? "Unknown";
+                    .FirstOrDefault(s => s.Serviceid == application.Serviceid)?
+                    .Servicename ?? "Unknown";
 
                 dynamic row = new ExpandoObject();
                 var rowDict = (IDictionary<string, object?>)row;
@@ -441,7 +441,7 @@ namespace SahayataNidhi.Controllers
                     rowDict["serviceName"] = serviceName;
 
                 if (visibleKeys.Contains("referenceNumber"))
-                    rowDict["referenceNumber"] = application.ReferenceNumber;
+                    rowDict["referenceNumber"] = application.Referencenumber;
 
                 if (visibleKeys.Contains("applicantName"))
                     rowDict["applicantName"] = GetFieldValue("ApplicantName", formDetails);
@@ -480,14 +480,14 @@ namespace SahayataNidhi.Controllers
                 string? format = form["format"];
                 int pageIndex = Convert.ToInt32(form["pageIndex"]);
                 int pageSize = Convert.ToInt32(form["pageSize"]);
-                int ServiceId = Convert.ToInt32(form["ServiceId"]);
+                int Serviceid = Convert.ToInt32(form["Serviceid"]);
                 string? type = form["type"];
                 string? function = form["function"];
 
                 dynamic? result = null;
                 if (function == "GetApplications")
                 {
-                    result = JsonConvert.DeserializeObject<dynamic>(GetApplications(scope, columnOrder, columnVisibility, ServiceId, type, pageIndex, pageSize));
+                    result = JsonConvert.DeserializeObject<dynamic>(GetApplications(scope, columnOrder, columnVisibility, Serviceid, type, pageIndex, pageSize));
                 }
                 else if (function == "GetInitiatedApplications")
                 {

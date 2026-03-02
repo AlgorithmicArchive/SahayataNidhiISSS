@@ -189,7 +189,7 @@ const DECLARATION_TEMPLATES = [
   }
 ];
 
-// Declaration Configuration Component - RESTORED ORIGINAL DESIGN
+// Declaration Configuration Component (unchanged)
 const DeclarationConfiguration = ({
   formData,
   setFormData,
@@ -549,6 +549,7 @@ const DeclarationConfiguration = ({
   );
 };
 
+// ========== MAIN FieldEditModal COMPONENT ==========
 const FieldEditModal = ({
   selectedField,
   sections = [],
@@ -566,6 +567,7 @@ const FieldEditModal = ({
     type: selectedField?.type || "text",
     label: selectedField?.label || "New Field",
     name: selectedField?.name || `NewField_${Date.now()}`,
+    // minLength can be number or object (for dependent)
     minLength: selectedField?.minLength ?? 5,
     maxLength: selectedField?.maxLength ?? 50,
     options: Array.isArray(selectedField?.options) ? selectedField.options : [],
@@ -605,6 +607,16 @@ const FieldEditModal = ({
   const [optionInputText, setOptionInputText] = useState(
     formData.options.map((opt) => opt.label).join(";"),
   );
+
+  // --- Dependent Minimum Length state ---
+  const initialIsDependentMinLength =
+    typeof selectedField?.minLength === "object" &&
+    selectedField?.minLength?.dependentOn;
+  const [isDependentMinLength, setIsDependentMinLength] = useState(
+    initialIsDependentMinLength,
+  );
+
+  // --- Dependent Maximum Length state (existing) ---
   const initialIsDependentMaxLength =
     typeof selectedField?.maxLength === "object" &&
     selectedField?.maxLength?.dependentOn;
@@ -785,19 +797,128 @@ const FieldEditModal = ({
           }
           margin="dense"
         />
-        <TextField
-          fullWidth
-          label="Minimum Length"
-          type="number"
-          value={formData.minLength}
-          onChange={(e) =>
-            setFormData((prev) => ({
-              ...prev,
-              minLength: parseInt(e.target.value, 10) || 0,
-            }))
-          }
-          margin="dense"
-        />
+
+        {/* ========== MINIMUM LENGTH with DEPENDENT option ========== */}
+        <Box sx={{ marginTop: 2 }}>
+          <Typography variant="body2">Minimum Length</Typography>
+          {!isWorkflowContext && (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={isDependentMinLength}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsDependentMinLength(checked);
+                    setFormData((prev) => ({
+                      ...prev,
+                      minLength: checked ? { dependentOn: "" } : 5,
+                    }));
+                  }}
+                />
+              }
+              label="Dependent Minimum Length"
+            />
+          )}
+          {isDependentMinLength && !isWorkflowContext ? (
+            <>
+              <FormControl fullWidth margin="dense">
+                <InputLabel id="minLength-dependent-on-label">
+                  Dependent Field
+                </InputLabel>
+                <Select
+                  labelId="minLength-dependent-on-label"
+                  value={formData.minLength.dependentOn || ""}
+                  label="Dependent Field"
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      minLength: {
+                        ...prev.minLength,
+                        dependentOn: e.target.value,
+                      },
+                    }))
+                  }
+                >
+                  <MenuItem value="">
+                    <em>Select a field</em>
+                  </MenuItem>
+                  {filteredSelectableFields.map((field) => (
+                    <MenuItem key={field.id} value={field.id}>
+                      {field.label} ({field.type})
+                      {field.isAdditional && " [Additional]"}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {formData.minLength.dependentOn && (
+                <>
+                  {(() => {
+                    const dependentFieldId = formData.minLength.dependentOn;
+                    const selectedField = selectableFields.find(
+                      (field) => field.id === dependentFieldId,
+                    );
+                    if (selectedField?.options?.length > 0) {
+                      return selectedField.options.map((option) => (
+                        <TextField
+                          key={option.value}
+                          fullWidth
+                          label={`Minimum Length for ${option.label}`}
+                          type="number"
+                          value={formData.minLength?.[option.value] || ""}
+                          onChange={(e) => {
+                            const newValue = parseInt(e.target.value, 10) || 0;
+                            setFormData((prev) => ({
+                              ...prev,
+                              minLength: {
+                                ...prev.minLength,
+                                [option.value]: newValue,
+                              },
+                            }));
+                          }}
+                          margin="dense"
+                        />
+                      ));
+                    }
+                    return (
+                      <TextField
+                        fullWidth
+                        label="Minimum Length Condition"
+                        value={formData.minLength?.condition || ""}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            minLength: {
+                              ...prev.minLength,
+                              condition: e.target.value,
+                            },
+                          }))
+                        }
+                        margin="dense"
+                        placeholder="e.g., 'Not empty' for text fields"
+                      />
+                    );
+                  })()}
+                </>
+              )}
+            </>
+          ) : (
+            <TextField
+              fullWidth
+              label="Minimum Length"
+              type="number"
+              value={formData.minLength}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  minLength: parseInt(e.target.value, 10) || 0,
+                }))
+              }
+              margin="dense"
+            />
+          )}
+        </Box>
+
+        {/* ========== MAXIMUM LENGTH with DEPENDENT option (existing) ========== */}
         <Box sx={{ marginTop: 2 }}>
           <Typography variant="body2">Maximum Length</Typography>
           {!isWorkflowContext && (
@@ -916,6 +1037,7 @@ const FieldEditModal = ({
             />
           )}
         </Box>
+
         <TextField
           fullWidth
           label="Span (Grid)"

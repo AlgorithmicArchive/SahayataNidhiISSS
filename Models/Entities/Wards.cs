@@ -7,9 +7,9 @@ public partial class Wards
 {
     public int Uuid { get; set; }
 
-    public int? MuncipalityId { get; set; }
+    public int? Muncipalityid { get; set; }
 
-    public int? WardCode { get; set; }
+    public int? Wardcode { get; set; }
 
-    public int? WardNo { get; set; }
+    public int? Wardno { get; set; }
 }

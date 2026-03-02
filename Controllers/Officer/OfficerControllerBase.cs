@@ -45,7 +45,7 @@ namespace SahayataNidhi.Controllers.Officer
             base.OnActionExecuted(context);
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var officer = dbcontext.Users.FirstOrDefault(u => u.UserId.ToString() == userId);
+            var officer = dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
             string profile = officer?.Profile ?? "/resources/dummyDocs/formImage.jpg";
 
             ViewData["UserType"] = "Officer";
@@ -77,13 +77,13 @@ namespace SahayataNidhi.Controllers.Officer
         {
             if (AccessLevel == "Tehsil")
             {
-                var tehsil = dbcontext.TswoTehsils.Where(t => t.TehsilId == AccessCode).FirstOrDefault();
-                return tehsil?.TehsilName ?? "Unknown Tehsil";
+                var tehsil = dbcontext.Tswotehsil.Where(t => t.Tehsilid == AccessCode).FirstOrDefault();
+                return tehsil?.Tehsilname ?? "Unknown Tehsil";
             }
             else if (AccessLevel == "District")
             {
-                var district = dbcontext.Districts.FirstOrDefault(d => d.DistrictId == AccessCode);
-                return district?.DistrictName ?? "Unknown District";
+                var district = dbcontext.District.FirstOrDefault(d => d.Districtid == AccessCode);
+                return district?.Districtname ?? "Unknown District";
             }
             else if (AccessLevel == "Division")
             {
@@ -122,16 +122,16 @@ namespace SahayataNidhi.Controllers.Officer
                 return Json(new { status = false, message = "Officer not found" });
             }
 
-            var details = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.ReferenceNumber == applicationId);
+            var details = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.Referencenumber == applicationId);
             if (details == null)
             {
                 return Json(new { status = false, message = "Application not found" });
             }
 
-            var players = JsonConvert.DeserializeObject<dynamic>(details.WorkFlow!) as JArray;
+            var players = JsonConvert.DeserializeObject<dynamic>(details.Workflow!) as JArray;
             var currentPlayer = players?.FirstOrDefault(p => (string)p["designation"]! == officer.Role);
             string status = (string)currentPlayer?["status"]!;
-            var formDetailsObj = JObject.Parse(details.FormDetails!);
+            var formDetailsObj = JObject.Parse(details.Formdetails!);
             dynamic otherPlayer = new { };
 
             if (status == "forwarded")
@@ -153,15 +153,15 @@ namespace SahayataNidhi.Controllers.Officer
 
             try
             {
-                var getServices = dbcontext.WebServices.FirstOrDefault(ws => ws.ServiceId == details.ServiceId && ws.IsActive);
+                var getServices = dbcontext.Webservice.FirstOrDefault(ws => ws.Serviceid == details.Serviceid && ws.Isactive);
                 if (getServices != null)
                 {
-                    var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.OnAction);
+                    var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
                     if (status == "sanctioned" && onAction != null && onAction.Contains("CallbackOnSanction"))
                     {
-                        var fieldMapObj = JObject.Parse(getServices.FieldMappings);
+                        var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
                         var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
-                        await SendApiRequestAsync(getServices.ApiEndpoint, fieldMap);
+                        await SendApiRequestAsync(getServices.Apiendpoint, fieldMap);
                     }
                 }
             }
@@ -170,8 +170,8 @@ namespace SahayataNidhi.Controllers.Officer
                 _logger.LogError(ex, "Error in external service call");
             }
 
-            details.WorkFlow = JsonConvert.SerializeObject(players);
-            details.CurrentPlayer = (int)currentPlayer!["playerId"]!;
+            details.Workflow = JsonConvert.SerializeObject(players);
+            details.Currentplayer = (int)currentPlayer!["playerId"]!;
             dbcontext.SaveChanges();
 
             helper.InsertHistory(applicationId, "Pulled Application", (string)currentPlayer["designation"]!, "Call back Application", officer.AccessLevel!, (int)officer.AccessCode!);
@@ -205,7 +205,7 @@ namespace SahayataNidhi.Controllers.Officer
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Invalid additionalDetails JSON received from frontend: {AdditionalDetails}", additionalDetailsStr);
+                    _logger.LogError(ex, "Invalid additionalDetails JSON received from frontend: {Additionaldetails}", additionalDetailsStr);
                     additionalDetailsObj = new JObject();
                 }
             }
@@ -234,16 +234,16 @@ namespace SahayataNidhi.Controllers.Officer
             try
             {
                 var formdetails = dbcontext.CitizenApplications
-                    .FirstOrDefault(fd => fd.ReferenceNumber == applicationId);
+                    .FirstOrDefault(fd => fd.Referencenumber == applicationId);
 
                 if (formdetails == null)
                 {
                     return Json(new { status = false, response = "Application not found" });
                 }
 
-                var formDetailsObj = JObject.Parse(formdetails.FormDetails!);
-                var workFlow = formdetails.WorkFlow;
-                int currentPlayer = formdetails.CurrentPlayer ?? 0;
+                var formDetailsObj = JObject.Parse(formdetails.Formdetails!);
+                var workFlow = formdetails.Workflow;
+                int currentPlayer = formdetails.Currentplayer ?? 0;
 
                 _logger.LogInformation("Initial State | CurrentPlayer: {CurrentPlayer} | Workflow Players Count: {Count}",
                     currentPlayer, string.IsNullOrEmpty(workFlow) ? 0 : JArray.Parse(workFlow).Count);
@@ -277,14 +277,14 @@ namespace SahayataNidhi.Controllers.Officer
                     players[currentPlayer]["canPull"] = true;
                     players[currentPlayer + 1]["status"] = "pending";
                     players[currentPlayer + 1]["detailsConfirmationDeclartion"] = decleration;
-                    formdetails.CurrentPlayer = currentPlayer + 1;
+                    formdetails.Currentplayer = currentPlayer + 1;
                 }
                 else if (action == "ReturnToPlayer")
                 {
                     players[currentPlayer]["status"] = "returned";
                     players[currentPlayer]["canPull"] = true;
                     players[currentPlayer - 1]["status"] = "pending";
-                    formdetails.CurrentPlayer = currentPlayer - 1;
+                    formdetails.Currentplayer = currentPlayer - 1;
                 }
                 else if (action == "ReturnToCitizen")
                 {
@@ -293,12 +293,12 @@ namespace SahayataNidhi.Controllers.Officer
 
                     if (returnFieldsToken != null)
                     {
-                        JObject appAdditional = string.IsNullOrEmpty(formdetails.AdditionalDetails)
+                        JObject appAdditional = string.IsNullOrEmpty(formdetails.Additionaldetails)
                             ? new JObject()
-                            : JObject.Parse(formdetails.AdditionalDetails);
+                            : JObject.Parse(formdetails.Additionaldetails);
 
                         appAdditional["returnFields"] = returnFieldsToken;
-                        formdetails.AdditionalDetails = appAdditional.ToString();
+                        formdetails.Additionaldetails = appAdditional.ToString();
                     }
                 }
                 else if (action == "Sanction")
@@ -369,7 +369,7 @@ namespace SahayataNidhi.Controllers.Officer
                     formdetails.Status = action + "ed";
                 }
 
-                formdetails.WorkFlow = newWorkFlow;
+                formdetails.Workflow = newWorkFlow;
 
                 // Save with detailed error capture
                 try
@@ -403,17 +403,17 @@ namespace SahayataNidhi.Controllers.Officer
                 // External service call
                 try
                 {
-                    var getServices = dbcontext.WebServices
-                        .FirstOrDefault(ws => ws.ServiceId == formdetails.ServiceId && ws.IsActive);
+                    var getServices = dbcontext.Webservice
+                        .FirstOrDefault(ws => ws.Serviceid == formdetails.Serviceid && ws.Isactive);
 
                     if (getServices != null)
                     {
-                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.OnAction);
+                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
                         if (onAction != null && onAction.Contains(action))
                         {
-                            var fieldMapObj = JObject.Parse(getServices.FieldMappings);
+                            var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
                             var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
-                            await SendApiRequestAsync(getServices.ApiEndpoint, fieldMap);
+                            await SendApiRequestAsync(getServices.Apiendpoint, fieldMap);
                         }
                     }
                 }
@@ -425,19 +425,19 @@ namespace SahayataNidhi.Controllers.Officer
                 // Email preparation
                 string fullName = GetFieldValue("ApplicantName", formDetailsObj);
                 string ServiceName = dbcontext.Services
-                    .FirstOrDefault(s => s.ServiceId == formdetails.ServiceId)?.ServiceName ?? "Unknown Service";
+                    .FirstOrDefault(s => s.Serviceid == formdetails.Serviceid)?.Servicename ?? "Unknown Service";
 
                 string appliedDistrictId = GetFieldValue("District", formDetailsObj);
                 string appliedTehsilId = GetFieldValue("Tehsil", formDetailsObj);
 
-                string districtName = dbcontext.Districts
-                    .FirstOrDefault(d => d.DistrictId == Convert.ToInt32(appliedDistrictId))?.DistrictName ?? "Unknown District";
+                string districtName = dbcontext.District
+                    .FirstOrDefault(d => d.Districtid == Convert.ToInt32(appliedDistrictId))?.Districtname ?? "Unknown District";
 
                 string? tehsilName = null;
                 if (!string.IsNullOrWhiteSpace(appliedTehsilId) && int.TryParse(appliedTehsilId, out int tehsilId))
                 {
-                    tehsilName = dbcontext.TswoTehsils
-                        .FirstOrDefault(t => t.TehsilId == tehsilId)?.TehsilName;
+                    tehsilName = dbcontext.Tswotehsil
+                        .FirstOrDefault(t => t.Tehsilid == tehsilId)?.Tehsilname;
                 }
 
                 string officerArea = officer.AccessLevel switch
@@ -456,7 +456,7 @@ namespace SahayataNidhi.Controllers.Officer
                 string userEmail = GetFieldValue("Email", formDetailsObj);
                 string Action = action == "ReturnToCitizen" ? "Returned for correction" : action + "ed";
 
-                var emailtemplate = JObject.Parse(dbcontext.EmailSettings.FirstOrDefault()?.Templates ?? "{}");
+                var emailtemplate = JObject.Parse(dbcontext.Emailsettings.FirstOrDefault()?.Templates ?? "{}");
                 string template = emailtemplate["OfficerAction"]?.ToString() ?? "";
 
                 var placeholders = new Dictionary<string, string>
@@ -481,8 +481,8 @@ namespace SahayataNidhi.Controllers.Officer
                 {
                     string fileName = applicationId.Replace("/", "_") + "_SanctionLetter.pdf";
 
-                    var fileModel = await dbcontext.UserDocuments
-                        .FirstOrDefaultAsync(f => f.FileName == fileName);
+                    var fileModel = await dbcontext.Userdocuments
+                        .FirstOrDefaultAsync(f => f.Filename == fileName);
 
                     if (fileModel == null)
                     {
@@ -496,7 +496,7 @@ namespace SahayataNidhi.Controllers.Officer
                             userEmail!,
                             "Form Submission",
                             htmlMessage,
-                            fileModel.FileData, // byte[] directly from DB
+                            fileModel.Filedata, // byte[] directly from DB
                             fileName
                         );
 
@@ -553,7 +553,7 @@ namespace SahayataNidhi.Controllers.Officer
             try
             {
                 if (!form.TryGetValue("AccessCode", out var accessCodeStr) ||
-                    !form.TryGetValue("ServiceId", out var serviceIdStr) ||
+                    !form.TryGetValue("Serviceid", out var serviceIdStr) ||
                     !form.TryGetValue("Type", out var type) ||
                     !form.TryGetValue("Month", out var monthStr) ||
                     !form.TryGetValue("Year", out var yearStr) ||
@@ -572,9 +572,9 @@ namespace SahayataNidhi.Controllers.Officer
                     return BadRequest(new { status = false, message = "Invalid form field values" });
                 }
 
-                var districtShortName = dbcontext.Districts
-                    .Where(d => d.DistrictId == accessCode)
-                    .Select(d => d.DistrictShort)
+                var districtShortName = dbcontext.District
+                    .Where(d => d.Districtid == accessCode)
+                    .Select(d => d.Districtshort)
                     .FirstOrDefault();
 
                 if (string.IsNullOrEmpty(districtShortName))

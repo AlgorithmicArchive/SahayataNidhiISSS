@@ -7,13 +7,13 @@ public partial class Emailsettings
 {
     public int Id { get; set; }
 
-    public string SenderName { get; set; } = null!;
+    public string Sendername { get; set; } = null!;
 
-    public string SenderEmail { get; set; } = null!;
+    public string Senderemail { get; set; } = null!;
 
-    public string SmtpServer { get; set; } = null!;
+    public string Smtpserver { get; set; } = null!;
 
-    public int SmtpPort { get; set; }
+    public int Smtpport { get; set; }
 
     public string Password { get; set; } = null!;
 

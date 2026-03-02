@@ -5,11 +5,11 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Offices
 {
-    public int OfficeId { get; set; }
+    public int Officeid { get; set; }
 
-    public int DepartmentId { get; set; }
+    public int Departmentid { get; set; }
 
-    public string OfficeType { get; set; } = null!;
+    public string Officetype { get; set; } = null!;
 
-    public string AccessLevel { get; set; } = null!;
+    public string Accesslevel { get; set; } = null!;
 }

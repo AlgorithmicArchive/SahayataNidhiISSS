@@ -3,55 +3,55 @@ using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class PensionPayment
+public partial class Pensionpayments
 {
-    public string? StateCode { get; set; }
+    public string? Statecode { get; set; }
 
-    public string? StateName { get; set; }
+    public string? Statename { get; set; }
 
-    public string? DivisionCode { get; set; }
+    public string? Divisioncode { get; set; }
 
-    public string? DivisionName { get; set; }
+    public string? Divisionname { get; set; }
 
-    public string? DistrictId { get; set; }
+    public string? Districtid { get; set; }
 
-    public string? DistrictName { get; set; }
+    public string? Districtname { get; set; }
 
-    public string? PaymentOfMonth { get; set; }
+    public string? Paymentofmonth { get; set; }
 
-    public string? PaymentOfYear { get; set; }
+    public string? Paymentofyear { get; set; }
 
-    public string? ReferenceNumber { get; set; }
+    public string? Referencenumber { get; set; }
 
-    public string? DistrictBankUid { get; set; }
+    public string? Districtbankuid { get; set; }
 
-    public string? PayingDepartment { get; set; }
+    public string? Payingdepartment { get; set; }
 
-    public string? PayingDeptAccountNumber { get; set; }
+    public string? Payingdeptaccountnumber { get; set; }
 
-    public string? PensionAmount { get; set; }
+    public string? Pensionamount { get; set; }
 
-    public string? PaymentFileGenerationDate { get; set; }
+    public string? Paymentfilegenerationdate { get; set; }
 
-    public string? PayingDeptBankName { get; set; }
+    public string? Payingdeptbankname { get; set; }
 
-    public string? PayingDeptIfscCode { get; set; }
+    public string? Payingdeptifsccode { get; set; }
 
-    public string? PensionerName { get; set; }
+    public string? Pensionername { get; set; }
 
-    public string? PensionerIfscCode { get; set; }
+    public string? Pensionerifsccode { get; set; }
 
-    public string? PensionerAccountNo { get; set; }
+    public string? Pensioneraccountno { get; set; }
 
-    public string? PensionerType { get; set; }
+    public string? Pensionertype { get; set; }
 
-    public string? BankResPensionerCategory { get; set; }
+    public string? BankresPensionercategory { get; set; }
 
-    public string? BankResStatusFromBank { get; set; }
+    public string? BankresStatusfrombank { get; set; }
 
-    public string? BankResTransactionId { get; set; }
+    public string? BankresTransactionid { get; set; }
 
-    public string? BankResBankDateExecuted { get; set; }
+    public string? BankresBankdateexecuted { get; set; }
 
-    public string? BankResTransactionStatus { get; set; }
+    public string? BankresTransactionstatus { get; set; }
 }

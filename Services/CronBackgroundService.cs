@@ -7,7 +7,7 @@ using System.Reflection;
 public interface ICronScheduler
 {
     Task ScheduleTaskAsync(string cronExpression, string actionType, Func<CancellationToken, Task> action);
-    Task<List<ScheduledJobs>> GetAllJobsAsync();
+    Task<List<Scheduledjobs>> GetAllJobsAsync();
     Task UnscheduleTaskAsync(string taskId);
 }
 
@@ -40,12 +40,12 @@ public class CronScheduler : BackgroundService, ICronScheduler
 
             using var scope = _serviceProvider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-            db.ScheduledJobs.Add(new ScheduledJobs
+            db.Scheduledjobs.Add(new Scheduledjobs
             {
                 Id = Guid.Parse(taskId),
-                CronExpression = cronExpression,
-                ActionType = actionType,
-                LastExecutedAt = null
+                Cronexpression = cronExpression,
+                Actiontype = actionType,
+                Lastexecutedat = null
             });
             await db.SaveChangesAsync();
 
@@ -58,11 +58,11 @@ public class CronScheduler : BackgroundService, ICronScheduler
         }
     }
 
-    public async Task<List<ScheduledJobs>> GetAllJobsAsync()
+    public async Task<List<Scheduledjobs>> GetAllJobsAsync()
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-        return await db.ScheduledJobs.ToListAsync();
+        return await db.Scheduledjobs.ToListAsync();
     }
 
     public async Task UnscheduleTaskAsync(string taskId)
@@ -71,10 +71,10 @@ public class CronScheduler : BackgroundService, ICronScheduler
         {
             using var scope = _serviceProvider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-            var job = await db.ScheduledJobs.FindAsync(Guid.Parse(taskId));
+            var job = await db.Scheduledjobs.FindAsync(Guid.Parse(taskId));
             if (job != null)
             {
-                db.ScheduledJobs.Remove(job);
+                db.Scheduledjobs.Remove(job);
                 await db.SaveChangesAsync();
             }
             _logger.LogInformation("Unscheduled task {TaskId} ({ActionType})", taskId, removed.ActionType);
@@ -117,10 +117,10 @@ public class CronScheduler : BackgroundService, ICronScheduler
                         // Update DB
                         using var scope = _serviceProvider.CreateScope();
                         var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-                        var dbJob = await db.ScheduledJobs.FindAsync(Guid.Parse(task.Key), cts.Token);
+                        var dbJob = await db.Scheduledjobs.FindAsync(Guid.Parse(task.Key), cts.Token);
                         if (dbJob != null)
                         {
-                            dbJob.LastExecutedAt = DateTime.Now;
+                            dbJob.Lastexecutedat = DateTime.Now;
                             await db.SaveChangesAsync(cts.Token);
                         }
 
@@ -153,17 +153,17 @@ public class CronScheduler : BackgroundService, ICronScheduler
     {
         using var scope = _serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-        var jobs = await db.ScheduledJobs.ToListAsync(ct);
+        var jobs = await db.Scheduledjobs.ToListAsync(ct);
 
         foreach (var job in jobs)
         {
             try
             {
-                var schedule = CrontabSchedule.Parse(job.CronExpression, new CrontabSchedule.ParseOptions { IncludingSeconds = false });
-                var action = _actionRegistry.GetValueOrDefault(job.ActionType) ?? (ct => Task.CompletedTask);
+                var schedule = CrontabSchedule.Parse(job.Cronexpression, new CrontabSchedule.ParseOptions { IncludingSeconds = false });
+                var action = _actionRegistry.GetValueOrDefault(job.Actiontype) ?? (ct => Task.CompletedTask);
 
-                _scheduledTasks[job.Id.ToString()] = (schedule, job.ActionType, action);
-                _logger.LogInformation("Loaded job {JobId} ({ActionType})", job.Id, job.ActionType);
+                _scheduledTasks[job.Id.ToString()] = (schedule, job.Actiontype, action);
+                _logger.LogInformation("Loaded job {JobId} ({ActionType})", job.Id, job.Actiontype);
             }
             catch (CrontabException ex)
             {

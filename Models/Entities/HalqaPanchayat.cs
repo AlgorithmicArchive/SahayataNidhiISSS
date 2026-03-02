@@ -7,9 +7,9 @@ public partial class Halqapanchayat
 {
     public int Uuid { get; set; }
 
-    public int? BlockId { get; set; }
+    public int? Blockid { get; set; }
 
-    public int? HalqaPanchayatId { get; set; }
+    public int? Halqapanchayatid { get; set; }
 
-    public string? HalqaPanchayatName { get; set; }
+    public string? Halqapanchayatname { get; set; }
 }

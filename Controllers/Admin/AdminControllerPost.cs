@@ -27,7 +27,7 @@ namespace SahayataNidhi.Controllers.Admin
                     return NotFound(new { status = false, message = "Officer not found." });
                 }
 
-                var additionalDetails = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(officer.AdditionalDetails ?? "{}");
+                var additionalDetails = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(officer.Additionaldetails ?? "{}");
                 if (additionalDetails == null)
                 {
                     return BadRequest(new { status = false, message = "Invalid officer details." });
@@ -36,7 +36,7 @@ namespace SahayataNidhi.Controllers.Admin
                 bool currentValidate = additionalDetails.ContainsKey("Validate") ? additionalDetails["Validate"] : false;
                 additionalDetails["Validate"] = !currentValidate;
 
-                officer.AdditionalDetails = JsonConvert.SerializeObject(additionalDetails);
+                officer.Additionaldetails = JsonConvert.SerializeObject(additionalDetails);
                 dbcontext.SaveChanges();
 
                 string currentDateTime = DateTime.Now.AddHours(5.5).ToString("dd MMM yyyy, hh:mm tt") + " IST";
@@ -77,7 +77,7 @@ namespace SahayataNidhi.Controllers.Admin
                     return NotFound(new { status = false, message = "User not found." });
                 }
 
-                user.UserType = userType;
+                user.Usertype = userType;
                 dbcontext.SaveChanges();
 
                 string currentDateTime = DateTime.Now.AddHours(5.5)
@@ -126,10 +126,10 @@ namespace SahayataNidhi.Controllers.Admin
                 };
                 var backupCodesJson = JsonConvert.SerializeObject(backupCodes);
 
-                var additionalDetailsJson = form["AdditionalDetails"].ToString();
+                var additionalDetailsJson = form["Additionaldetails"].ToString();
                 if (string.IsNullOrEmpty(additionalDetailsJson))
                 {
-                    return Json(new { status = false, response = "AdditionalDetails is required" });
+                    return Json(new { status = false, response = "Additionaldetails is required" });
                 }
 
                 dynamic additionalDetails = JsonConvert.DeserializeObject(additionalDetailsJson)!;
@@ -150,7 +150,7 @@ namespace SahayataNidhi.Controllers.Admin
 
                 if (result.Count > 0)
                 {
-                    return Json(new { status = true, userId = result[0].UserId });
+                    return Json(new { status = true, userId = result[0].Userid });
                 }
                 else
                 {
@@ -171,8 +171,8 @@ namespace SahayataNidhi.Controllers.Admin
             {
                 var designation = Request.Form["Designation"].ToString();
                 var designationShort = Request.Form["DesignationShort"].ToString();
-                var accessLevel = Request.Form["AccessLevel"].ToString();
-                var departmentId = int.Parse(Request.Form["DepartmentId"]!);
+                var accessLevel = Request.Form["Accesslevel"].ToString();
+                var departmentId = int.Parse(Request.Form["Departmentid"]!);
 
                 if (string.IsNullOrWhiteSpace(designation) || string.IsNullOrWhiteSpace(designationShort) || string.IsNullOrWhiteSpace(accessLevel))
                 {
@@ -182,12 +182,12 @@ namespace SahayataNidhi.Controllers.Admin
                 var newDesignation = new Officersdesignations
                 {
                     Designation = designation,
-                    DesignationShort = designationShort,
-                    AccessLevel = accessLevel,
-                    DepartmentId = departmentId
+                    Designationshort = designationShort,
+                    Accesslevel = accessLevel,
+                    Departmentid = departmentId
                 };
 
-                dbcontext.OfficersDesignations.Add(newDesignation);
+                dbcontext.Officersdesignations.Add(newDesignation);
                 dbcontext.SaveChanges();
 
                 return Json(new { status = true });
@@ -217,8 +217,8 @@ namespace SahayataNidhi.Controllers.Admin
                 var designationIdString = form["DesignationId"].ToString();
                 var designation = form["Designation"].ToString();
                 var designationShort = form["DesignationShort"].ToString();
-                var accessLevel = form["AccessLevel"].ToString();
-                var departmentIdString = form["DepartmentId"].ToString();
+                var accessLevel = form["Accesslevel"].ToString();
+                var departmentIdString = form["Departmentid"].ToString();
 
                 if (string.IsNullOrWhiteSpace(designationIdString) || string.IsNullOrWhiteSpace(designation) ||
                     string.IsNullOrWhiteSpace(designationShort) || string.IsNullOrWhiteSpace(accessLevel) ||
@@ -233,20 +233,20 @@ namespace SahayataNidhi.Controllers.Admin
                 }
                 if (!int.TryParse(departmentIdString, out var departmentId))
                 {
-                    return BadRequest(new { error = "Invalid DepartmentId format; must be an integer" });
+                    return BadRequest(new { error = "Invalid Departmentid format; must be an integer" });
                 }
 
-                var existingDesignation = dbcontext.OfficersDesignations
-                    .FirstOrDefault(d => d.Uuid == designationId && d.DepartmentId == officer.Department);
+                var existingDesignation = dbcontext.Officersdesignations
+                    .FirstOrDefault(d => d.Uuid == designationId && d.Departmentid == officer.Department);
                 if (existingDesignation == null)
                 {
                     return NotFound(new { error = "Designation not found or you do not have permission to update it" });
                 }
 
                 existingDesignation.Designation = designation;
-                existingDesignation.DesignationShort = designationShort;
-                existingDesignation.AccessLevel = accessLevel;
-                existingDesignation.DepartmentId = departmentId;
+                existingDesignation.Designationshort = designationShort;
+                existingDesignation.Accesslevel = accessLevel;
+                existingDesignation.Departmentid = departmentId;
 
                 dbcontext.SaveChanges();
 
@@ -286,14 +286,14 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { error = "Invalid DesignationId format; must be an integer" });
                 }
 
-                var designation = dbcontext.OfficersDesignations
-                    .FirstOrDefault(d => d.Uuid == designationId && d.DepartmentId == officer.Department);
+                var designation = dbcontext.Officersdesignations
+                    .FirstOrDefault(d => d.Uuid == designationId && d.Departmentid == officer.Department);
                 if (designation == null)
                 {
                     return NotFound(new { error = "Designation not found or you do not have permission to delete it" });
                 }
 
-                dbcontext.OfficersDesignations.Remove(designation);
+                dbcontext.Officersdesignations.Remove(designation);
                 dbcontext.SaveChanges();
 
                 return Json(new { status = true });
@@ -310,11 +310,11 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public IActionResult AddDepartment([FromForm] string DepartmentName)
+        public IActionResult AddDepartment([FromForm] string Departmentname)
         {
             try
             {
-                var department = new Departments { DepartmentName = DepartmentName };
+                var department = new Departments { Departmentname = Departmentname };
                 dbcontext.Departments.Add(department);
                 dbcontext.SaveChanges();
                 return Json(new { status = true });
@@ -327,15 +327,15 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public IActionResult UpdateDepartment([FromForm] int DepartmentId, [FromForm] string DepartmentName)
+        public IActionResult UpdateDepartment([FromForm] int Departmentid, [FromForm] string Departmentname)
         {
             try
             {
-                var department = dbcontext.Departments.Find(DepartmentId);
+                var department = dbcontext.Departments.Find(Departmentid);
                 if (department == null)
                     return Json(new { status = false, message = "Department not found" });
 
-                department.DepartmentName = DepartmentName;
+                department.Departmentname = Departmentname;
                 dbcontext.SaveChanges();
                 return Json(new { status = true });
             }
@@ -347,11 +347,11 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public IActionResult DeleteDepartment([FromForm] int DepartmentId)
+        public IActionResult DeleteDepartment([FromForm] int Departmentid)
         {
             try
             {
-                var department = dbcontext.Departments.Find(DepartmentId);
+                var department = dbcontext.Departments.Find(Departmentid);
                 if (department == null)
                     return Json(new { status = false, message = "Department not found" });
 
@@ -371,20 +371,20 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                if (!form.TryGetValue("OfficeType", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
+                if (!form.TryGetValue("Officetype", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
                     return Json(new { status = false, message = "Office Type is required." });
 
-                if (!form.TryGetValue("AccessLevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
+                if (!form.TryGetValue("Accesslevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
                     return Json(new { status = false, message = "Access Level is required." });
 
-                if (!form.TryGetValue("DepartmentId", out var deptIdValues) || !int.TryParse(deptIdValues[0], out int departmentId))
+                if (!form.TryGetValue("Departmentid", out var deptIdValues) || !int.TryParse(deptIdValues[0], out int departmentId))
                     return Json(new { status = false, message = "Invalid Department ID." });
 
                 var office = new Offices
                 {
-                    DepartmentId = departmentId,
-                    OfficeType = officeTypeValues[0]!.Trim(),
-                    AccessLevel = accessLevelValues[0]!.Trim()
+                    Departmentid = departmentId,
+                    Officetype = officeTypeValues[0]!.Trim(),
+                    Accesslevel = accessLevelValues[0]!.Trim()
                 };
 
                 dbcontext.Offices.Add(office);
@@ -404,27 +404,27 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                if (!form.TryGetValue("OfficeId", out var idValues) || !int.TryParse(idValues[0], out int officeId))
+                if (!form.TryGetValue("Officeid", out var idValues) || !int.TryParse(idValues[0], out int officeId))
                     return Json(new { status = false, message = "Invalid Office ID." });
 
-                if (!form.TryGetValue("OfficeType", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
+                if (!form.TryGetValue("Officetype", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
                     return Json(new { status = false, message = "Office Type is required." });
 
-                if (!form.TryGetValue("AccessLevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
+                if (!form.TryGetValue("Accesslevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
                     return Json(new { status = false, message = "Access Level is required." });
 
-                if (!form.TryGetValue("DepartmentId", out var deptIdValues) || !int.TryParse(deptIdValues[0], out int departmentId))
+                if (!form.TryGetValue("Departmentid", out var deptIdValues) || !int.TryParse(deptIdValues[0], out int departmentId))
                     return Json(new { status = false, message = "Invalid Department ID." });
 
                 var office = await dbcontext.Offices.FindAsync(officeId);
                 if (office == null)
                     return Json(new { status = false, message = "Office not found." });
 
-                if (office.DepartmentId != departmentId)
+                if (office.Departmentid != departmentId)
                     return Json(new { status = false, message = "You cannot modify offices from another department." });
 
-                office.OfficeType = officeTypeValues[0]!.Trim();
-                office.AccessLevel = accessLevelValues[0]!.Trim();
+                office.Officetype = officeTypeValues[0]!.Trim();
+                office.Accesslevel = accessLevelValues[0]!.Trim();
 
                 await dbcontext.SaveChangesAsync();
 
@@ -442,7 +442,7 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                if (!form.TryGetValue("OfficeId", out var idValues) || !int.TryParse(idValues[0], out int officeId))
+                if (!form.TryGetValue("Officeid", out var idValues) || !int.TryParse(idValues[0], out int officeId))
                     return Json(new { status = false, message = "Invalid Office ID." });
 
                 var office = await dbcontext.Offices.FindAsync(officeId);
@@ -462,7 +462,7 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public async Task<IActionResult> AddOfficeDetail([FromForm] string OfficeName, [FromForm] int OfficeType, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
+        public async Task<IActionResult> AddOfficeDetail([FromForm] string OfficeName, [FromForm] int Officetype, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
         {
             try
             {
@@ -471,23 +471,23 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { status = false, message = "Invalid officer or department." });
 
                 var office = await dbcontext.Offices
-                    .FirstOrDefaultAsync(o => o.OfficeId == OfficeType && o.DepartmentId == officer.Department);
+                    .FirstOrDefaultAsync(o => o.Officeid == Officetype && o.Departmentid == officer.Department);
 
                 if (office == null)
                     return BadRequest(new { status = false, message = "Invalid office type or access denied." });
 
                 var newDetail = new Officesdetails
                 {
-                    StateCode = 0,
-                    DivisionCode = Divisioncode,
-                    DistrictCode = DistrictCode,
-                    AreaCode = AreaCode,
-                    AreaName = AreaName ?? "",
-                    OfficeName = OfficeName,
-                    OfficeType = OfficeType
+                    Statecode = 0,
+                    Divisioncode = Divisioncode,
+                    Districtcode = DistrictCode,
+                    Areacode = AreaCode,
+                    Areaname = AreaName ?? "",
+                    Officename = OfficeName,
+                    Officetype = Officetype
                 };
 
-                dbcontext.OfficesDetails.Add(newDetail);
+                dbcontext.Officesdetails.Add(newDetail);
                 await dbcontext.SaveChangesAsync();
 
                 return Json(new { status = true, message = "Office detail added successfully." });
@@ -500,7 +500,7 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public async Task<IActionResult> UpdateOfficeDetail([FromForm] int OfficeDetailId, [FromForm] string OfficeName, [FromForm] int OfficeType, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
+        public async Task<IActionResult> UpdateOfficeDetail([FromForm] int OfficeDetailId, [FromForm] string OfficeName, [FromForm] int Officetype, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
         {
             try
             {
@@ -508,24 +508,24 @@ namespace SahayataNidhi.Controllers.Admin
                 if (officer == null || officer.Department <= 0)
                     return BadRequest(new { status = false, message = "Invalid officer." });
 
-                var detail = await dbcontext.OfficesDetails
+                var detail = await dbcontext.Officesdetails
                     .FirstOrDefaultAsync(od =>
-                        od.DivisionCode == Divisioncode &&
-                        od.DistrictCode == DistrictCode &&
-                        od.AreaCode == AreaCode &&
-                        od.OfficeType == OfficeType);
+                        od.Divisioncode == Divisioncode &&
+                        od.Districtcode == DistrictCode &&
+                        od.Areacode == AreaCode &&
+                        od.Officetype == Officetype);
 
                 if (detail == null)
                     return NotFound(new { status = false, message = "Office detail not found." });
 
                 var office = await dbcontext.Offices
-                    .FirstOrDefaultAsync(o => o.OfficeId == OfficeType && o.DepartmentId == officer.Department);
+                    .FirstOrDefaultAsync(o => o.Officeid == Officetype && o.Departmentid == officer.Department);
 
                 if (office == null)
                     return BadRequest(new { status = false, message = "Access denied." });
 
-                detail.OfficeName = OfficeName;
-                detail.AreaName = AreaName ?? "";
+                detail.Officename = OfficeName;
+                detail.Areaname = AreaName ?? "";
 
                 await dbcontext.SaveChangesAsync();
 
@@ -548,18 +548,18 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { status = false, message = "Invalid officer." });
 
                 // For now, use OfficeDetailId as primary key (adjust based on your model)
-                var detail = await dbcontext.OfficesDetails
+                var detail = await dbcontext.Officesdetails
                     .Include(od => od.OfficetypeNavigation)
-                    .FirstOrDefaultAsync(od => od.StateCode + od.DivisionCode + od.DistrictCode + od.AreaCode == OfficeDetailId); // Adjust based on actual PK
+                    .FirstOrDefaultAsync(od => od.Statecode + od.Divisioncode + od.Districtcode + od.Areacode == OfficeDetailId); // Adjust based on actual PK
 
                 if (detail == null)
                     return NotFound(new { status = false, message = "Office detail not found." });
 
                 // Verify department access
-                if (detail.OfficetypeNavigation?.DepartmentId != officer.Department)
+                if (detail.OfficetypeNavigation?.Departmentid != officer.Department)
                     return BadRequest(new { status = false, message = "Access denied." });
 
-                dbcontext.OfficesDetails.Remove(detail);
+                dbcontext.Officesdetails.Remove(detail);
                 await dbcontext.SaveChangesAsync();
 
                 return Json(new { status = true, message = "Office detail deleted successfully." });

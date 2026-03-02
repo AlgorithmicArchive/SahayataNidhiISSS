@@ -7,7 +7,7 @@ public partial class Muncipalitytypes
 {
     public int Uuid { get; set; }
 
-    public int? TypeCode { get; set; }
+    public int? Typecode { get; set; }
 
-    public string? TypeName { get; set; }
+    public string? Typename { get; set; }
 }

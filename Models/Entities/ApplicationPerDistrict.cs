@@ -1,20 +1,19 @@
 ﻿using System;
-using System.ComponentModel.DataAnnotations.Schema;
+using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class ApplicationPerDistrict
+public partial class Applicationperdistrict
 {
     public int Uuid { get; set; }
 
-    [Column("Type")]
     public string? Type { get; set; }
 
-    public int DistrictId { get; set; }
+    public int Districtid { get; set; }
 
-    public int? ServiceId { get; set; }
+    public int? Serviceid { get; set; }
 
-    public string? FinancialYear { get; set; }
+    public string? Financialyear { get; set; }
 
-    public int CountValue { get; set; }
+    public int Countvalue { get; set; }
 }

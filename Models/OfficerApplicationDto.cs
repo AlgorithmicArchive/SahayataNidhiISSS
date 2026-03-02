@@ -12,9 +12,10 @@ public class OfficerApplicationDto
     public string? Status { get; set; }
     public string? DataType { get; set; }
     public string? Created_at { get; set; }
-    // New dynamic location fields
-    public string? DivisionName { get; set; }   // Only for State level
-    public string? DistrictName { get; set; }   // For State & Division
-    public string? TehsilName { get; set; }     // For Division & District
-    // Add this property
+    public string? WorkflowStatus { get; set; }  // ← Missing this too!
+    public int HasCorrigendum { get; set; }       // ← Missing this!
+    public string? DivisionName { get; set; }
+    public string? DistrictName { get; set; }
+    public string? TehsilName { get; set; }
+    public long TotalCount { get; set; }  // ← ADD THIS (bigint maps to long)
 }

@@ -77,26 +77,26 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
 
         if (fileName != null)
         {
-            var existingFile = dbcontext.UserDocuments.FirstOrDefault(f => f.FileName == fileName);
+            var existingFile = dbcontext.Userdocuments.FirstOrDefault(f => f.Filename == fileName);
             if (existingFile != null)
             {
-                dbcontext.UserDocuments.Remove(existingFile);
+                dbcontext.Userdocuments.Remove(existingFile);
                 await dbcontext.SaveChangesAsync();
             }
         }
 
         // Save to database to generate FileId
-        var fileModel = new UserDocument
+        var fileModel = new Userdocuments
         {
-            FileName = fileName ?? uniqueName,
-            FileType = contentType,
-            FileSize = data.Length,
-            FileData = data,
-            DocumentType = documentType,
-            UpdatedAt = DateTime.Now
+            Filename = fileName ?? uniqueName,
+            Filetype = contentType,
+            Filesize = data.Length,
+            Filedata = data,
+            Documenttype = documentType,
+            Updatedat = DateTime.Now
         };
 
-        dbcontext.UserDocuments.Add(fileModel);
+        dbcontext.Userdocuments.Add(fileModel);
         await dbcontext.SaveChangesAsync();
 
         return uniqueName;
@@ -114,13 +114,13 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
 
     public string GenerateApplicationId(int districtId, SwdjkContext dbcontext)
     {
-        string? districtShort = dbcontext.Districts.FirstOrDefault(u => u.DistrictId == districtId)?.DistrictShort;
+        string? districtShort = dbcontext.District.FirstOrDefault(u => u.Districtid == districtId)?.Districtshort;
 
         string financialYear = GetCurrentFinancialYear();
 
-        var result = dbcontext.ApplicationPerDistricts.FirstOrDefault(a => a.DistrictId == districtId && a.FinancialYear == financialYear);
+        var result = dbcontext.Applicationperdistrict.FirstOrDefault(a => a.Districtid == districtId && a.Financialyear == financialYear);
 
-        int countPerDistrict = result?.CountValue ?? 0;
+        int countPerDistrict = result?.Countvalue ?? 0;
 
         string sql = "";
 
@@ -190,17 +190,17 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
 
     public void InsertHistory(string referenceNumber, string ActionTaken, string ActionTaker, string Remarks, string LocationLevel, int LocationValue)
     {
-        var history = new ActionHistory
+        var history = new Actionhistory
         {
-            ReferenceNumber = referenceNumber,
-            ActionTaken = ActionTaken,
-            ActionTaker = ActionTaker,
+            Referencenumber = referenceNumber,
+            Actiontaken = ActionTaken,
+            Actiontaker = ActionTaker,
             Remarks = Remarks,
-            LocationLevel = LocationLevel,
-            LocationValue = LocationValue,
-            ActionTakenDate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture)
+            Locationlevel = LocationLevel,
+            Locationvalue = LocationValue,
+            Actiontakendate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture)
         };
-        dbcontext.ActionHistories.Add(history);
+        dbcontext.Actionhistory.Add(history);
         dbcontext.SaveChanges();
     }
 
@@ -404,13 +404,13 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
             Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim(),
             Username = effectiveEmail,
             Email = effectiveEmail,
-            MobileNumber = userSignature.MobileNo,
-            UserType = userSignature.UserType ?? "Citizen",
+            Mobilenumber = userSignature.MobileNo,
+            Usertype = userSignature.UserType ?? "Citizen",
             Profile = userSignature.ProfilePic ?? "/assets/images/profile.jpg",
-            BackupCodes = null,
-            AdditionalDetails = additionalJson,
-            IsEmailValid = true,
-            RegisteredDate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
+            Backupcodes = null,
+            Additionaldetails = additionalJson,
+            Isemailvalid = true,
+            Registereddate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
         };
 
         _logger.LogInformation($"Creating new user with UserData: {newUser}");
@@ -450,14 +450,14 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
 
     public string GetDepartment(Users user)
     {
-        if (user.UserType != "Admin") return "";
+        if (user.Usertype != "Admin") return "";
         try
         {
-            var details = JsonConvert.DeserializeObject<Dictionary<string, object>>(user.AdditionalDetails!);
+            var details = JsonConvert.DeserializeObject<Dictionary<string, object>>(user.Additionaldetails!);
             if (details?.TryGetValue("Department", out var deptId) == true)
             {
                 int id = Convert.ToInt32(deptId);
-                return dbcontext.Departments.FirstOrDefault(d => d.DepartmentId == id)?.DepartmentName ?? "";
+                return dbcontext.Departments.FirstOrDefault(d => d.Departmentid == id)?.Departmentname ?? "";
             }
         }
         catch { }
@@ -468,9 +468,9 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
     {
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
+            new(ClaimTypes.NameIdentifier, user.Userid.ToString()),
             new(ClaimTypes.Name, user.Username!),
-            new(ClaimTypes.Role, user.UserType!),
+            new(ClaimTypes.Role, user.Usertype!),
             new("Profile", user.Profile!),
             new("JanParichayClientToken", clientToken)
         };

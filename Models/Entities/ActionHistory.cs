@@ -1,22 +1,23 @@
 ﻿using System;
+using System.Collections.Generic;
 
 namespace SahayataNidhi.Models.Entities;
 
-public partial class ActionHistory
+public partial class Actionhistory
 {
     public int HistoryId { get; set; }
 
-    public string ReferenceNumber { get; set; } = null!;
+    public string Referencenumber { get; set; } = null!;
 
-    public string ActionTaker { get; set; } = null!;
+    public string Actiontaker { get; set; } = null!;
 
-    public string ActionTaken { get; set; } = null!;
+    public string Actiontaken { get; set; } = null!;
 
-    public string? LocationLevel { get; set; }
+    public string? Locationlevel { get; set; }
 
-    public int? LocationValue { get; set; }
+    public int? Locationvalue { get; set; }
 
     public string? Remarks { get; set; }
 
-    public string ActionTakenDate { get; set; } = null!;
+    public string Actiontakendate { get; set; } = null!;
 }
