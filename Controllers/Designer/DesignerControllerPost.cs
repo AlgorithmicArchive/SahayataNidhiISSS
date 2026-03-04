@@ -152,6 +152,8 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = "Failed to save configuration", error = ex.Message });
             }
         }
+      
+      
         [HttpPost]
         public async Task<IActionResult> SaveLetterDetails(int serviceId, string objField, string letterData)
         {

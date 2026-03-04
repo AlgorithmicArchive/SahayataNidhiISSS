@@ -160,8 +160,8 @@ namespace SahayataNidhi.Controllers.Officer
                     if (status == "sanctioned" && onAction != null && onAction.Contains("CallbackOnSanction"))
                     {
                         var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
-                        var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
-                        await SendApiRequestAsync(getServices.Apiendpoint, fieldMap);
+                        // var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
+                        // await SendApiRequestAsync(getServices.Apiendpoint, fieldMap, getServices.Headers!);
                     }
                 }
             }
@@ -403,17 +403,31 @@ namespace SahayataNidhi.Controllers.Officer
                 // External service call
                 try
                 {
-                    var getServices = dbcontext.Webservice
-                        .FirstOrDefault(ws => ws.Serviceid == formdetails.Serviceid && ws.Isactive);
+                    var webService = dbcontext.Webservice
+           .FirstOrDefault(ws => ws.Serviceid == formdetails.Serviceid && ws.Isactive);
 
-                    if (getServices != null)
+                    if (webService != null)
                     {
-                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
+                        var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction);
                         if (onAction != null && onAction.Contains(action))
                         {
-                            var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
-                            var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
-                            await SendApiRequestAsync(getServices.Apiendpoint, fieldMap);
+                            var fieldMappings = JObject.Parse(webService.Fieldmappings);
+
+                            if (fieldMappings[action] is JObject sanctionMapping)
+                            {
+                                // Deserialize the endpoint (stored as a JSON string)
+                                string endpoint = JsonConvert.DeserializeObject<string>(webService.Apiendpoint)
+                                                  ?? webService.Apiendpoint?.Trim('"')!;
+
+                                // Prepare column values (workflow JSON)
+                                var columnWorkFlow = JArray.Parse(formdetails.Workflow);
+
+                                // Build payload using the mapper
+                                var payload = MapServiceFieldsFromForm(formDetailsObj, sanctionMapping, columnWorkFlow, formdetails);
+
+                                // Send request
+                                await SendApiRequestAsync(endpoint, payload, webService.Headers!);
+                            }
                         }
                     }
                 }
@@ -460,14 +474,14 @@ namespace SahayataNidhi.Controllers.Officer
                 string template = emailtemplate["OfficerAction"]?.ToString() ?? "";
 
                 var placeholders = new Dictionary<string, string>
-        {
-            { "ApplicantName", fullName },
-            { "ServiceName", ServiceName },
-            { "ReferenceNumber", applicationId },
-            { "OfficerRole", officer.Role! },
-            { "ActionTaken", Action },
-            { "OfficerArea", officerArea }
-        };
+                {
+                    { "ApplicantName", fullName },
+                    { "ServiceName", ServiceName },
+                    { "ReferenceNumber", applicationId },
+                    { "OfficerRole", officer.Role! },
+                    { "ActionTaken", Action },
+                    { "OfficerArea", officerArea }
+                };
 
                 foreach (var pair in placeholders)
                 {
@@ -546,6 +560,7 @@ namespace SahayataNidhi.Controllers.Officer
                 });
             }
         }
+
 
         [HttpPost]
         public IActionResult UploadToSftp([FromForm] IFormCollection form)

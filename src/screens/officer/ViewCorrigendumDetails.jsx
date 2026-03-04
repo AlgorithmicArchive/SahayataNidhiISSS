@@ -228,6 +228,7 @@ const validationSchema = yup.object().shape({
 export default function ViewApplicationDetails() {
   const location = useLocation();
   const navigate = useNavigate();
+  console.log("Location state:", location.state);
   const { referenceNumber, applicationId, type } = location.state || {};
   const isCorrection = type === "Correction";
   const isAmendment = type === "Amendment";
@@ -285,7 +286,7 @@ export default function ViewApplicationDetails() {
           params: {
             referenceNumber: referenceNumber,
             ...(applicationId && {
-              corrigendumId: applicationId,
+              corrigendumid: applicationId,
             }),
             type: type,
           },
@@ -302,15 +303,14 @@ export default function ViewApplicationDetails() {
             : result.actions,
         );
         setApplicationTypeId(
-          isCorrection ? result.corrigendumId : result.corrigendumId,
+          isCorrection ? result.corrigendumid : result.corrigendumid,
         );
         setApplicationFiles(result.files);
       } catch (error) {
         console.error(
-          `Error fetching ${
-            isCorrection
-              ? "correction"
-              : isAmendment
+          `Error fetching ${isCorrection
+            ? "correction"
+            : isAmendment
               ? "amendment"
               : "corrigendum"
           } details:`,
@@ -385,9 +385,9 @@ export default function ViewApplicationDetails() {
     formData.append(
       "original_path",
       applicationId.replace(/\//g, "_") +
-        (isCorrection
-          ? "_CorrectionSanctionLetter.pdf"
-          : isAmendment
+      (isCorrection
+        ? "_CorrectionSanctionLetter.pdf"
+        : isAmendment
           ? "_AmendmentSanctionLetter.pdf"
           : "_CorrigendumSanctionLetter.pdf"),
     );
@@ -404,8 +404,8 @@ export default function ViewApplicationDetails() {
     } catch (error) {
       throw new Error(
         "Error signing PDF: " +
-          error.message +
-          " Check if Desktop App is started.",
+        error.message +
+        " Check if Desktop App is started.",
       );
     }
   };
@@ -440,7 +440,7 @@ export default function ViewApplicationDetails() {
       updateFormData.append("signedPdf", signedBlob, "signed.pdf");
       updateFormData.append("referenceNumber", referenceNumber);
       updateFormData.append(
-        isCorrection ? "corrigendumId" : "corrigendumId",
+        isCorrection ? "corrigendumid" : "corrigendumid",
         applicationId,
       );
       updateFormData.append(
@@ -457,7 +457,7 @@ export default function ViewApplicationDetails() {
       if (!updateResponse.data.status) {
         throw new Error(
           "Failed to update PDF on server: " +
-            (updateResponse.data.response || "Unknown error"),
+          (updateResponse.data.response || "Unknown error"),
         );
       }
 
@@ -499,10 +499,11 @@ export default function ViewApplicationDetails() {
       const endpoint = isCorrection
         ? "/Officer/GetCorrigendumSanctionLetter"
         : "/Officer/GetCorrigendumSanctionLetter";
+      console.log("isCorrection:", isCorrection, applicationTypeId);
       const response = await axiosInstance.get(endpoint, {
         params: {
           referenceNumber: referenceNumber,
-          [isCorrection ? "correctionId" : "corrigendumId"]: applicationTypeId,
+          [isCorrection ? "correctionId" : "corrigendumid"]: applicationTypeId,
           type: type,
         },
       });
@@ -526,20 +527,18 @@ export default function ViewApplicationDetails() {
       setIsSanctionLetter(true);
     } catch (error) {
       console.error(
-        `Error fetching ${
-          isCorrection
-            ? "correction"
-            : isAmendment
+        `Error fetching ${isCorrection
+          ? "correction"
+          : isAmendment
             ? "amendment"
             : "corrigendum"
         } sanction letter:`,
         error,
       );
       toast.error(
-        `Failed to fetch ${
-          isCorrection
-            ? "correction"
-            : isAmendment
+        `Failed to fetch ${isCorrection
+          ? "correction"
+          : isAmendment
             ? "amendment"
             : "corrigendum"
         } sanction letter: ` + error.message,
@@ -559,7 +558,7 @@ export default function ViewApplicationDetails() {
       data.append(key, formData[key]);
     }
     data.append(
-      isCorrection ? "corrigendumId" : "corrigendumId",
+      isCorrection ? "corrigendumid" : "corrigendumid",
       applicationTypeId,
     );
     data.append("referenceNumber", referenceNumber);
@@ -694,8 +693,8 @@ export default function ViewApplicationDetails() {
           {isCorrection
             ? "Correction"
             : isAmendment
-            ? "Amendment"
-            : "Corrigendum"}{" "}
+              ? "Amendment"
+              : "Corrigendum"}{" "}
           Application Details
         </Typography>
         <Typography
@@ -723,22 +722,20 @@ export default function ViewApplicationDetails() {
         />
 
         <CollapsibleTable
-          title={`${
-            isCorrection
-              ? "Correction"
-              : isAmendment
+          title={`${isCorrection
+            ? "Correction"
+            : isAmendment
               ? "Amendment"
               : "Corrigendum"
-          } Fields`}
+            } Fields`}
           columns={fieldColumns}
           data={fieldData}
-          viewType={`${
-            isCorrection
-              ? "correction"
-              : isAmendment
+          viewType={`${isCorrection
+            ? "correction"
+            : isAmendment
               ? "amendment"
               : "corrigendum"
-          } field`}
+            } field`}
           open={fieldsOpen}
           setOpen={setFieldsOpen}
           onViewPdf={handleViewPdf}
@@ -758,8 +755,8 @@ export default function ViewApplicationDetails() {
               {isCorrection
                 ? "Correction"
                 : isAmendment
-                ? "Amendment"
-                : "Corrigendum"}{" "}
+                  ? "Amendment"
+                  : "Corrigendum"}{" "}
               Attachments
             </Typography>
 
@@ -791,22 +788,20 @@ export default function ViewApplicationDetails() {
         )}
 
         <CollapsibleTable
-          title={`${
-            isCorrection
-              ? "Correction"
-              : isAmendment
+          title={`${isCorrection
+            ? "Correction"
+            : isAmendment
               ? "Amendment"
               : "Corrigendum"
-          } Movement History`}
+            } Movement History`}
           columns={columns}
           data={data}
-          viewType={`${
-            isCorrection
-              ? "correction"
-              : isAmendment
+          viewType={`${isCorrection
+            ? "correction"
+            : isAmendment
               ? "amendment"
               : "corrigendum"
-          } history`}
+            } history`}
           open={appHistoryOpen}
           setOpen={setAppHistoryOpen}
           onViewPdf={handleViewPdf}

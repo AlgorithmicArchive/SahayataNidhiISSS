@@ -19,6 +19,8 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SahayataNidhi.Models.Entities;
 using Path = System.IO.Path;
+using System.Threading.Tasks.Dataflow;
+using System.Reflection;
 
 
 namespace SahayataNidhi.Controllers.Officer
@@ -186,6 +188,32 @@ namespace SahayataNidhi.Controllers.Officer
             return new { Label = label, Value = result };
         }
 
+        public static dynamic GetWorkFlowSanctionDetails(JArray workflow)
+        {
+            if (workflow == null || !workflow.Any())
+                return null!;
+
+            foreach (var item in workflow)
+            {
+                if (item["status"] != null)
+                {
+                    var statusValue = item["status"]?.ToString();
+
+                    if (string.Equals(statusValue, "sanctioned", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(statusValue, "approved", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return new
+                        {
+                            completedAt = item["completedAt"]?.ToString(),
+                            designation = item["designation"]?.ToString(),
+                            remarks = item["remarks"]?.ToString()
+                        };
+                    }
+                }
+            }
+
+            return null!;
+        }
         private static JObject? FindFieldRecursively(JToken token, string fieldName)
         {
             if (token is JObject obj)
@@ -317,91 +345,164 @@ namespace SahayataNidhi.Controllers.Officer
             }
         }
 
-        private JObject MapServiceFieldsFromForm(JObject formDetailsObj, JObject fieldMapping)
+        private static string CleanCorrectionFields(string correctionFieldsJson)
         {
-            var formValues = new Dictionary<string, string>();
+            if (string.IsNullOrWhiteSpace(correctionFieldsJson))
+                return "";
 
-            foreach (var section in formDetailsObj.Properties())
+            try
             {
-                if (section.Value is JArray fieldsArray)
-                {
-                    foreach (JObject field in fieldsArray)
-                    {
-                        var name = field["name"]?.ToString();
-                        var value = field["value"]?.ToString()
-                                    ?? field["File"]?.ToString()
-                                    ?? field["Enclosure"]?.ToString();
+                var obj = JObject.Parse(correctionFieldsJson);
 
-                        if (!string.IsNullOrEmpty(name) && value != null)
-                        {
-                            formValues[name] = value;
-                        }
-                    }
+                // 🔹 Remove DSW, DSWO, TSWO inside Files
+                if (obj["Files"] is JObject filesObj)
+                {
+                    filesObj.Remove("DSW");
+                    filesObj.Remove("DSWO");
+                    filesObj.Remove("TSWO");
+
+                    // If Files becomes empty, remove it completely
+                    if (!filesObj.Properties().Any())
+                        obj.Remove("Files");
                 }
-            }
 
-            JObject ReplaceKeys(JObject mapping)
-            {
-                var result = new JObject();
-
-                foreach (var prop in mapping.Properties())
+                // 🔹 Remove additional_values from all fields
+                foreach (var property in obj.Properties().ToList())
                 {
-                    if (prop.Value.Type == JTokenType.Object)
+                    if (property.Value is JObject fieldObj)
                     {
-                        result[prop.Name] = ReplaceKeys((JObject)prop.Value);
-                    }
-                    else if (prop.Value.Type == JTokenType.String)
-                    {
-                        string lookupKey = prop.Value.ToString();
-                        string? actualValue = null;
-
-                        if (formValues.TryGetValue(lookupKey, out var rawValue))
-                        {
-                            if (lookupKey.Equals("District", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int districtId))
-                            {
-                                actualValue = dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)?.Districtname;
-                            }
-                            else if (lookupKey.Equals("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int tehsilId))
-                            {
-                                actualValue = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == tehsilId)?.Tehsilname;
-                            }
-                            else if (lookupKey.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase) && int.TryParse(rawValue, out int otherTehsilId))
-                            {
-                                actualValue = dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == otherTehsilId)?.Tehsilname;
-                            }
-                            else
-                            {
-                                actualValue = rawValue;
-                            }
-                        }
-
-                        result[prop.Name] = actualValue ?? "";
-                    }
-                    else
-                    {
-                        result[prop.Name] = prop.Value;
+                        fieldObj.Remove("additional_values");
                     }
                 }
 
-                return result;
+                return obj.ToString(Newtonsoft.Json.Formatting.None);
             }
-
-            return ReplaceKeys(fieldMapping);
+            catch
+            {
+                return correctionFieldsJson; // fallback
+            }
         }
-
-        private static async Task<string> SendApiRequestAsync(string url, object payload)
+        private static JObject MapServiceFieldsFromForm(JObject? formDetailsObj, JObject fieldMapping, JArray workflowJson, object entityObject)
         {
-            using (var client = new HttpClient())
-            {
-                var json = JsonConvert.SerializeObject(payload);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
+            JObject result = new JObject();
 
+            foreach (var mapping in fieldMapping.Properties())
+            {
+                string targetField = mapping.Name;
+                JObject config = mapping.Value as JObject ?? new JObject();
+
+                string type = config["type"]?.ToString() ?? "";
+                string field = config["field"]?.ToString() ?? "";
+                string respectiveColumn = config["respectiveColumn"]?.ToString() ?? "";
+
+                JToken? valueToken = null;
+
+                // ✅ 1. COLUMN TYPE (works for any table)
+                if (type.Equals("column", StringComparison.OrdinalIgnoreCase))
+                {
+                    var property = entityObject.GetType()
+                        .GetProperty(field,
+                            BindingFlags.IgnoreCase |
+                            BindingFlags.Public |
+                            BindingFlags.Instance);
+
+                    if (property != null)
+                    {
+                        var value = property.GetValue(entityObject);
+                        valueToken = value != null
+                            ? JToken.FromObject(value)
+                            : null;
+                    }
+                }
+
+                // ✅ 2. JSON TYPE
+                else if (type.Equals("json", StringComparison.OrdinalIgnoreCase))
+                {
+                    // ---- From FormDetails (only if exists) ----
+                    if (respectiveColumn.Equals("FormDetails", StringComparison.OrdinalIgnoreCase)
+                        && formDetailsObj != null)
+                    {
+                        var foundField = FindFieldRecursively(formDetailsObj, field);
+                        valueToken = foundField?["value"];
+                    }
+
+                    // ---- From Workflow ----
+                    else if (respectiveColumn.Equals("Workflow", StringComparison.OrdinalIgnoreCase) || respectiveColumn.Equals("WorkFlow", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var workflowDetails = GetWorkFlowSanctionDetails(workflowJson);
+
+                        if (workflowDetails != null)
+                        {
+                            var prop = workflowDetails.GetType().GetProperty(field);
+                            if (prop != null)
+                            {
+                                var val = prop.GetValue(workflowDetails);
+                                valueToken = val != null
+                                    ? JToken.FromObject(val)
+                                    : null;
+                            }
+                        }
+                    }
+                }
+
+                result[targetField] = valueToken ?? "";
+            }
+
+            return result;
+        }
+        private async Task SendApiRequestAsync(string url, object payload, string headersJson)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                _logger.LogError("API call failed: URL is null or whitespace");
+                return;
+            }
+
+            url = url.Trim();  // remove any accidental whitespace
+
+            if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
+            {
+                _logger.LogError("Malformed URL: '{Url}' – not a valid absolute URI", url);
+                return; // or throw
+            }
+
+            using var client = new HttpClient();
+
+            // Add headers from stored JSON array
+            if (!string.IsNullOrWhiteSpace(headersJson))
+            {
+                var headersArray = JArray.Parse(headersJson);
+                foreach (var item in headersArray)
+                {
+                    string key = item["key"]?.ToString();
+                    string value = item["value"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+                    {
+                        client.DefaultRequestHeaders.TryAddWithoutValidation(key, value);
+                    }
+                }
+            }
+
+            var json = JsonConvert.SerializeObject(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            try
+            {
                 var response = await client.PostAsync(url, content);
-                response.EnsureSuccessStatusCode();
+                var responseBody = await response.Content.ReadAsStringAsync();
 
-                return await response.Content.ReadAsStringAsync();
+                _logger.LogInformation("API call to {Url} returned {StatusCode}: {Body}",
+                    url, response.StatusCode, responseBody);
+
+                response.EnsureSuccessStatusCode();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "API call to {Url} failed", url);
+                throw; // or handle gracefully
             }
         }
+
         public JToken ReorderFormDetails(JToken formDetailsToken, string applicationId, bool isSanctioned)
         {
             if (formDetailsToken is not JObject formDetailsObject)

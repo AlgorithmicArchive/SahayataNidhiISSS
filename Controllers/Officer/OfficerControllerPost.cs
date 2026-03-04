@@ -510,6 +510,7 @@ namespace SahayataNidhi.Controllers.Officer
                 });
             }
         }
+
         [HttpPost]
         public async Task<IActionResult> HandleCorrigendumAction([FromForm] IFormCollection form)
         {
@@ -675,28 +676,40 @@ namespace SahayataNidhi.Controllers.Officer
                 try
                 {
                     var getServices = dbcontext.Webservice.FirstOrDefault(ws => ws.Serviceid == CitizenApplications.Serviceid && ws.Isactive);
+                    Console.WriteLine("Retrieved web service configuration: " + (getServices != null ? JsonConvert.SerializeObject(getServices) : "null"));
                     if (getServices != null)
                     {
                         var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
-                        if (onAction != null && onAction.Contains(action))
+                        Console.WriteLine("Web service onAction: " + (onAction != null ? string.Join(", ", onAction) : "null"));
+                        Console.WriteLine("Current action: " + action);
+                        if (onAction != null && onAction.Contains("Corrigendum") && action == "sanction")
                         {
-                            var corrigendumPayload = new Dictionary<string, string>();
-                            var corrigendumFieldsObj = JObject.Parse(corrigendum.Corrigendumfields);
-                            foreach (var field in corrigendumFieldsObj.Properties())
-                            {
-                                var FieldObj = field.Value as JObject;
-                                if (FieldObj != null)
-                                {
-                                    var name = FieldObj["name"]?.ToString();
-                                    var newValue = FieldObj["new_value"]?.ToString();
-                                    if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(newValue))
-                                    {
-                                        corrigendumPayload[name] = newValue;
-                                    }
-                                }
-                            }
+                            var fieldMappings = JObject.Parse(getServices.Fieldmappings);
 
-                            await SendApiRequestAsync(getServices.Apiendpoint, corrigendumPayload);
+                            if (fieldMappings["Corrigendum"] is JObject sanctionMapping)
+                            {
+                                // Deserialize the endpoint (stored as a JSON string)
+                                string endpoint = JsonConvert.DeserializeObject<string>(getServices.Apiendpoint)
+                                                  ?? getServices.Apiendpoint?.Trim('"')!;
+
+                                // Prepare column values (workflow JSON)
+                                var columnWorkFlow = JArray.Parse(corrigendum.Workflow!);
+
+                                // Build payload using the mapper
+                                var payload = MapServiceFieldsFromForm(null, sanctionMapping, columnWorkFlow, corrigendum);
+
+                                // 🔹 Clean correctionFields if exists
+                                if (payload["correctionFields"] != null &&
+                                    !string.IsNullOrWhiteSpace(payload["correctionFields"]?.ToString()))
+                                {
+                                    payload["correctionFields"] =
+                                        CleanCorrectionFields(payload["correctionFields"]!.ToString());
+                                }
+
+                                // Send request
+                                await SendApiRequestAsync(endpoint, payload, getServices.Headers!);
+
+                            }
                         }
                     }
                 }
@@ -704,6 +717,8 @@ namespace SahayataNidhi.Controllers.Officer
                 {
                     Console.WriteLine("Error in external service call: " + ex.Message);
                 }
+
+
                 corrigendum.Corrigendumfields = corrigendumFields.ToString(Formatting.None);
                 corrigendum.Type = type;
 
@@ -1063,7 +1078,7 @@ namespace SahayataNidhi.Controllers.Officer
                     new
                     {
                         officer = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetailsJObject),
-                        status = action == "approve" ? "withheld" : "forwarded",
+                        status = action == "approve" ? "approved" : "forwarded",
                         remarks = withheldReason,
                         actionTakenOn = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt"),
                         playerId = currentPlayerId
@@ -1093,6 +1108,58 @@ namespace SahayataNidhi.Controllers.Officer
 
                 dbcontext.WithheldApplications.Add(newApplication);
                 await dbcontext.SaveChangesAsync();
+
+                // 🔹 Call external API only on final approval
+                if (action == "approve")
+                {
+                    try
+                    {
+                        var webService = dbcontext.Webservice
+                            .FirstOrDefault(ws => ws.Serviceid == serviceId && ws.Isactive);
+
+                        if (webService != null)
+                        {
+                            var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction ?? "[]");
+
+                            if (onAction != null && onAction.Contains("Withheld"))
+                            {
+                                var fieldMappings = JObject.Parse(webService.Fieldmappings ?? "{}");
+
+                                if (fieldMappings["Withheld"] is JObject withheldMapping)
+                                {
+                                    // 🔹 Deserialize endpoint
+                                    string endpoint = JsonConvert.DeserializeObject<string>(webService.Apiendpoint)
+                                                      ?? webService.Apiendpoint?.Trim('"')!;
+
+                                    // 🔹 Workflow column JSON
+                                    var columnWorkFlow = JArray.Parse(existingApplication!.Workflow ?? newApplication.Workflow!);
+
+                                    // 🔹 Build payload
+                                    var payload = MapServiceFieldsFromForm(
+                                        null,
+                                        withheldMapping,
+                                        columnWorkFlow,
+                                        existingApplication ?? newApplication
+                                    );
+
+
+                                    // 🔹 Send API
+                                    await SendApiRequestAsync(
+                                        endpoint,
+                                        payload,
+                                        webService.Headers!
+                                    );
+
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception apiEx)
+                    {
+                        Console.WriteLine("API ERROR: " + apiEx.Message);
+                        // Optional: Log but don't break main flow
+                    }
+                }
 
                 return Ok(new
                 {
@@ -1323,6 +1390,60 @@ namespace SahayataNidhi.Controllers.Officer
                 }
 
                 await dbcontext.SaveChangesAsync();
+
+
+                if (action == "approve")
+                {
+                    try
+                    {
+                        var webService = dbcontext.Webservice
+                            .FirstOrDefault(ws => ws.Serviceid == serviceId && ws.Isactive);
+
+                        if (webService != null)
+                        {
+                            var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction ?? "[]");
+
+                            if (onAction != null && onAction.Contains("Withheld"))
+                            {
+                                var fieldMappings = JObject.Parse(webService.Fieldmappings ?? "{}");
+
+                                if (fieldMappings["Withheld"] is JObject withheldMapping)
+                                {
+                                    // 🔹 Deserialize endpoint
+                                    string endpoint = JsonConvert.DeserializeObject<string>(webService.Apiendpoint)
+                                                      ?? webService.Apiendpoint?.Trim('"')!;
+
+                                    // 🔹 Workflow column JSON
+                                    var columnWorkFlow = JArray.Parse(application!.Workflow);
+
+                                    // 🔹 Build payload
+                                    var payload = MapServiceFieldsFromForm(
+                                        null,
+                                        withheldMapping,
+                                        columnWorkFlow,
+                                        application
+                                    );
+
+
+                                    // 🔹 Send API
+                                    await SendApiRequestAsync(
+                                        endpoint,
+                                        payload,
+                                        webService.Headers!
+                                    );
+
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception apiEx)
+                    {
+                        Console.WriteLine("API ERROR: " + apiEx.Message);
+                        // Optional: Log but don't break main flow
+                    }
+                }
+
+
 
                 return Ok(new
                 {

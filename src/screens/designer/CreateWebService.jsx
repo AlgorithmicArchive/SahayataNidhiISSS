@@ -16,6 +16,7 @@ import {
   Grid,
   Card,
   CardContent,
+  CircularProgress,
 } from "@mui/material";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -26,26 +27,17 @@ import HttpIcon from "@mui/icons-material/Http";
 import ApiIcon from "@mui/icons-material/Api";
 
 // ----------------------------------------------------------------------
-// MappingNode component – syncs internal state with prop changes
+// MappingNode component – updated for the new structure
 // ----------------------------------------------------------------------
-const MappingNode = ({
-  node,
-  path = [],
-  onUpdate,
-  onAddChild,
-  onRemove,
-  formFields,
-  level = 0,
-}) => {
+const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFields, level = 0 }) => {
   const [key, setKey] = useState(node.key || "");
-  const [value, setValue] = useState(node.value || "");
+  const [mapping, setMapping] = useState(node.mapping || null);
   const [isObject, setIsObject] = useState(!!node.children);
   const [children, setChildren] = useState(node.children || {});
 
-  // Sync internal state when node prop changes (e.g., after loading saved config)
   useEffect(() => {
     setKey(node.key || "");
-    setValue(node.value || "");
+    setMapping(node.mapping || null);
     setIsObject(!!node.children);
     setChildren(node.children || {});
   }, [node]);
@@ -55,25 +47,41 @@ const MappingNode = ({
     setKey(newKey);
     onUpdate(path, {
       key: newKey,
-      value: isObject ? undefined : value,
+      mapping: isObject ? undefined : mapping,
       children: isObject ? children : undefined,
     });
   };
 
-  const handleValueChange = (e) => {
-    const newValue = e.target.value;
-    setValue(newValue);
-    onUpdate(path, { key, value: newValue, children: undefined });
+  const updateMapping = (newMapping) => {
+    setMapping(newMapping);
+    onUpdate(path, {
+      key,
+      mapping: newMapping,
+      children: undefined,
+    });
+  };
+
+  const handleFieldSelect = (fieldName) => {
+    const field = formFields.find(f => f.name === fieldName);
+    if (!field) return;
+    // Auto‑set type and column based on the field's section
+    const sourceType = field.section === "Column" ? "column" : "json";
+    const sourceColumn = field.section === "Column" ? "" : field.section; // you might map section to actual column name
+    updateMapping({
+      sourceField: fieldName,
+      sourceType,
+      sourceColumn,
+    });
   };
 
   const handleToggle = (e) => {
     const newIsObject = e.target.checked;
     setIsObject(newIsObject);
-    setValue("");
+    setMapping(null);
     setChildren({});
     onUpdate(path, {
       key,
-      value: undefined,
+      mapping: undefined,
       children: newIsObject ? {} : undefined,
     });
   };
@@ -82,7 +90,7 @@ const MappingNode = ({
     const newChildKey = `child_${Object.keys(children).length + Date.now()}`;
     const newChild = {
       key: `key_${Object.keys(children).length + 1}`,
-      value: "",
+      mapping: undefined,
       children: undefined,
     };
     setChildren((prev) => ({ ...prev, [newChildKey]: newChild }));
@@ -93,16 +101,12 @@ const MappingNode = ({
     const childKey = childPath[childPath.length - 1];
     setChildren((prev) => {
       const newChildren = { ...prev };
-      newChildren[childKey] = {
-        key: childNode.key,
-        value: childNode.value,
-        children: childNode.children,
-      };
+      newChildren[childKey] = childNode;
       return newChildren;
     });
     onUpdate(path, {
       key,
-      value: isObject ? undefined : value,
+      mapping: undefined,
       children: { ...children, [childKey]: childNode },
     });
   };
@@ -113,7 +117,7 @@ const MappingNode = ({
     setChildren(newChildren);
     onUpdate(path, {
       key,
-      value: isObject ? undefined : value,
+      mapping: undefined,
       children: newChildren,
     });
   };
@@ -130,15 +134,15 @@ const MappingNode = ({
         borderRadius: 1,
       }}
     >
-      <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
+      <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
         <TextField
           label="Key"
           value={key}
           onChange={handleKeyChange}
           variant="outlined"
-          placeholder="e.g., District"
+          placeholder="e.g., sanctionedAt"
           size="small"
-          sx={{ flex: 1 }}
+          sx={{ flex: 1, minWidth: 150 }}
         />
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 120 }}>
           <Typography variant="body2" color="text.secondary">
@@ -156,42 +160,56 @@ const MappingNode = ({
         </Box>
         {isObject ? (
           <Tooltip title="Add Child Key">
-            <IconButton
-              onClick={handleAddChild}
-              size="small"
-              sx={{ color: "primary.main" }}
-            >
+            <IconButton onClick={handleAddChild} size="small" sx={{ color: "primary.main" }}>
               <AddIcon />
             </IconButton>
           </Tooltip>
         ) : (
-          <FormControl size="small" sx={{ flex: 1 }} variant="outlined">
-            <InputLabel id={`field-select-${path.join("-")}`}>
-              Form Field
-            </InputLabel>
-            <Select
-              labelId={`field-select-${path.join("-")}`}
-              value={value}
-              label="Form Field"
-              onChange={handleValueChange}
-            >
-              <MenuItem value="">
-                <em>Select a field</em>
-              </MenuItem>
-              {formFields.map((field) => (
-                <MenuItem key={field.id} value={field.name}>
-                  {field.label} ({field.name})
+          <>
+            <FormControl size="small" sx={{ flex: 2, minWidth: 200 }} variant="outlined">
+              <InputLabel id={`field-select-${path.join("-")}`}>Source Field</InputLabel>
+              <Select
+                labelId={`field-select-${path.join("-")}`}
+                value={mapping?.sourceField || ""}
+                label="Source Field"
+                onChange={(e) => handleFieldSelect(e.target.value)}
+              >
+                <MenuItem value="">
+                  <em>Select a field</em>
                 </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+                {formFields.map((field) => (
+                  <MenuItem key={field.id} value={field.name}>
+                    {field.label} ({field.name}) {field.section && `[${field.section}]`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl size="small" sx={{ width: 100 }} variant="outlined">
+              <InputLabel id={`type-select-${path.join("-")}`}>Type</InputLabel>
+              <Select
+                labelId={`type-select-${path.join("-")}`}
+                value={mapping?.sourceType || "json"}
+                label="Type"
+                onChange={(e) => updateMapping({ ...mapping, sourceType: e.target.value })}
+              >
+                <MenuItem value="column">column</MenuItem>
+                <MenuItem value="json">json</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Column"
+              value={mapping?.sourceColumn || ""}
+              onChange={(e) => updateMapping({ ...mapping, sourceColumn: e.target.value })}
+              size="small"
+              placeholder="e.g., WorkFlow"
+              sx={{ flex: 1, minWidth: 150 }}
+            />
+          </>
         )}
         <Tooltip title="Remove Mapping">
-          <IconButton
-            onClick={() => onRemove(path)}
-            size="small"
-            sx={{ color: "error.main" }}
-          >
+          <IconButton onClick={() => onRemove(path)} size="small" sx={{ color: "error.main" }}>
             <DeleteIcon />
           </IconButton>
         </Tooltip>
@@ -214,34 +232,51 @@ const MappingNode = ({
 };
 
 // ----------------------------------------------------------------------
-// Utility: convert API field mappings to internal format
+// Utility: convert API field mappings (action‑keyed object) to internal format
 // ----------------------------------------------------------------------
 const convertFromApiFormat = (apiMappings) => {
   const result = {};
   const convertNode = (obj, parentKey) => {
-    const nodeKey = `${parentKey}_${Date.now()}_${Math.random()
-      .toString(36)
-      .substring(2, 8)}`;
+    const nodeKey = `${parentKey}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     if (typeof obj === "string") {
-      return { key: parentKey, value: obj, children: undefined };
+      // Old format fallback – treat as column type (or you could discard)
+      return {
+        key: parentKey,
+        mapping: {
+          sourceField: obj,
+          sourceType: "column",
+          sourceColumn: "",
+        },
+      };
     } else if (typeof obj === "object" && obj !== null) {
-      const children = {};
-      Object.entries(obj).forEach(([key, value]) => {
-        children[
-          `child_${key}_${Date.now()}_${Math.random()
-            .toString(36)
-            .substring(2, 8)}`
-        ] = convertNode(value, key);
-      });
-      return { key: parentKey, value: undefined, children };
+      // Check if it's a leaf with field/type/respectiveColumn
+      if (obj.hasOwnProperty("field") && obj.hasOwnProperty("type") && obj.hasOwnProperty("respectiveColumn")) {
+        return {
+          key: parentKey,
+          mapping: {
+            sourceField: obj.field,
+            sourceType: obj.type,
+            sourceColumn: obj.respectiveColumn,
+          },
+        };
+      } else {
+        // It's a nested object (children)
+        const children = {};
+        Object.entries(obj).forEach(([key, value]) => {
+          children[`child_${key}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`] = convertNode(value, key);
+        });
+        return { key: parentKey, children };
+      }
     }
-    return { key: parentKey, value: "", children: undefined };
+    return { key: parentKey, mapping: { sourceField: "", sourceType: "json", sourceColumn: "" } };
   };
 
-  Object.entries(apiMappings).forEach(([key, value]) => {
-    result[
-      `key_${key}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
-    ] = convertNode(value, key);
+  Object.entries(apiMappings).forEach(([action, mapping]) => {
+    const actionMappings = {};
+    Object.entries(mapping).forEach(([key, value]) => {
+      actionMappings[`key_${key}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`] = convertNode(value, key);
+    });
+    result[action] = actionMappings;
   });
   return result;
 };
@@ -252,15 +287,27 @@ const convertFromApiFormat = (apiMappings) => {
 export default function CreateWebService() {
   const [services, setServices] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState("");
-  const [formFields, setFormFields] = useState([]);
+  const [formFields, setFormFields] = useState([]);            // base form fields
+  const [actionFields, setActionFields] = useState({});        // fields keyed by action (Corrigendum, Withheld)
+  const [loadingActionFields, setLoadingActionFields] = useState(false);
   const [webServiceConfig, setWebServiceConfig] = useState({
     webServiceId: "",
     webServiceName: "",
     apiEndPoint: "",
     onAction: [],
-    fieldMappings: {},
+    fieldMappings: {},        // { "Sanction": {...}, "Corrigendum": {...}, "Withheld": {...} }
     headers: [],
   });
+
+  // Actions that get their own mapping card
+  const specialActions = ["Sanction", "Corrigendum", "Withheld"];
+
+  // Configuration per action: whether to include base form fields in the dropdown
+  const actionConfig = {
+    Sanction: { includeBaseFields: true },
+    Corrigendum: { includeBaseFields: false },
+    Withheld: { includeBaseFields: false },
+  };
 
   // Fetch services on mount
   useEffect(() => {
@@ -280,10 +327,13 @@ export default function CreateWebService() {
     fetchServices();
   }, []);
 
-  // Fetch existing config AND form fields when service changes
+  // --------------------------------------------------------------------
+  // Fetch existing web service config AND form fields when service changes
+  // --------------------------------------------------------------------
   useEffect(() => {
     if (!selectedServiceId) {
       setFormFields([]);
+      setActionFields({});
       setWebServiceConfig({
         webServiceId: "",
         webServiceName: "",
@@ -297,20 +347,33 @@ export default function CreateWebService() {
 
     async function fetchWebServiceConfig() {
       try {
-        const configResponse = await axiosInstance.get(
-          `/Designer/GetWebService?serviceId=${selectedServiceId}`
-        );
+        const configResponse = await axiosInstance.get(`/Designer/GetWebService?serviceId=${selectedServiceId}`);
         if (configResponse.data.status && configResponse.data.config) {
           const config = configResponse.data.config;
+          let parsedFieldMappings = {};
+          try {
+            const raw = JSON.parse(config.fieldMappings || "{}");
+            // If stored format is flat (old), wrap it under "Sanction" or keep as is?
+            // For safety, we check if any of the special action keys exist. If not, we assume it's a flat mapping.
+            if (raw && typeof raw === "object") {
+              const hasSpecialKey = specialActions.some(action => raw[action] !== undefined);
+              if (!hasSpecialKey && Object.keys(raw).length > 0) {
+                // Assume flat mapping – assign it to "Sanction" (or whichever action is selected later)
+                parsedFieldMappings = { Sanction: raw };
+              } else {
+                parsedFieldMappings = raw;
+              }
+            }
+          } catch (e) {
+            parsedFieldMappings = {};
+          }
+
           setWebServiceConfig({
             webServiceId: config.id || "",
             webServiceName: config.webServiceName || "",
-            // Use correct property name and strip quotes if present
             apiEndPoint: config.apiEndpoint ? config.apiEndpoint.replace(/^"|"$/g, '') : "",
             onAction: config.onAction ? JSON.parse(config.onAction) : [],
-            fieldMappings: config.fieldMappings
-              ? convertFromApiFormat(JSON.parse(config.fieldMappings))
-              : {},
+            fieldMappings: convertFromApiFormat(parsedFieldMappings),
             headers: config.headers ? JSON.parse(config.headers) : [],
           });
         } else {
@@ -341,9 +404,7 @@ export default function CreateWebService() {
     // Fetch form elements from dedicated endpoint
     async function fetchFormElements() {
       try {
-        const response = await axiosInstance.get(
-          `/Designer/GetFormElements?serviceId=${selectedServiceId}`
-        );
+        const response = await axiosInstance.get(`/Designer/GetFormElements?serviceId=${selectedServiceId}`);
         if (response.data.status) {
           // Combine section fields and column names
           const sectionFields = Array.isArray(response.data.sections)
@@ -351,7 +412,7 @@ export default function CreateWebService() {
               (section.fields || []).map((field) => ({
                 name: field.name,
                 label: field.label,
-                sectionName: section.sectionName || "Unknown Section",
+                section: section.sectionName || "Unknown Section",
               }))
             )
             : [];
@@ -360,7 +421,7 @@ export default function CreateWebService() {
             ? response.data.columnNames.map((colName) => ({
               name: colName,
               label: colName,
-              sectionName: "Column",
+              section: "Column",
             }))
             : [];
 
@@ -372,22 +433,16 @@ export default function CreateWebService() {
             }
           });
 
-          // Transform to format expected by MappingNode
           const fields = Array.from(uniqueMap.values()).map((field) => ({
             id: field.name,
             name: field.name,
             label: field.label,
             type: "text",
-            path:
-              field.sectionName === "Column"
-                ? `Column > ${field.label}`
-                : `${field.sectionName} > ${field.label}`,
+            path: field.section === "Column" ? `Column > ${field.label}` : `${field.section} > ${field.label}`,
+            section: field.section,
           }));
 
           setFormFields(fields);
-          if (fields.length === 0) {
-            toast.warn("No form fields or column names available for this service.");
-          }
         } else {
           toast.error(response.data.message || "Failed to load form fields");
           setFormFields([]);
@@ -403,13 +458,77 @@ export default function CreateWebService() {
     fetchFormElements();
   }, [selectedServiceId]);
 
+  // --------------------------------------------------------------------
+  // Fetch action‑specific fields for all selected special actions
+  // --------------------------------------------------------------------
+  useEffect(() => {
+    if (!selectedServiceId) {
+      setActionFields({});
+      return;
+    }
+
+    const selectedActions = webServiceConfig.onAction || [];
+    const actionsToFetch = selectedActions.filter(action =>
+      specialActions.includes(action)
+    );
+
+    if (actionsToFetch.length === 0) {
+      setActionFields({});
+      return;
+    }
+
+    const fetchActionFields = async () => {
+      setLoadingActionFields(true);
+      try {
+        const promises = actionsToFetch.map(action =>
+          axiosInstance.get(`/Designer/GetActionFields`, {
+            params: { actionTaken: action }
+          })
+        );
+
+        const results = await Promise.all(promises);
+        const fieldsByAction = {};
+        results.forEach((res, index) => {
+          const action = actionsToFetch[index];
+          const rawFields = res.data.fields || [];
+          const transformed = rawFields.map(f => ({
+            id: f.name,
+            name: f.name,
+            label: f.label,
+            type: "text",
+            path: `${f.section || "Action"} > ${f.label}`,
+            section: f.section || "Action",
+          }));
+          fieldsByAction[action] = transformed;
+        });
+
+        setActionFields(fieldsByAction);
+      } catch (err) {
+        console.error("Error fetching action fields:", err);
+        toast.error("Could not load fields for selected actions");
+      } finally {
+        setLoadingActionFields(false);
+      }
+    };
+
+    fetchActionFields();
+  }, [selectedServiceId, webServiceConfig.onAction]);
+
+  // Combine base fields and action fields for a given action, respecting config
+  const getAllFieldsForAction = (action) => {
+    const config = actionConfig[action] || { includeBaseFields: false };
+    const base = config.includeBaseFields ? formFields : [];
+    const actionSpecific = actionFields[action] || [];
+    const combined = [...base, ...actionSpecific];
+    // Deduplicate by field name (base first)
+    const unique = Array.from(new Map(combined.map(f => [f.name, f])).values());
+    return unique;
+  };
+
   // Handlers for basic inputs
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setWebServiceConfig((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setWebServiceConfig((prev) => ({ ...prev, [name]: value }));
   };
 
   // --------------------------------------------------------------------
@@ -438,88 +557,118 @@ export default function CreateWebService() {
   };
 
   // --------------------------------------------------------------------
-  // Field mappings management
+  // Field mappings management – per action
   // --------------------------------------------------------------------
-  const addRootMapping = () => {
-    const newKey = `key_${Object.keys(webServiceConfig.fieldMappings).length + Date.now()}`;
-    setWebServiceConfig((prev) => ({
-      ...prev,
-      fieldMappings: {
-        ...prev.fieldMappings,
-        [newKey]: {
-          key: `key_${Object.keys(prev.fieldMappings).length + 1}`,
-          value: "",
-          children: undefined,
+  const addRootMappingForAction = (action) => {
+    setWebServiceConfig((prev) => {
+      const currentMappings = prev.fieldMappings[action] || {};
+      const newKey = `key_${Object.keys(currentMappings).length + Date.now()}`;
+      return {
+        ...prev,
+        fieldMappings: {
+          ...prev.fieldMappings,
+          [action]: {
+            ...currentMappings,
+            [newKey]: {
+              key: `key_${Object.keys(currentMappings).length + 1}`,
+              mapping: null,
+              children: undefined,
+            },
+          },
         },
-      },
-    }));
+      };
+    });
   };
 
-  const updateMapping = (path, node) => {
+  const updateMappingForAction = (action, path, node) => {
     setWebServiceConfig((prev) => {
-      const newMappings = JSON.parse(JSON.stringify(prev.fieldMappings));
-      let current = newMappings;
+      const actionMappings = JSON.parse(JSON.stringify(prev.fieldMappings[action] || {}));
+      let current = actionMappings;
       for (let i = 0; i < path.length - 1; i++) {
         current = current[path[i]].children;
       }
       if (path.length > 0) {
         current[path[path.length - 1]] = node;
       }
-      return { ...prev, fieldMappings: newMappings };
+      return {
+        ...prev,
+        fieldMappings: {
+          ...prev.fieldMappings,
+          [action]: actionMappings,
+        },
+      };
     });
   };
 
-  const addChild = (path, childKey) => {
+  const addChildForAction = (action, path, childKey) => {
     setWebServiceConfig((prev) => {
-      const newMappings = JSON.parse(JSON.stringify(prev.fieldMappings));
-      let current = newMappings;
+      const actionMappings = JSON.parse(JSON.stringify(prev.fieldMappings[action] || {}));
+      let current = actionMappings;
       for (const key of path) {
         current = current[key].children;
       }
       current[childKey] = {
         key: `key_${Object.keys(current).length + 1}`,
-        value: "",
+        mapping: null,
         children: undefined,
       };
-      return { ...prev, fieldMappings: newMappings };
+      return {
+        ...prev,
+        fieldMappings: {
+          ...prev.fieldMappings,
+          [action]: actionMappings,
+        },
+      };
     });
   };
 
-  const removeMapping = (path) => {
+  const removeMappingForAction = (action, path) => {
     setWebServiceConfig((prev) => {
-      const newMappings = JSON.parse(JSON.stringify(prev.fieldMappings));
-      let current = newMappings;
+      const actionMappings = JSON.parse(JSON.stringify(prev.fieldMappings[action] || {}));
+      let current = actionMappings;
       if (path.length === 1) {
-        delete newMappings[path[0]];
+        delete actionMappings[path[0]];
       } else {
         for (let i = 0; i < path.length - 1; i++) {
           current = current[path[i]].children || {};
         }
         delete current[path[path.length - 1]];
       }
-      return { ...prev, fieldMappings: newMappings };
+      return {
+        ...prev,
+        fieldMappings: {
+          ...prev.fieldMappings,
+          [action]: actionMappings,
+        },
+      };
     });
-    toast.info(`Removed mapping: ${path.join(".")}`);
+    toast.info(`Removed mapping from ${action}: ${path.join(".")}`);
   };
 
-  // Validate mappings – now using field.name
-  const validateMappings = (mappings) => {
-    const fieldNames = new Set();
+  // Validate mappings per action
+  const validateMappingsForAction = (action, mappings) => {
+    const allFields = getAllFieldsForAction(action);
     const validateNode = (node, nodePath) => {
       if (!node.key.trim()) {
-        toast.error(`Empty key at path: ${nodePath.join(".")}`);
+        toast.error(`${action}: Empty key at path: ${nodePath.join(".")}`);
         return false;
       }
-      if (node.value) {
-        if (!formFields.some((f) => f.name === node.value)) {
-          toast.error(`Invalid field name at path: ${nodePath.join(".")}`);
+      if (node.mapping) {
+        const { sourceField, sourceType, sourceColumn } = node.mapping;
+        if (!sourceField) {
+          toast.error(`${action}: Missing source field at path: ${nodePath.join(".")}`);
           return false;
         }
-        if (fieldNames.has(node.value)) {
-          toast.error(`Duplicate field name at path: ${nodePath.join(".")}`);
+        if (!sourceType) {
+          toast.error(`${action}: Missing source type at path: ${nodePath.join(".")}`);
           return false;
         }
-        fieldNames.add(node.value);
+        // Optionally validate that sourceField exists in allFields
+        if (!allFields.some(f => f.name === sourceField)) {
+          toast.error(`${action}: Invalid source field '${sourceField}' at path: ${nodePath.join(".")}`);
+          return false;
+        }
+        // sourceColumn can be empty if type is 'column'? Adjust as needed.
       }
       if (node.children) {
         for (const [childKey, childNode] of Object.entries(node.children)) {
@@ -533,15 +682,19 @@ export default function CreateWebService() {
     for (const [key, node] of Object.entries(mappings)) {
       if (!validateNode(node, [key])) return false;
     }
-    return fieldNames.size > 0;
+    return true;
   };
 
-  // Convert mappings to API format
-  const convertToApiFormat = (mappings) => {
+  // Convert mappings to API format (action‑keyed object) with the new structure
+  const convertToApiFormat = (mappingsByAction) => {
     const result = {};
     const convertNode = (node, target) => {
-      if (node.value) {
-        target[node.key] = node.value;
+      if (node.mapping) {
+        target[node.key] = {
+          field: node.mapping.sourceField,
+          type: node.mapping.sourceType,
+          respectiveColumn: node.mapping.sourceColumn,
+        };
       } else if (node.children) {
         target[node.key] = {};
         for (const childNode of Object.values(node.children)) {
@@ -549,9 +702,14 @@ export default function CreateWebService() {
         }
       }
     };
-    for (const node of Object.values(mappings)) {
-      convertNode(node, result);
-    }
+
+    Object.entries(mappingsByAction).forEach(([action, actionMappings]) => {
+      const actionResult = {};
+      for (const node of Object.values(actionMappings)) {
+        convertNode(node, actionResult);
+      }
+      result[action] = actionResult;
+    });
     return result;
   };
 
@@ -569,17 +727,20 @@ export default function CreateWebService() {
       toast.error("Please select at least one action");
       return;
     }
-    if (Object.keys(webServiceConfig.fieldMappings).length === 0) {
-      toast.error("At least one field mapping is required");
-      return;
-    }
-    if (!validateMappings(webServiceConfig.fieldMappings)) {
-      return;
+
+    // Validate each selected special action has mappings and they are valid
+    const selectedSpecial = webServiceConfig.onAction.filter(a => specialActions.includes(a));
+    for (const action of selectedSpecial) {
+      const mappings = webServiceConfig.fieldMappings[action] || {};
+      if (Object.keys(mappings).length === 0) {
+        toast.error(`Please add at least one field mapping for ${action}`);
+        return;
+      }
+      if (!validateMappingsForAction(action, mappings)) {
+        return;
+      }
     }
 
-    // ⚠️ TEMPORARY WORKAROUND: If your database column "apiendpoint" is of type JSON,
-    // the value must be a valid JSON string. JSON.stringify adds quotes.
-    // If you change the column to TEXT, remove JSON.stringify from apiEndPoint.
     const payload = {
       webServiceId: webServiceConfig.webServiceId,
       serviceId: selectedServiceId,
@@ -623,11 +784,13 @@ export default function CreateWebService() {
     "Submission",
     "Rejection",
     "Sanction",
-    "Correction",
     "Corrigendum",
     "Amendment",
     "Withheld",
   ];
+
+  // Selected actions that should have mapping cards
+  const selectedSpecialActions = webServiceConfig.onAction.filter(a => specialActions.includes(a));
 
   return (
     <Box sx={{ bgcolor: "grey.100", minHeight: "100vh", py: 4 }}>
@@ -677,9 +840,7 @@ export default function CreateWebService() {
                   <Grid container spacing={3}>
                     <Grid item xs={12}>
                       <FormControl fullWidth variant="outlined">
-                        <InputLabel id="service-select-label">
-                          Select Service
-                        </InputLabel>
+                        <InputLabel id="service-select-label">Select Service</InputLabel>
                         <Select
                           labelId="service-select-label"
                           value={selectedServiceId}
@@ -690,10 +851,7 @@ export default function CreateWebService() {
                             <em>Select a service</em>
                           </MenuItem>
                           {services.map((service) => (
-                            <MenuItem
-                              key={service.serviceId}
-                              value={service.serviceId}
-                            >
+                            <MenuItem key={service.serviceId} value={service.serviceId}>
                               {service.serviceName}
                             </MenuItem>
                           ))}
@@ -803,11 +961,7 @@ export default function CreateWebService() {
                             size="small"
                             sx={{ flex: 1 }}
                           />
-                          <IconButton
-                            onClick={() => removeHeader(index)}
-                            size="small"
-                            color="error"
-                          >
+                          <IconButton onClick={() => removeHeader(index)} size="small" color="error">
                             <DeleteIcon />
                           </IconButton>
                         </Box>
@@ -817,42 +971,64 @@ export default function CreateWebService() {
                 </CardContent>
               </Card>
 
-              {/* Field Mappings Card */}
-              <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                      4. Field Mappings
-                    </Typography>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<AddIcon />}
-                      onClick={addRootMapping}
-                      disabled={!selectedServiceId || formFields.length === 0}
-                    >
-                      Add Mapping
-                    </Button>
-                  </Box>
-                  {Object.keys(webServiceConfig.fieldMappings).length === 0 ? (
+              {/* Field Mappings – separate card per selected special action */}
+              {loadingActionFields && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+                  <CircularProgress size={20} />
+                  <Typography variant="body2" color="text.secondary">
+                    Loading action‑specific fields...
+                  </Typography>
+                </Box>
+              )}
+
+              {selectedSpecialActions.length === 0 ? (
+                <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
+                  <CardContent>
                     <Typography color="text.secondary" sx={{ fontStyle: "italic" }}>
-                      No field mappings yet. Click "Add Mapping" to start.
+                      Select Sanction, Corrigendum, or Withheld actions to configure field mappings.
                     </Typography>
-                  ) : (
-                    Object.entries(webServiceConfig.fieldMappings).map(([key, node]) => (
-                      <MappingNode
-                        key={key}
-                        node={node}
-                        path={[key]}
-                        onUpdate={updateMapping}
-                        onAddChild={addChild}
-                        onRemove={removeMapping}
-                        formFields={formFields}
-                      />
-                    ))
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              ) : (
+                selectedSpecialActions.map((action) => (
+                  <Card key={action} variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
+                    <CardContent>
+                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {action} Field Mappings
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<AddIcon />}
+                          onClick={() => addRootMappingForAction(action)}
+                          disabled={!selectedServiceId || getAllFieldsForAction(action).length === 0}
+                        >
+                          Add Mapping
+                        </Button>
+                      </Box>
+
+                      {Object.keys(webServiceConfig.fieldMappings[action] || {}).length === 0 ? (
+                        <Typography color="text.secondary" sx={{ fontStyle: "italic" }}>
+                          No field mappings for {action}. Click "Add Mapping" to start.
+                        </Typography>
+                      ) : (
+                        Object.entries(webServiceConfig.fieldMappings[action] || {}).map(([key, node]) => (
+                          <MappingNode
+                            key={key}
+                            node={node}
+                            path={[key]}
+                            onUpdate={(path, node) => updateMappingForAction(action, path, node)}
+                            onAddChild={(path, childKey) => addChildForAction(action, path, childKey)}
+                            onRemove={(path) => removeMappingForAction(action, path)}
+                            formFields={getAllFieldsForAction(action)}
+                          />
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
 
               {/* Save Button */}
               <Box sx={{ display: "flex", justifyContent: "flex-end" }}>

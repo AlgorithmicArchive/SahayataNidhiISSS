@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -153,6 +154,81 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpGet]
+        public IActionResult GetActionFields(string actionTaken)
+        {
+            try
+            {
+                var fields = new List<object>();
+
+                switch (actionTaken?.ToLower())
+                {
+                    case "sanction":
+                        // Workflow subfields from the application's workflow column
+                        fields = new List<object>
+                        {
+                            new { name = "completedAt", label = "Completed At (last step)", section = "Workflow" },
+                            new { name = "designation", label = "Designation (last step)", section = "Workflow" },
+                            new { name = "status", label = "Status (last step)", section = "Workflow" }
+                        };
+                        break;
+
+                    case "corrigendum":
+                    case "correction":
+                        fields = new List<object>
+                {
+                    new { name = "corrigendumid", label = "Corrigendum ID", section = "Corrigendum" },
+                    new { name = "referencenumber", label = "Reference Number", section = "Corrigendum" },
+                    new { name = "location", label = "Location (JSON)", section = "Corrigendum" },
+                    new { name = "corrigendumfields", label = "Corrigendum Fields (JSON)", section = "Corrigendum" },
+                    new { name = "workflow", label = "Workflow (JSON)", section = "Corrigendum" },
+                    new { name = "currentplayer", label = "Current Player", section = "Corrigendum" },
+                    new { name = "type", label = "Corrigendum Type", section = "Corrigendum" },
+                    new { name = "history", label = "History (JSON)", section = "Corrigendum" },
+                    new { name = "status", label = "Corrigendum Status", section = "Corrigendum" },
+                    new { name = "createdat", label = "Created At", section = "Corrigendum" },
+                    // Workflow subfields from corrigendum's workflow column
+                    new { name = "completedAt", label = "Completed At (last step)", section = "Corrigendum" },
+                    new { name = "designation", label = "Designation (last step)", section = "Corrigendum" },
+                    new { name = "status", label = "Status (last step)", section = "Corrigendum" }
+                };
+                        break;
+
+                    case "withheld":
+                        fields = new List<object>
+                {
+                    new { name = "withheld_id", label = "Withheld ID", section = "Withheld" },
+                    new { name = "serviceid", label = "Service ID", section = "Withheld" },
+                    new { name = "referencenumber", label = "Reference Number", section = "Withheld" },
+                    new { name = "location", label = "Location (JSON)", section = "Withheld" },
+                    new { name = "workflow", label = "Workflow (JSON)", section = "Withheld" },
+                    new { name = "currentplayer", label = "Current Player", section = "Withheld" },
+                    new { name = "history", label = "History (JSON)", section = "Withheld" },
+                    new { name = "iswithheld", label = "Is Withheld", section = "Withheld" },
+                    new { name = "withheldtype", label = "Withheld Type", section = "Withheld" },
+                    new { name = "withheldreason", label = "Withheld Reason", section = "Withheld" },
+                    new { name = "files", label = "Files (JSON)", section = "Withheld" },
+                    new { name = "status", label = "Withheld Status", section = "Withheld" },
+                    new { name = "withheldon", label = "Withheld On", section = "Withheld" },
+                    // Workflow subfields from withheld's workflow column
+                    new { name = "completedAt", label = "Completed At (last step)", section = "Withheld" },
+                    new { name = "designation", label = "Designation (last step)", section = "Withheld" },
+                    new { name = "status", label = "Status (last step)", section = "Withheld" }
+                };
+                        break;
+
+                    default:
+                        return Json(new { status = false, message = "Unknown action" });
+                }
+
+                return Json(new { status = true, fields });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching action fields");
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
+        [HttpGet]
         public IActionResult GetWebService(int serviceId)
         {
             try
@@ -188,6 +264,8 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = $"Error fetching configuration: {ex.Message}" });
             }
         }
+
+
         [HttpGet]
         public IActionResult GetLetterDetails(int serviceId, string objField)
         {
