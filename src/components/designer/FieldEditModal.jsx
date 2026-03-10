@@ -98,12 +98,10 @@ const fetchFormFieldsFromAPI = async (serviceId) => {
   if (!serviceId) return [];
 
   try {
-    console.log("Fetching form fields from API for service:", serviceId);
     const response = await axiosInstance.get(`/Designer/GetFormElements`, {
       params: { serviceId }
     });
 
-    console.log("API Response:", response.data);
 
     if (response.data.status && response.data.sections) {
       const allFields = [];
@@ -121,7 +119,6 @@ const fetchFormFieldsFromAPI = async (serviceId) => {
           });
         }
       });
-      console.log("Extracted form fields:", allFields);
       return allFields;
     }
     return [];
@@ -752,12 +749,6 @@ const FieldEditModal = ({
     // Apply final cleaning
     finalFormData = cleanDeclarationData(finalFormData);
 
-    console.log("Saving field with declaration data:", {
-      name: finalFormData.name,
-      hasDeclaration: !!finalFormData.declaration,
-      declarationLength: finalFormData.declaration?.length || 0,
-      declarationFieldsCount: finalFormData.declarationFields?.length || 0
-    });
 
     updateField(finalFormData);
     onClose();

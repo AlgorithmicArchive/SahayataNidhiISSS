@@ -11,7 +11,6 @@ export const startSignalRConnection = async () => {
   if (connection.state === signalR.HubConnectionState.Disconnected) {
     try {
       await connection.start();
-      console.log("SignalR Connected");
     } catch (error) {
       console.error("SignalR Connection Error:", error);
       setTimeout(startSignalRConnection, 5000); // Retry connection

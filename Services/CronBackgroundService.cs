@@ -89,66 +89,137 @@ public class CronScheduler : BackgroundService, ICronScheduler
         while (!stoppingToken.IsCancellationRequested)
         {
             var now = DateTime.Now;
-            var tasksToRun = _scheduledTasks
-                .Where(t => t.Value.Schedule.GetNextOccurrence(now) <= now)
-                .ToList();
 
+            var tasksToRun = new List<KeyValuePair<string, (CrontabSchedule Schedule, string ActionType, Func<CancellationToken, Task> Action)>>();
+
+            // Determine which tasks need to run
+            foreach (var task in _scheduledTasks)
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
+
+                    var dbJob = await db.Scheduledjobs.FindAsync(Guid.Parse(task.Key), stoppingToken);
+                    if (dbJob == null) continue;
+
+                    // Use LastExecutedAt or CreatedAt as reference
+                    var lastRun = dbJob.Lastexecutedat ?? dbJob.Createdat;
+
+                    var nextRun = task.Value.Schedule.GetNextOccurrence(lastRun);
+
+                    _logger.LogDebug(
+                        "Evaluating job {ActionType} | LastRun: {LastRun} | NextRun: {NextRun} | Now: {Now}",
+                        task.Value.ActionType,
+                        lastRun,
+                        nextRun,
+                        now
+                    );
+
+                    if (nextRun <= now)
+                    {
+                        tasksToRun.Add(task);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error evaluating cron job {TaskId}", task.Key);
+                }
+            }
+
+            // Execute tasks that are due
             foreach (var task in tasksToRun)
             {
                 var (schedule, actionType, action) = task.Value;
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+
                 _ = Task.Run(async () =>
                 {
                     try
                     {
-                        var registeredAction = _actionRegistry.GetValueOrDefault(actionType);
-                        if (registeredAction == null)
+                        _logger.LogInformation(
+                            "Executing task {TaskId} ({ActionType}) at {Time}",
+                            task.Key,
+                            actionType,
+                            DateTime.Now
+                        );
+
+                        using var scope = _serviceProvider.CreateScope();
+                        var cronServices = scope.ServiceProvider.GetRequiredService<CronServices>();
+
+                        switch (actionType)
                         {
-                            registeredAction = await ResolveActionFromDIAsync(actionType, cts.Token);
-                            if (registeredAction == null)
-                            {
-                                _logger.LogWarning("No action found for {ActionType}. Skipping.", actionType);
+                            case "NotifyExpiringEligibilities":
+                                await cronServices.NotifyExpiringEligibilities("1", stoppingToken);
+                                break;
+
+                            default:
+                                _logger.LogWarning("Unknown cron action {ActionType}", actionType);
                                 return;
-                            }
                         }
 
-                        await registeredAction(cts.Token);
-
-                        // Update DB
-                        using var scope = _serviceProvider.CreateScope();
                         var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-                        var dbJob = await db.Scheduledjobs.FindAsync(Guid.Parse(task.Key), cts.Token);
+                        var dbJob = await db.Scheduledjobs.FindAsync(Guid.Parse(task.Key), stoppingToken);
+
                         if (dbJob != null)
                         {
                             dbJob.Lastexecutedat = DateTime.Now;
-                            await db.SaveChangesAsync(cts.Token);
+                            await db.SaveChangesAsync(stoppingToken);
                         }
 
-                        _logger.LogInformation("Executed task {TaskId} ({ActionType})", task.Key, actionType);
+                        _logger.LogInformation(
+                            "Executed task {TaskId} ({ActionType}) successfully",
+                            task.Key,
+                            actionType
+                        );
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to execute task {TaskId} ({ActionType})", task.Key, actionType);
+                        _logger.LogError(
+                            ex,
+                            "Failed to execute task {TaskId} ({ActionType})",
+                            task.Key,
+                            actionType
+                        );
                     }
-                }, cts.Token);
+                }, stoppingToken);
             }
 
-            // Sleep until next job
-            var nextOccurrences = _scheduledTasks.Values
-                .Select(t => t.Schedule.GetNextOccurrence(now))
-                .Where(t => t > now)
-                .ToList();
+            // Compute next sleep time based on LastExecutedAt, not now
+            var nextOccurrences = new List<DateTime>();
+            foreach (var task in _scheduledTasks)
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
 
+                    var dbJob = await db.Scheduledjobs.FindAsync(Guid.Parse(task.Key), stoppingToken);
+                    if (dbJob == null) continue;
+
+                    var lastRun = dbJob.Lastexecutedat ?? dbJob.Createdat;
+                    var next = task.Value.Schedule.GetNextOccurrence(lastRun);
+
+                    if (next > now)
+                        nextOccurrences.Add(next);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error computing next occurrence for job {TaskId}", task.Key);
+                }
+            }
+
+            // Sleep until the next task is due
             var delay = nextOccurrences.Any()
                 ? nextOccurrences.Min() - now
                 : TimeSpan.FromSeconds(10);
+
+            _logger.LogDebug("Scheduler sleeping for {Delay}", delay > TimeSpan.Zero ? delay : TimeSpan.FromMilliseconds(100));
 
             await Task.Delay(delay > TimeSpan.Zero ? delay : TimeSpan.FromMilliseconds(100), stoppingToken);
         }
 
         _logger.LogInformation("Cron Scheduler stopped.");
     }
-
     private async Task LoadPersistedJobsAsync(CancellationToken ct)
     {
         using var scope = _serviceProvider.CreateScope();

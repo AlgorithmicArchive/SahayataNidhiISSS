@@ -5,10 +5,6 @@ import * as cocoSsd from "@tensorflow-models/coco-ssd";
 // Make tf globally available (temporarily for debugging)
 if (typeof window !== "undefined") {
   window.tf = tf;
-  console.log(
-    "[DEBUG] TensorFlow.js version:",
-    tf.version?.tfjs || "Not loaded",
-  );
 }
 
 // Global API base (same pattern used in all your other components)
@@ -40,7 +36,6 @@ export function onlyDigits(field, value) {
 }
 
 export function specificLength(field, value, formData = {}) {
-  console.log("Specific length validation:", { field, value, formData });
 
   // Helper to resolve a length value that may be dependent
   const resolveLength = (lengthConfig, lengthType) => {
@@ -277,8 +272,6 @@ export async function validateFile(field, value) {
 }
 
 export function range(field, value) {
-  console.log;
-  console.log(field, value);
   if (value < field.minLength || value > field.maxLength) {
     return `The value must be between ${field.minLength} and ${field.maxLength}.`;
   }
@@ -451,24 +444,19 @@ let cocoSsdModel = null;
 export async function loadCocoSsdModel() {
   if (modelLoaded) return cocoSsdModel;
 
-  console.log("[DEBUG] Initializing TensorFlow.js...");
   const backendNames = tf.engine().backendNames();
-  console.log("[DEBUG] Available backends:", backendNames);
 
   const backendToUse = backendNames.includes("webgl") ? "webgl" : "cpu";
   await tf.setBackend(backendToUse);
   await tf.ready();
-  console.log("[DEBUG] TF backend:", tf.getBackend());
 
   const MODEL_URL = `${API_BASE}/models/coco-ssd/model/model.json`;
-  console.log("[DEBUG] Loading COCO-SSD from:", MODEL_URL);
 
   cocoSsdModel = await cocoSsd.load({
     modelUrl: MODEL_URL,
   });
 
   modelLoaded = true;
-  console.log("[DEBUG] COCO-SSD loaded successfully");
   return cocoSsdModel;
 }
 

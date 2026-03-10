@@ -61,6 +61,8 @@ public partial class SwdjkContext : DbContext
 
     public virtual DbSet<Pool> Pool { get; set; }
 
+    public virtual DbSet<Reports> Reports { get; set; }
+
     public virtual DbSet<Scheduledjobs> Scheduledjobs { get; set; }
 
     public virtual DbSet<Services> Services { get; set; }
@@ -720,6 +722,35 @@ public partial class SwdjkContext : DbContext
                 .HasForeignKey(d => d.Serviceid)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_pool_services");
+        });
+
+        modelBuilder.Entity<Reports>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("reports_pkey");
+
+            entity.ToTable("reports");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Columns)
+                .HasColumnType("jsonb")
+                .HasColumnName("columns");
+            entity.Property(e => e.Createdat)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("createdat");
+            entity.Property(e => e.Createdby)
+                .HasMaxLength(100)
+                .HasColumnName("createdby");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.Filters)
+                .HasColumnType("jsonb")
+                .HasColumnName("filters");
+            entity.Property(e => e.Name)
+                .HasMaxLength(200)
+                .HasColumnName("name");
+            entity.Property(e => e.Tablename)
+                .HasMaxLength(200)
+                .HasColumnName("tablename");
         });
 
         modelBuilder.Entity<Scheduledjobs>(entity =>

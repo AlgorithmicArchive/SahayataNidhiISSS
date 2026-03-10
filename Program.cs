@@ -139,7 +139,7 @@ app.Lifetime.ApplicationStarted.Register(async () =>
     var cronService = scope.ServiceProvider.GetRequiredService<CronServices>();
 
     // Automatically registers NotifyExpiringEligibilities
-    await cronService.RegisterAllTasksAsync("40 14 * * *"); // daily at 12 AM
+    await cronService.RegisterAllTasksAsync("44 12 * * *"); // daily at 12 AM
 });
 
 

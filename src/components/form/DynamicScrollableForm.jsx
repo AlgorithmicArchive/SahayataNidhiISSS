@@ -574,7 +574,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         const result = await GetServiceContent(ServiceId);
         if (result && result.status) {
           try {
-            config = JSON.parse(result.formElement);
+            console.log("Raw formElement from API:", result.formelement);
+            config = JSON.parse(result.formelement);
             let updatedConfig = sanitizeFormSections(config);
 
             const bankOptions = await fetchBanks();
@@ -1334,7 +1335,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       if (response.data.status) {
         const banks = response.data.data.map((bank) => ({
           value: bank.id.toString(),
-          label: bank.bankName,
+          label: bank.bankname,
         }));
         return [{ label: "Please Select", value: "Please Select" }, ...banks];
       } else {

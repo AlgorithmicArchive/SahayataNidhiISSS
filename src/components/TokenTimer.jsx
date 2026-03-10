@@ -138,7 +138,6 @@ const TokenTimer = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
-      console.log("Refreshing token due to 5-min inactivity");
       const response = await axiosInstance.get("/Home/RefreshToken");
       if (response.data.status) {
         const { token, userType, profile, username, designation } =
@@ -174,7 +173,6 @@ const TokenTimer = () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
     try {
-      console.log("Sending keep-alive to remove backend expiration");
       const response = await axiosInstance.get("/Home/KeepAlive");
       if (response.data.status) {
         const { token, userType, profile, username, designation } =

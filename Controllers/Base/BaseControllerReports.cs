@@ -8,11 +8,51 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SahayataNidhi.Models.Entities;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SahayataNidhi.Controllers
 {
     public partial class BaseController
     {
+
+
+
+        public class Report
+        {
+            [Key]
+            public int Id { get; set; }
+            public string? Name { get; set; }
+            public string? Description { get; set; }
+            public string? TableName { get; set; }  // The main table to query
+
+            [Column(TypeName = "jsonb")]
+            public string? Columns { get; set; }     // JSON array of ReportColumn
+
+            [Column(TypeName = "jsonb")]
+            public string? Filters { get; set; }     // JSON array of ReportFilter (nullable)
+
+            public DateTime CreatedAt { get; set; }
+            public string? CreatedBy { get; set; }
+        }
+
+        public class ReportColumn
+        {
+            public string? Name { get; set; }          // Database column name
+            public string? JsonPath { get; set; }      // Optional JSON path (e.g., "address.city")
+            public string? Display { get; set; }        // Column header
+            public string? Type { get; set; }           // e.g., "string", "int", "date"
+        }
+
+        public class ReportFilter
+        {
+            public string? Field { get; set; }          // Database column name
+            public string? JsonPath { get; set; }       // Optional JSON path
+            public string? Operator { get; set; }       // "eq", "neq", "gt", "lt", "contains"
+            public object? Value { get; set; }          // Filter value
+        }
         public string GetOfficerAreaForHistory(string accessLevel, int? accessCode)
         {
             switch (accessLevel)
@@ -543,5 +583,7 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, error = $"Error generating file: {ex.Message}" });
             }
         }
+
+
     }
 }

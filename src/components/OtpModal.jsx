@@ -81,7 +81,6 @@ export default function OtpModal({
               variant="outlined"
               color="secondary"
               onClick={() => {
-                console.log("Cancel button clicked");
                 onClose();
               }}
               fullWidth

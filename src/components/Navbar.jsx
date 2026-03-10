@@ -115,7 +115,6 @@ const MyNavbar = () => {
           navigate("/login");
         }
       } catch (error) {
-        console.log("SSO failed, falling back to manual login:", error.message);
         let errorMessage = "Login error";
         if (error.message === "SSO timeout") {
           errorMessage = "SSO service timeout - using manual login";

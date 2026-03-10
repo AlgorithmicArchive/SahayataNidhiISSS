@@ -49,10 +49,8 @@ export const fetchDataPost = async (
   formdata,
 ) => {
   try {
-    console.log(formdata);
     const url = `${URL}?page=${page}&size=${rowsPerPage}`;
     const response = await axiosInstance.post(url, formdata);
-    console.log(response.data);
     return {
       data: response.data.data,
       totalCount: response.data.totalCount,
@@ -93,7 +91,6 @@ export async function GetServiceContent(ServiceId) {
 export const fetchDistrictsForService = async (setDistrictOptions) => {
   try {
     const response = await axiosInstance.get("/User/GetDistrictsForService");
-    console.log(response);
     const { status, districts } = response.data;
     if (status) {
       const formattedDistricts = districts.map((district) => ({
@@ -214,15 +211,12 @@ export async function fetchAcknowledgement(applicationId) {
     const response = await axiosInstance.get("/User/GetAcknowledgement", {
       params: { ApplicationId: applicationId },
     });
-    console.log("RESPONSE", response.data);
     const { fullPath } = response.data;
-    console.log(fullPath);
 
     // Ensure that the path includes the protocol
     const completePath = fullPath.startsWith("http")
       ? fullPath
       : `http://localhost:5004/${fullPath}`;
-    console.log("Complete PDF Path:", completePath);
     return { fullPath, completePath };
   } catch (error) {
     console.error("Error fetching PDF path:", error);
@@ -258,7 +252,6 @@ export async function fetchUserDetail(
   const response = await axiosInstance.get("/Officer/GetUserDetails", {
     params: { applicationId: applicationId },
   });
-  console.log("Response", response.data);
   setFormDetails(response.data.list);
   setHaspending(response.data.hasPending);
   if (setActionForm != null)
@@ -286,7 +279,6 @@ export async function fetchFormDetails(applicationId) {
 export async function fetchCertificateDetails() {
   try {
     const response = await axiosInstance.get("/Officer/GetCertificateDetails");
-    console.log("fetchCertificateDetails response:", response.data); // Debug
     if (!response.data.success || !response.data.certificateDetails) {
       throw new Error("Failed to fetch certificate details.");
     }

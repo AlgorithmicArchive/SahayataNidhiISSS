@@ -629,5 +629,19 @@ namespace SahayataNidhi.Controllers
                 return StatusCode(500, new { status = false, message = $"Error fetching configuration: {ex.Message}" });
             }
         }
+
+        [HttpGet("GetTables")]
+        public IActionResult GetTables()
+        {
+            // Using Entity Framework Core with Npgsql
+            var tables = dbcontext.Model.GetEntityTypes()
+                .Select(t => t.GetTableName())
+                .Distinct()
+                .ToList();
+            return Ok(tables);
+        }
+
+        
+
     }
 }

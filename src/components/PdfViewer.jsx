@@ -9,7 +9,6 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.js?url";
 const API_BASE = window.__CONFIG__?.API_URL || ""; // fallback to empty string if undefined
 
 const PdfViewer = ({ pdfUrl, path, exportButton = null, width }) => {
-  console.log("PdfViewer path:", path);
   return (
     <div style={{ textAlign: "center", marginTop: 50 }}>
       {exportButton && (

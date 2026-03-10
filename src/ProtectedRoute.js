@@ -12,29 +12,13 @@ const ProtectedRoute = ({ requiredRoles }) => {
     // Normalize userType for comparison (make it case-insensitive)
     const normalizedUserType = userType?.toLowerCase() || "";
 
-    console.log(
-      "ProtectedRoute Check -",
-      "Token:",
-      !!token,
-      "Verified:",
-      verified,
-      "UserType:",
-      userType,
-      "Normalized:",
-      normalizedUserType,
-      "Required:",
-      requiredRoles,
-    );
-
     // If no token or not verified, redirect to appropriate page
     if (!token) {
-      console.log("No token, redirecting to /login");
       navigate("/login", { replace: true });
       return;
     }
 
     if (!verified) {
-      console.log("Not verified, redirecting to /verification");
       navigate("/verification", { replace: true });
       return;
     }
@@ -48,17 +32,11 @@ const ProtectedRoute = ({ requiredRoles }) => {
         normalizedRequiredRoles.includes(normalizedUserType);
 
       if (!hasRequiredRole) {
-        console.log(
-          `User type "${userType}" (normalized: "${normalizedUserType}") not in required roles:`,
-          requiredRoles,
-        );
-        console.log("Redirecting to /unauthorized");
         navigate("/unauthorized", { replace: true });
         return;
       }
     }
 
-    console.log("Access granted!");
     setIsAuthorized(true);
   }, [token, verified, userType, requiredRoles, navigate]);
 

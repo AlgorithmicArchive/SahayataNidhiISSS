@@ -1,6 +1,5 @@
 // At the TOP of your main entry file
 import '@tensorflow/tfjs';
-console.log('TensorForce.js loaded in main bundle');
 
 import React from "react";
 import { createRoot } from "react-dom/client";

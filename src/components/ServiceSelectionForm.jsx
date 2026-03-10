@@ -20,7 +20,6 @@ const ServiceSelectionForm = ({ services, errors, onServiceSelect }) => {
   };
 
   useEffect(() => {
-    console.log("Services", services)
     if (services.length === 1) {
       // Only one service: select automatically
       const defaultService = services[0];

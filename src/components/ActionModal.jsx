@@ -33,7 +33,6 @@ const ActionModal = ({
 }) => {
   const [selectedAction, setSelectedAction] = useState("");
   const handleActionChange = (value) => {
-    console.log(value);
     setSelectedAction(value);
   };
   return (

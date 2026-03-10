@@ -362,11 +362,9 @@ const ServerSideTable = React.forwardRef(
           });
           if (response.data?.status && response.data?.tableSettings) {
             const raw = response.data.tableSettings;
-            console.log("Raw tableSettings:", raw);
 
             // If it's already an object (maybe API returns parsed JSON)
             if (typeof raw === 'object' && raw !== null) {
-              console.log("Settings already parsed:", raw);
               if (raw.savedColumnOrder) setColumnOrder(raw.savedColumnOrder);
               if (raw.savedColumnVisibility) setColumnVisibility(raw.savedColumnVisibility);
               setSettingsLoadSuccess(true);
@@ -375,7 +373,6 @@ const ServerSideTable = React.forwardRef(
             else if (typeof raw === 'string' && raw.trim() !== '') {
               try {
                 const savedSettings = JSON.parse(raw);
-                console.log("Parsed saved settings:", savedSettings);
                 if (savedSettings.savedColumnOrder) setColumnOrder(savedSettings.savedColumnOrder);
                 if (savedSettings.savedColumnVisibility)
                   setColumnVisibility(savedSettings.savedColumnVisibility);
@@ -386,12 +383,10 @@ const ServerSideTable = React.forwardRef(
               }
             } else {
               // Empty string or other falsy – no saved settings
-              console.log("No saved settings (empty or falsy)");
               setSettingsLoadSuccess(false);
             }
           } else {
             // No settings in response
-            console.log("No settings in response");
             setSettingsLoadSuccess(false);
           }
         } catch (error) {
@@ -408,8 +403,6 @@ const ServerSideTable = React.forwardRef(
     useEffect(() => {
       if (!settingsLoaded || columns.length === 0) return;
 
-      console.log("Merging columns. Current columnOrder:", columnOrder);
-      console.log("Current columns:", columns.map(c => c.accessorKey));
 
       // Merge column order: keep saved order (migrating old "actions" key), append any new columns
       setColumnOrder((prevOrder) => {
@@ -417,15 +410,12 @@ const ServerSideTable = React.forwardRef(
         if (prevOrder.length === 0) {
           // No saved order yet – create default order with Actions first if it exists
           const actionsKey = 'mrt-row-actions';
-          console.log("No saved order, building default. actionsKey found?", newColumnKeys.includes(actionsKey));
           if (newColumnKeys.includes(actionsKey)) {
             // Put Actions first, then the others in original order (except Actions)
             const others = newColumnKeys.filter(key => key !== actionsKey);
             const defaultOrder = [actionsKey, ...others];
-            console.log("Default order with Actions first:", defaultOrder);
             return defaultOrder;
           }
-          console.log("Actions key not found, returning original order");
           return newColumnKeys;
         }
         // Migrate any old "actions" key to "mrt-row-actions"
@@ -437,7 +427,6 @@ const ServerSideTable = React.forwardRef(
         });
         // Remove any keys that no longer exist
         const filtered = merged.filter((key) => newColumnKeys.includes(key));
-        console.log("Merged columnOrder (from saved):", filtered);
         return filtered;
       });
 
@@ -470,7 +459,6 @@ const ServerSideTable = React.forwardRef(
           savedColumnVisibility: columnVisibility,
         })
       );
-      console.log("Saving column settings:", { columnOrder, columnVisibility });
       await axiosInstance.post("/Base/SaveTableSettings", formData);
     }, [columnOrder, columnVisibility, storageKey, settingsLoadSuccess]);
 
@@ -574,7 +562,6 @@ const ServerSideTable = React.forwardRef(
           if (newColumnKeys.includes(actionsKey)) {
             const others = newColumnKeys.filter(key => key !== actionsKey);
             const defaultOrder = [actionsKey, ...others];
-            console.log("Setting provisional default order (Actions first):", defaultOrder);
             setColumnOrder(defaultOrder);
           }
         }

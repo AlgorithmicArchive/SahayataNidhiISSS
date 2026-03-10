@@ -101,8 +101,13 @@ public class CronServices
 
             if (expiringApplication == null) continue;
 
-            DateTime expirationDate;
-            if (!DateTime.TryParse(expiringApplication.ExpirationDate, out expirationDate))
+            if (expiringApplication.MailSent > 0)
+            {
+                _logger.LogInformation("Mail already sent for {Referencenumber}", application.Referencenumber);
+                continue;
+            }
+
+            if (!DateTime.TryParse(expiringApplication.ExpirationDate, out DateTime expirationDate))
             {
                 _logger.LogWarning("Invalid expiration date format for {Referencenumber}: {Date}",
                     application.Referencenumber, expiringApplication.ExpirationDate);
@@ -141,7 +146,6 @@ public class CronServices
         {
             string actionType = method.Name;
 
-            // Build delegate with default args
             var action = async (CancellationToken token) =>
             {
                 try
@@ -152,10 +156,11 @@ public class CronServices
                     for (int i = 0; i < parameters.Length; i++)
                     {
                         var p = parameters[i];
+
                         if (p.ParameterType == typeof(string) && p.HasDefaultValue)
                             args[i] = p.DefaultValue;
                         else if (p.ParameterType == typeof(string))
-                            args[i] = "1"; // default serviceId
+                            args[i] = "1";
                         else if (p.ParameterType == typeof(CancellationToken))
                             args[i] = token;
                         else
@@ -172,8 +177,24 @@ public class CronServices
                 }
             };
 
-            await _scheduler.ScheduleTaskAsync(cronExpression, actionType, action);
-            _logger.LogInformation("Registered and scheduled {MethodName} with CRON {Cron}", actionType, cronExpression);
+            // ✅ ADD THIS CHECK HERE
+            var existingTask = await _dbcontext.Scheduledjobs
+                .FirstOrDefaultAsync(t => t.Actiontype == actionType, ct);
+
+            if (existingTask == null)
+            {
+                await _scheduler.ScheduleTaskAsync(cronExpression, actionType, action);
+                _logger.LogInformation("Registered new task {MethodName} with CRON {Cron}", actionType, cronExpression);
+            }
+            else
+            {
+                existingTask.Cronexpression = cronExpression;
+                await _dbcontext.SaveChangesAsync(ct);
+
+                _logger.LogInformation("Updated CRON for existing task {MethodName}", actionType);
+            }
         }
     }
+
+
 }

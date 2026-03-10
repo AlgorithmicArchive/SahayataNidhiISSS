@@ -2194,8 +2194,6 @@ namespace SahayataNidhi.Controllers.Officer
             }
         }
 
-
-
         [HttpGet]
         public IActionResult GetUserDetails(string applicationId)
         {

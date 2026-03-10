@@ -141,14 +141,6 @@ const AdditionalFieldsModal = ({
   );
 
   useEffect(() => {
-    console.log("AdditionalFieldsModal - Initial selectedField:", {
-      id: selectedField.id,
-      name: selectedField.name,
-      hasAdditionalFields: !!selectedField.additionalFields,
-      isConsentCheckbox: selectedField.isConsentCheckbox,
-      declaration: selectedField.declaration?.substring(0, 50)
-    });
-
     setLocalAdditionalFields(
       normalizeAdditionalFields(selectedField.additionalFields || {})
     );
@@ -203,13 +195,6 @@ const AdditionalFieldsModal = ({
   };
 
   const handleEditField = (field) => {
-    console.log("Editing field in AdditionalFieldsModal:", {
-      id: field.id,
-      name: field.name,
-      isConsentCheckbox: field.isConsentCheckbox,
-      hasDeclaration: !!field.declaration
-    });
-
     setEditingField({
       ...field,
       parentOption: selectedOption,
@@ -227,15 +212,6 @@ const AdditionalFieldsModal = ({
 
   // UPDATED: Handle field updates with declaration data
   const handleSaveField = (updatedField) => {
-    console.log("AdditionalFieldsModal - Field updated with:", {
-      id: updatedField.id,
-      name: updatedField.name,
-      type: updatedField.type,
-      isConsentCheckbox: updatedField.isConsentCheckbox,
-      hasDeclaration: !!updatedField.declaration,
-      declarationFieldsCount: updatedField.declarationFields?.length || 0
-    });
-
     // Clean the field data
     const cleanedField = cleanDeclarationData(updatedField);
 
@@ -247,21 +223,12 @@ const AdditionalFieldsModal = ({
         ),
       };
 
-      console.log("Updated localAdditionalFields after save:", {
-        option: selectedOption,
-        fields: updatedFields[selectedOption]?.map(f => ({
-          id: f.id,
-          name: f.name,
-          isConsentCheckbox: f.isConsentCheckbox
-        }))
-      });
 
       return updatedFields;
     });
 
     // Notify parent component about the update
     if (onFieldUpdate) {
-      console.log("Calling onFieldUpdate with:", cleanedField);
       onFieldUpdate(cleanedField);
     }
 
@@ -349,18 +316,6 @@ const AdditionalFieldsModal = ({
       ...selectedField,
       additionalFields: updatedAdditionalFields,
     };
-
-    console.log("AdditionalFieldsModal saving final data:", {
-      fieldId: updatedField.id,
-      fieldName: updatedField.name,
-      additionalFieldsCount: Object.keys(updatedAdditionalFields).length,
-      declarationFields: Object.values(updatedAdditionalFields).flat().filter(f =>
-        f.isConsentCheckbox
-      ).map(f => ({
-        name: f.name,
-        declaration: f.declaration?.substring(0, 50)
-      }))
-    });
 
     // Use onFieldUpdate if available, otherwise use updateField
     if (onFieldUpdate) {
