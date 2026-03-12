@@ -89,13 +89,18 @@ namespace SahayataNidhi.Controllers.Admin
 
                 // Call PostgreSQL function using SqlQueryRaw
                 var result = dbcontext.Database
-                    .SqlQueryRaw<DashboardData>(
-                        "SELECT * FROM get_count_for_admin({0}, {1}, {2}, {3})",
-                        officer.AccessLevel ?? (object)DBNull.Value,
-                        officer.AccessCode!,
-                        "new",
-                        officer.Department == 0 ? (object)DBNull.Value : officer.Department!)
-                    .FirstOrDefault();
+                .SqlQueryRaw<DashboardData>(
+                    @"SELECT 
+                        ""TotalOfficers"" AS ""TotalOfficers"",
+                        ""TotalCitizens"" AS ""TotalCitizens"",
+                        ""TotalApplicationsSubmitted"" AS ""TotalApplicationsSubmitted"",
+                        ""TotalServices"" AS ""TotalServices""
+                    FROM get_count_for_admin({0}, {1}, {2}, {3})",
+                    officer.AccessLevel ?? (object)DBNull.Value,
+                    officer.AccessCode!,
+                    "new",
+                    officer.Department == 0 ? (object)DBNull.Value : officer.Department!)
+                .FirstOrDefault();
 
                 if (result == null || result.TotalOfficers == -1)
                 {
@@ -809,7 +814,7 @@ namespace SahayataNidhi.Controllers.Admin
                             where o.Departmentid == departmentId
                             select new
                             {
-                                OfficeDetailId = od.Statecode + od.Divisioncode + od.Districtcode + od.Areacode,
+                                OfficeDetailId = od.Officedetailid,
                                 od.Officename,
                                 OfficeType = o.Officetype,
                                 od.Divisioncode,
@@ -873,11 +878,23 @@ namespace SahayataNidhi.Controllers.Admin
                 if (divisionId.HasValue && divisionId.Value > 0)
                     query = query.Where(d => d.Division == divisionId.Value);
 
+                // Left join with OfficeDetails to exclude districts already used
                 var districts = await query
-                    .Select(d => new
+                    .GroupJoin(
+                        dbcontext.Officesdetails,
+                        district => district.Districtid,
+                        office => office.Areacode,
+                        (district, offices) => new { district, offices }
+                    )
+                    .SelectMany(
+                        x => x.offices.DefaultIfEmpty(),
+                        (x, office) => new { x.district, office }
+                    )
+                    .Where(x => x.office == null) // keep only districts with no office
+                    .Select(x => new
                     {
-                        districtId = d.Districtid,
-                        districtName = d.Districtname
+                        districtId = x.district.Districtid,
+                        districtName = x.district.Districtname
                     })
                     .OrderBy(d => d.districtName)
                     .ToListAsync();
@@ -902,11 +919,23 @@ namespace SahayataNidhi.Controllers.Admin
                 if (districtId.HasValue && districtId.Value > 0)
                     query = query.Where(t => t.Districtid == districtId.Value);
 
+                // Left join with OfficeDetails to exclude tehsils already used
                 var tehsils = await query
-                    .Select(t => new
+                    .GroupJoin(
+                        dbcontext.Officesdetails,
+                        tehsil => tehsil.Tehsilid,
+                        office => office.Areacode,
+                        (tehsil, offices) => new { tehsil, offices }
+                    )
+                    .SelectMany(
+                        x => x.offices.DefaultIfEmpty(),
+                        (x, office) => new { x.tehsil, office }
+                    )
+                    .Where(x => x.office == null) // keep only tehsils with no office
+                    .Select(x => new
                     {
-                        tehsilId = t.Tehsilid,
-                        tehsilName = t.Tehsilname
+                        tehsilId = x.tehsil.Tehsilid,
+                        tehsilName = x.tehsil.Tehsilname
                     })
                     .OrderBy(t => t.tehsilName)
                     .ToListAsync();
@@ -931,11 +960,23 @@ namespace SahayataNidhi.Controllers.Admin
                 if (districtId.HasValue && districtId.Value > 0)
                     query = query.Where(b => b.Districtid == districtId.Value);
 
+                // Left join with OfficeDetails to exclude blocks already used
                 var blocks = await query
-                    .Select(b => new
+                    .GroupJoin(
+                        dbcontext.Officesdetails,
+                        block => block.Blockid,
+                        office => office.Areacode,
+                        (block, offices) => new { block, offices }
+                    )
+                    .SelectMany(
+                        x => x.offices.DefaultIfEmpty(),
+                        (x, office) => new { x.block, office }
+                    )
+                    .Where(x => x.office == null) // keep only blocks with no office
+                    .Select(x => new
                     {
-                        blockId = b.Blockid,
-                        blockName = b.Blockname
+                        blockId = x.block.Blockid,
+                        blockName = x.block.Blockname
                     })
                     .OrderBy(b => b.blockName)
                     .ToListAsync();

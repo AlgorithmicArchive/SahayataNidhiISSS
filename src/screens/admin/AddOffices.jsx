@@ -64,13 +64,21 @@ export default function AddOffices() {
         const response = await axiosInstance.get(
           "/Admin/GetCurrentAdminDetails",
         );
+
         if (!response.data || !response.data.additionalDetails) {
           throw new Error("Officer data is missing");
         }
 
         const details = JSON.parse(response.data.additionalDetails);
-        if (!details || !details.Department) {
+
+        // Check if details exist and Department property exists (can be 0)
+        if (!details) {
           throw new Error("Invalid officer details");
+        }
+
+        // Department can be 0, so check if it's undefined or null instead of falsy
+        if (details.Department === undefined || details.Department === null) {
+          throw new Error("Department information not found in officer details");
         }
 
         setDepartmentId(details.Department);
@@ -149,8 +157,7 @@ export default function AddOffices() {
         setRefreshTable((prev) => !prev);
       } else {
         setErrorMessage(
-          `Failed to update office: ${
-            response.data.message || "Unknown error"
+          `Failed to update office: ${response.data.message || "Unknown error"
           }`,
         );
       }
@@ -182,8 +189,7 @@ export default function AddOffices() {
         setRefreshTable((prev) => !prev);
       } else {
         setErrorMessage(
-          `Failed to delete office: ${
-            response.data.message || "Unknown error"
+          `Failed to delete office: ${response.data.message || "Unknown error"
           }`,
         );
       }
@@ -237,7 +243,8 @@ export default function AddOffices() {
     );
   }
 
-  if (errorMessage && !editModalOpen) {
+  // Show error if departmentId is not set (but don't block rendering if it's 0)
+  if (errorMessage && departmentId === null) {
     return (
       <Container maxWidth="md" sx={{ py: 8 }}>
         <Typography variant="h4" fontWeight="bold" align="center" gutterBottom>
@@ -312,6 +319,7 @@ export default function AddOffices() {
                       <MenuItem value="Division">Division</MenuItem>
                       <MenuItem value="District">District</MenuItem>
                       <MenuItem value="Tehsil">Tehsil</MenuItem>
+                      <MenuItem value="Block">Block</MenuItem>
                     </Select>
                     {errors.accessLevel && (
                       <Typography color="error" variant="caption">
@@ -329,7 +337,7 @@ export default function AddOffices() {
                 color="primary"
                 fullWidth
                 sx={{ mt: 3, py: 1.5, fontSize: "1.1rem" }}
-                disabled={!canModifyOffices}
+                disabled={!canModifyOffices || departmentId === null}
                 aria-label="Add Office"
               >
                 Add Office
@@ -426,6 +434,7 @@ export default function AddOffices() {
                         <MenuItem value="Division">Division</MenuItem>
                         <MenuItem value="District">District</MenuItem>
                         <MenuItem value="Tehsil">Tehsil</MenuItem>
+                        <MenuItem value="Block">Block</MenuItem>
                       </Select>
                       {errors.accessLevel && (
                         <Typography color="error" variant="caption">

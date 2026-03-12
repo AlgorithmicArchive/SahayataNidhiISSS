@@ -88,4 +88,6 @@ public partial class StatusCountsSnapshot
     public int Withheldforwardedcount { get; set; }
 
     public int Withheldapprovedcount { get; set; }
+
+    public string? PDataType { get; set; }
 }

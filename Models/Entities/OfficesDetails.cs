@@ -19,5 +19,7 @@ public partial class Officesdetails
 
     public int Officetype { get; set; }
 
+    public int Officedetailid { get; set; }
+
     public virtual Offices OfficetypeNavigation { get; set; } = null!;
 }

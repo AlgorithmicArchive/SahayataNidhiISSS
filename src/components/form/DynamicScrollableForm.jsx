@@ -247,6 +247,38 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   const [permanentFieldMap, setPermanentFieldMap] = useState({});
   const isSyncingRef = useRef(false);
 
+  const findFieldInSection = (section, fieldName) => {
+    // Search in main fields
+    let found = section.fields.find(f => f.name === fieldName);
+    if (found) return found;
+
+    // Search in additionalFields (Urban/Rural)
+    const searchAdditional = (fieldsArray) => {
+      if (!fieldsArray) return null;
+      for (let f of fieldsArray) {
+        if (f.name === fieldName) return f;
+        if (f.additionalFields) {
+          for (let key in f.additionalFields) {
+            const subFound = searchAdditional(f.additionalFields[key]);
+            if (subFound) return subFound;
+          }
+        }
+      }
+      return null;
+    };
+
+    for (let key in section.fields) {
+      const field = section.fields[key];
+      if (field.additionalFields) {
+        for (let subKey in field.additionalFields) {
+          const subFound = searchAdditional(field.additionalFields[subKey]);
+          if (subFound) return subFound;
+        }
+      }
+    }
+    return null;
+  };
+
   useEffect(() => {
     const presentSection = formSections.find(s => s.section === "Present Address Details");
     const permanentSection = formSections.find(s => s.section === "Permanent Address Details");
@@ -454,6 +486,49 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     clearErrors,
     JSON.stringify(watchedDependableValues),
   ]);
+
+  const districtOptionsLoaded = useRef(false);
+
+  useEffect(() => {
+    const loadDistrictOptions = async () => {
+      // Prevent re-fetching after first load
+      if (districtOptionsLoaded.current) return;
+
+      const districtField = formSections
+        .flatMap(s => s.fields)
+        .find(f => f.name === "District" && f.isOfficeField);
+
+      if (districtField && districtField.officeTypeId) {
+        const parentId = 0; // or get from context if needed
+        try {
+          const response = await axiosInstance.get(
+            `/Base/GetAreaList?table=District&parentId=${parentId}&isOfficeField=true&officeTypeId=${districtField.officeTypeId}`
+          );
+          const districtOptions = response.data.data || [];
+          const newOptions = [
+            { label: "Please Select", value: "Please Select" },
+            ...districtOptions.map(d => ({ value: d.value, label: d.label }))
+          ];
+
+          setFormSections(prev =>
+            prev.map(section => ({
+              ...section,
+              fields: section.fields.map(f =>
+                f.name === "District" ? { ...f, options: newOptions } : f
+              )
+            }))
+          );
+
+          // Mark as loaded to prevent future runs
+          districtOptionsLoaded.current = true;
+        } catch (error) {
+          console.error("Error loading district options:", error);
+        }
+      }
+    };
+
+    loadDistrictOptions();
+  }, [formSections]);
 
   function isDocumentInData(fieldName, flatDetails) {
     return Object.keys(flatDetails).includes(fieldName);
@@ -1136,6 +1211,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   };
 
   const handleAreaChange = async (sectionIndex, field, value) => {
+    console.log(`handleAreaChange called for ${field.name} with value: ${value}`);
     try {
       let addressTypeKey = "";
       if (field.name.startsWith("Present")) {
@@ -1233,10 +1309,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       for (let i = 0; i < childFieldNames.length; i++) {
         const childFieldName = childFieldNames[i];
         const tableName = tableNames[i];
+        const childFieldDef = findFieldInSection(formSections[sectionIndex], childFieldName);
 
+        let officeTypeIdParam = '';
+        if (childFieldDef?.isOfficeField && childFieldDef?.officeTypeId) {
+          officeTypeIdParam = `&officeTypeId=${childFieldDef.officeTypeId}`;
+        }
         try {
           const response = await axiosInstance.get(
-            `/Base/GetAreaList?table=${tableName}&parentId=${value}`,
+            `/Base/GetAreaList?table=${tableName}&parentId=${value}${officeTypeIdParam}`
           );
           const areaList = response.data?.data || [];
 

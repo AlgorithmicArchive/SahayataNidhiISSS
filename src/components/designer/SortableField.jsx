@@ -227,7 +227,7 @@ const SortableField = ({
                   onClick={(e) => {
                     e.stopPropagation();
                     // FIXED: Always pass only field.id, not sectionId
-                    onRemoveField && onRemoveField(field.id);
+                    onRemoveField && onRemoveField(sectionId, field.id);
                   }}
                   sx={{
                     color: "error.main",

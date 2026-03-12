@@ -102,7 +102,6 @@ const fetchFormFieldsFromAPI = async (serviceId) => {
       params: { serviceId }
     });
 
-
     if (response.data.status && response.data.sections) {
       const allFields = [];
       response.data.sections.forEach(section => {
@@ -132,12 +131,9 @@ const fetchFormFieldsFromAPI = async (serviceId) => {
 // Helper function to clean declaration data
 const cleanDeclarationData = (fieldData) => {
   if (fieldData.isConsentCheckbox && fieldData.type === "checkbox") {
-    // Ensure declaration fields is always an array
     const cleanedFields = Array.isArray(fieldData.declarationFields)
       ? fieldData.declarationFields
       : [];
-
-    // Clean each field object
     const sanitizedFields = cleanedFields.map(field => ({
       id: field.id || field.name,
       name: field.name,
@@ -261,7 +257,6 @@ const DeclarationConfiguration = ({
         const updatedFields = [...declarationFields, newField];
         setDeclarationFields(updatedFields);
 
-        // Add placeholder to declaration text if using custom
         if (declarationOption === "custom") {
           const newText = declarationText + (declarationText.endsWith(' ') ? '' : ' ') + `{${fieldData.name}}`;
           setDeclarationText(newText);
@@ -275,7 +270,6 @@ const DeclarationConfiguration = ({
     const updatedFields = declarationFields.filter(field => field.id !== fieldId);
     setDeclarationFields(updatedFields);
 
-    // Remove placeholder from declaration text if using custom
     if (declarationOption === "custom") {
       const regex = new RegExp(`\\{${fieldId}\\}`, 'g');
       const newText = declarationText.replace(regex, '').replace(/\s+/g, ' ').trim();
@@ -599,6 +593,9 @@ const FieldEditModal = ({
     declarationFields: Array.isArray(selectedField?.declarationFields)
       ? selectedField.declarationFields
       : [],
+    // IMPORTANT: preserve existing values, only use defaults if missing
+    isOfficeField: selectedField?.isOfficeField !== undefined ? selectedField.isOfficeField : false,
+    officeTypeId: selectedField?.officeTypeId !== undefined ? selectedField.officeTypeId : "",
   });
 
   const [optionInputText, setOptionInputText] = useState(
@@ -625,6 +622,10 @@ const FieldEditModal = ({
   const [availableFields, setAvailableFields] = useState(availableFormFields);
   const [isFetchingFormFields, setIsFetchingFormFields] = useState(false);
 
+  // === NEW: Office types state ===
+  const [officeTypes, setOfficeTypes] = useState([]);
+  const [loadingOfficeTypes, setLoadingOfficeTypes] = useState(false);
+
   const isWorkflowContext = sections.length === 0 && actionForm.length > 0;
   const selectableFields = getSelectableFields(sections, actionForm);
   const filteredSelectableFields = selectableFields.filter(
@@ -645,6 +646,23 @@ const FieldEditModal = ({
     }
     fetchFields();
   }, [serviceId, availableFormFields]);
+
+  // === NEW: Fetch office types when modal opens ===
+  useEffect(() => {
+    const fetchOfficeTypes = async () => {
+      setLoadingOfficeTypes(true);
+      try {
+        const response = await axiosInstance.get("/Base/GetOfficesType");
+        setOfficeTypes(response.data.officesType || []);
+      } catch (error) {
+        console.error("Error fetching office types:", error);
+        toast.error("Failed to load office types");
+      } finally {
+        setLoadingOfficeTypes(false);
+      }
+    };
+    fetchOfficeTypes();
+  }, []);
 
   // Handle declaration data when consent checkbox changes
   useEffect(() => {
@@ -719,6 +737,9 @@ const FieldEditModal = ({
         formData.type === "checkbox" && formData.isCheckboxDependent
           ? formData.checkboxDependentValue
           : "",
+      // Include office field properties
+      isOfficeField: formData.isOfficeField,
+      officeTypeId: formData.isOfficeField ? formData.officeTypeId : undefined,
     };
 
     // Only include declaration data for consent checkboxes
@@ -748,7 +769,6 @@ const FieldEditModal = ({
 
     // Apply final cleaning
     finalFormData = cleanDeclarationData(finalFormData);
-
 
     updateField(finalFormData);
     onClose();
@@ -909,7 +929,7 @@ const FieldEditModal = ({
           )}
         </Box>
 
-        {/* ========== MAXIMUM LENGTH with DEPENDENT option (existing) ========== */}
+        {/* ========== MAXIMUM LENGTH with DEPENDENT option ========== */}
         <Box sx={{ marginTop: 2 }}>
           <Typography variant="body2">Maximum Length</Typography>
           {!isWorkflowContext && (
@@ -1086,6 +1106,9 @@ const FieldEditModal = ({
                   newType === "checkbox" ? prev.checkboxDependentOn : "",
                 checkboxDependentValue:
                   newType === "checkbox" ? prev.checkboxDependentValue : "",
+                // Preserve office field properties when changing type
+                isOfficeField: prev.isOfficeField,
+                officeTypeId: prev.officeTypeId,
               }));
             }}
           >
@@ -1654,6 +1677,57 @@ const FieldEditModal = ({
             helperText="Specify accepted file types, e.g., image/*, .pdf, .doc"
           />
         )}
+
+        {/* === OFFICE FIELD CONFIGURATION === */}
+        <Box sx={{ marginTop: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+            Office Field Configuration
+          </Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={formData.isOfficeField}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setFormData((prev) => ({
+                    ...prev,
+                    isOfficeField: checked,
+                    officeTypeId: checked ? prev.officeTypeId : "",
+                  }));
+                }}
+              />
+            }
+            label="This field is for an Office"
+          />
+          {formData.isOfficeField && (
+            <FormControl fullWidth margin="dense">
+              <InputLabel id="office-type-label">Office Type</InputLabel>
+              <Select
+                labelId="office-type-label"
+                value={formData.officeTypeId}
+                label="Office Type"
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, officeTypeId: e.target.value }))
+                }
+                disabled={loadingOfficeTypes}
+              >
+                <MenuItem value="">
+                  <em>Select Office Type</em>
+                </MenuItem>
+                {loadingOfficeTypes ? (
+                  <MenuItem disabled>Loading...</MenuItem>
+                ) : (
+                  officeTypes.map((office) => (
+                    <MenuItem key={office.officeid} value={office.officeid}>
+                      {office.officetype}
+                    </MenuItem>
+                  ))
+                )}
+              </Select>
+            </FormControl>
+          )}
+        </Box>
+
         <Typography variant="body2" sx={{ marginTop: 2 }}>
           Validation Functions
         </Typography>

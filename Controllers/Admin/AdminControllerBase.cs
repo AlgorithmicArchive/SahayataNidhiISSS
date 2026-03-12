@@ -52,10 +52,12 @@ namespace SahayataNidhi.Controllers.Admin
             try
             {
                 // Option 1: Using FromSqlRaw with parameter (if you have a DbSet)
-                var officer = dbcontext.Set<OfficerDetailsModal>()
-                    .FromSqlRaw("SELECT * FROM get_officer_details({0})", parsedUserId)
-                    .AsEnumerable()
-                    .FirstOrDefault();
+                var officer = dbcontext.Database
+                .SqlQueryRaw<OfficerDetailsModal>(
+                    "SELECT * FROM get_officer_details({0})",
+                    parsedUserId)
+                .AsEnumerable()
+                .FirstOrDefault();
 
                 return officer;
             }

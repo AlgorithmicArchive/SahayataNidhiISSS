@@ -16,8 +16,8 @@ namespace SendEmails
 
         public async Task SendEmail(string email, string subject, string message)
         {
-            // throw new SmtpException("Simulated failure for testing purposes");
-            await SendEmailWithAttachments(email, subject, message, [], string.Empty); // Don't Delete this line
+            throw new SmtpException("Simulated failure for testing purposes");
+            // await SendEmailWithAttachments(email, subject, message, [], string.Empty); // Don't Delete this line
         }
 
 

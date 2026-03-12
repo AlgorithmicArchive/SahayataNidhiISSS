@@ -172,6 +172,8 @@ namespace SahayataNidhi.Controllers
                 {
                     serviceId = s.Serviceid,
                     serviceName = s.Servicename,
+                    nameShort = s.Nameshort,
+                    departmentId = s.Departmentid,
                     formElement = s.Formelement
                 }).ToArray();
                 return Json(new { status = true, services = service });
@@ -289,61 +291,127 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetAreaList(string table, int parentId)
+        public IActionResult GetOfficesType()
+        {
+            var officesType = dbcontext.Offices.ToList();
+            return Json(new { officesType });
+        }
+
+        [HttpGet]
+        public IActionResult GetAreaList(
+     string table,
+     int parentId,
+     int? officeTypeId = null,
+     bool isOfficeField = false)
         {
             object? data = null;
 
             switch (table)
             {
+                case "District":
+                    if (isOfficeField && officeTypeId.HasValue)
+                    {
+                        data = dbcontext.Officesdetails
+                            .Where(od => od.Officetype == officeTypeId.Value)
+                            .Select(od => new { value = od.Districtcode, label = od.Officename }) // Adjust column names
+                            .Distinct()
+                            .ToList();
+                    }
+                    else
+                    {
+                        // Return all districts from master table
+                        data = dbcontext.District
+                            .Where(d => d.Districtid == parentId) // or filter by whatever parent is
+                            .Select(d => new { value = d.Districtid, label = d.Districtname })
+                            .ToList();
+                    }
+                    break;
                 case "TehsilAll":
-                    data = dbcontext.Tehsil
-                     .Where(t => t.Districtid == parentId)
-                     .Select(t => new { value = t.Tehsilid, label = t.Tehsilname }) // Optional: project only needed fields
-                     .ToList();
-                    break;
-                case "Tehsil":
-                    data = dbcontext.Tswotehsil
-                        .Where(t => t.Districtid == parentId)
-                        .Select(t => new { value = t.Tehsilid, label = t.Tehsilname }) // Optional: project only needed fields
-                        .ToList();
-                    break;
-
-                case "Muncipality":
-                    data = dbcontext.Muncipalities.Where(m => m.Districtid == parentId)
-                    .Select(m => new { value = m.Muncipalityid, label = m.Muncipalityname })
-                    .ToList();
+                    if (isOfficeField && officeTypeId.HasValue)
+                    {
+                        // Fetch tehsils already configured as offices (from Officesdetails)
+                        data = dbcontext.Officesdetails
+                            .Where(od => od.Districtcode == parentId && od.Officetype == officeTypeId.Value)
+                            .Select(od => new { value = od.Areacode, label = od.Areaname })
+                            .ToList();
+                    }
+                    else
+                    {
+                        // Fetch all tehsils from master table
+                        data = dbcontext.Tehsil
+                            .Where(t => t.Districtid == parentId)
+                            .Select(t => new { value = t.Tehsilid, label = t.Tehsilname })
+                            .ToList();
+                    }
                     break;
 
                 case "Block":
-                    data = dbcontext.Blocks.Where(m => m.Districtid == parentId)
-                    .Select(m => new { value = m.Blockid, label = m.Blockname })
-                    .ToList();
+                    if (isOfficeField && officeTypeId.HasValue)
+                    {
+                        // If your Officesdetails table has a Blockcode column, use it.
+                        // Otherwise, adapt this to the correct parent column.
+                        // Example: assume Officesdetails has Blockcode
+                        data = dbcontext.Officesdetails
+                            .Where(od => od.Districtcode == parentId && od.Officetype == officeTypeId.Value)
+                            .Select(od => new { value = od.Areacode, label = od.Areaname })
+                            .ToList();
+                    }
+                    else
+                    {
+                        data = dbcontext.Blocks
+                            .Where(b => b.Districtid == parentId)
+                            .Select(b => new { value = b.Blockid, label = b.Blockname })
+                            .ToList();
+                    }
+                    break;
+
+                // For District, you might need a separate endpoint because parentId would be divisionId.
+                // If you have a case for District, add it similarly.
+
+                case "Muncipality":
+                    // No office data expected; always use master table
+                    data = dbcontext.Muncipalities
+                        .Where(m => m.Districtid == parentId)
+                        .Select(m => new { value = m.Muncipalityid, label = m.Muncipalityname })
+                        .ToList();
                     break;
 
                 case "Ward":
                     data = dbcontext.Wards
-                    .Where(m => m.Muncipalityid == parentId)
-                    .OrderBy(m => m.Wardcode) // 👈 Sorts by WardCode
-                    .Select(m => new
-                    {
-                        value = m.Wardcode,
-                        label = "Ward No " + m.Wardno
-                    })
-                    .ToList();
+                        .Where(w => w.Muncipalityid == parentId)
+                        .OrderBy(w => w.Wardcode)
+                        .Select(w => new { value = w.Wardcode, label = "Ward No " + w.Wardno })
+                        .ToList();
                     break;
 
                 case "HalqaPanchayat":
-                    data = dbcontext.Halqapanchayat.Where(m => m.Blockid == parentId)
-                            .Select(m => new { value = m.Halqapanchayatid, label = m.Halqapanchayatname })
-                            .ToList();
+                    data = dbcontext.Halqapanchayat
+                        .Where(h => h.Blockid == parentId)
+                        .Select(h => new { value = h.Halqapanchayatid, label = h.Halqapanchayatname })
+                        .ToList();
                     break;
 
                 case "Village":
-                    data = dbcontext.Villages.Where(m => m.Halqapanchayatid == parentId)
-                          .Select(m => new { value = m.Villageid, label = m.Villagename })
-                          .ToList();
+                    data = dbcontext.Villages
+                        .Where(v => v.Halqapanchayatid == parentId)
+                        .Select(v => new { value = v.Villageid, label = v.Villagename })
+                        .ToList();
                     break;
-                // Add other cases as needed
+
+                // The original "Tehsil" case (for dependent enclosures) remains separate
+                case "Tehsil": // from Officesdetails (for dependent fields)
+                    var query = dbcontext.Officesdetails
+                        .Where(t => t.Districtcode == parentId);
+
+                    if (officeTypeId.HasValue)
+                    {
+                        query = query.Where(t => t.Officetype == officeTypeId.Value);
+                    }
+
+                    data = query
+                        .Select(t => new { value = t.Areacode, label = t.Officename })
+                        .ToList();
+                    break;
 
                 default:
                     return BadRequest("Invalid table name.");
@@ -351,6 +419,7 @@ namespace SahayataNidhi.Controllers
 
             return Json(new { data });
         }
+
 
         private static byte[] GenerateExcel(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
         {

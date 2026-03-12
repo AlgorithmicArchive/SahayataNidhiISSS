@@ -33,9 +33,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 // Function to normalize a field object to include all required properties
 const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
-  id:
-    field.id ||
-    `field-${timestamp}-${Math.random().toString(36).substring(2, 9)}`,
+  id: field.id || `field-${timestamp}-${Math.random().toString(36).substring(2, 9)}`,
   type: field.type || "text",
   label: field.label || "New Field",
   name: field.name || `NewField_${timestamp}`,
@@ -44,15 +42,15 @@ const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
   options:
     field.name === "BankName" && banks.length > 0
       ? [
-          { value: "Please Select", label: "Please Select" },
-          ...banks.map((bank) => ({
-            value: bank.id,
-            label: bank.bankName,
-          })),
-        ]
+        { value: "Please Select", label: "Please Select" },
+        ...banks.map((bank) => ({
+          value: bank.id,
+          label: bank.bankName,
+        })),
+      ]
       : Array.isArray(field.options)
-      ? field.options
-      : [],
+        ? field.options
+        : [],
   span: field.span !== undefined ? field.span : 12,
   validationFunctions: Array.isArray(field.validationFunctions)
     ? field.validationFunctions
@@ -80,6 +78,9 @@ const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
   declaration: field.declaration || "",
   sectionId: field.sectionId || undefined,
   optionsType: field.optionsType || "independent",
+  // IMPORTANT: preserve existing values, only use defaults if missing
+  isOfficeField: field.isOfficeField !== undefined ? field.isOfficeField : false,
+  officeTypeId: field.officeTypeId !== undefined ? field.officeTypeId : null,
 });
 
 // Function to recursively normalize additionalFields
@@ -296,6 +297,8 @@ export default function CreateService() {
       declaration: "",
       sectionId,
       optionsType: "independent",
+      isOfficeField: false,
+      officeTypeId: null,
     };
 
     setSections((prev) =>
@@ -378,26 +381,26 @@ export default function CreateService() {
         return prev.map((section) =>
           section.id === updatedField.sectionId
             ? {
-                ...section,
-                fields: section.fields.map((field) =>
-                  field.id === updatedField.id
-                    ? normalizeField(updatedField, Date.now(), banks)
-                    : field,
-                ),
-              }
+              ...section,
+              fields: section.fields.map((field) =>
+                field.id === updatedField.id
+                  ? normalizeField(updatedField, Date.now(), banks)
+                  : field,
+              ),
+            }
             : section,
         );
       } else {
         return prev.map((section) =>
           section.fields.some((field) => field.id === updatedField.id)
             ? {
-                ...section,
-                fields: section.fields.map((field) =>
-                  field.id === updatedField.id
-                    ? normalizeField(updatedField, Date.now(), banks)
-                    : field,
-                ),
-              }
+              ...section,
+              fields: section.fields.map((field) =>
+                field.id === updatedField.id
+                  ? normalizeField(updatedField, Date.now(), banks)
+                  : field,
+              ),
+            }
             : section,
         );
       }
@@ -409,9 +412,9 @@ export default function CreateService() {
       prev.map((section) =>
         section.id === sectionId
           ? {
-              ...section,
-              fields: section.fields.filter((field) => field.id !== fieldId),
-            }
+            ...section,
+            fields: section.fields.filter((field) => field.id !== fieldId),
+          }
           : section,
       ),
     );
@@ -422,11 +425,11 @@ export default function CreateService() {
       prevSections.map((section) =>
         section.id === sectionId
           ? {
-              ...section,
-              fields: section.fields.map((field) =>
-                field.id === fieldId ? { ...field, value: newValue } : field,
-              ),
-            }
+            ...section,
+            fields: section.fields.map((field) =>
+              field.id === fieldId ? { ...field, value: newValue } : field,
+            ),
+          }
           : section,
       ),
     );
@@ -575,10 +578,10 @@ export default function CreateService() {
                       </MenuItem>
                       {departments.map((department) => (
                         <MenuItem
-                          key={department.departmentId}
-                          value={department.departmentId}
+                          key={department.departmentid}
+                          value={department.departmentid}
                         >
-                          {department.departmentName}
+                          {department.departmentname}
                         </MenuItem>
                       ))}
                     </Select>

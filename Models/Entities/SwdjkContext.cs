@@ -590,10 +590,11 @@ public partial class SwdjkContext : DbContext
 
         modelBuilder.Entity<Officesdetails>(entity =>
         {
-            entity
-                .HasNoKey()
-                .ToTable("officesdetails");
+            entity.HasKey(e => e.Officedetailid).HasName("officesdetails_pkey");
 
+            entity.ToTable("officesdetails");
+
+            entity.Property(e => e.Officedetailid).HasColumnName("officedetailid");
             entity.Property(e => e.Areacode).HasColumnName("areacode");
             entity.Property(e => e.Areaname)
                 .HasMaxLength(50)
@@ -608,7 +609,7 @@ public partial class SwdjkContext : DbContext
                 .HasDefaultValue(0)
                 .HasColumnName("statecode");
 
-            entity.HasOne(d => d.OfficetypeNavigation).WithMany()
+            entity.HasOne(d => d.OfficetypeNavigation).WithMany(p => p.Officesdetails)
                 .HasForeignKey(d => d.Officetype)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_officesdetails_offices");
@@ -835,7 +836,7 @@ public partial class SwdjkContext : DbContext
 
             entity.ToTable("status_counts_snapshot");
 
-            entity.HasIndex(e => new { e.PServiceId, e.PAccessLevel, e.PTakenBy, e.CapturedAt }, "idx_status_counts_params");
+            entity.HasIndex(e => new { e.PServiceId, e.PAccessLevel, e.PAccessCode, e.PDivisionCode, e.PTakenBy, e.PDataType, e.CapturedAt }, "idx_status_counts_params");
 
             entity.Property(e => e.SnapshotId).HasColumnName("snapshot_id");
             entity.Property(e => e.Amendmentcount)
@@ -914,6 +915,9 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.PAccessLevel)
                 .HasMaxLength(50)
                 .HasColumnName("p_access_level");
+            entity.Property(e => e.PDataType)
+                .HasMaxLength(50)
+                .HasColumnName("p_data_type");
             entity.Property(e => e.PDivisionCode).HasColumnName("p_division_code");
             entity.Property(e => e.PServiceId).HasColumnName("p_service_id");
             entity.Property(e => e.PTakenBy)

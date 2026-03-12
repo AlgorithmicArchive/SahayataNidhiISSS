@@ -508,23 +508,26 @@ namespace SahayataNidhi.Controllers.Admin
                 if (officer == null || officer.Department <= 0)
                     return BadRequest(new { status = false, message = "Invalid officer." });
 
+                // Find by primary key
                 var detail = await dbcontext.Officesdetails
-                    .FirstOrDefaultAsync(od =>
-                        od.Divisioncode == Divisioncode &&
-                        od.Districtcode == DistrictCode &&
-                        od.Areacode == AreaCode &&
-                        od.Officetype == Officetype);
+                    .FirstOrDefaultAsync(od => od.Officedetailid == OfficeDetailId);
 
                 if (detail == null)
                     return NotFound(new { status = false, message = "Office detail not found." });
 
+                // Verify department access via the linked office
                 var office = await dbcontext.Offices
                     .FirstOrDefaultAsync(o => o.Officeid == Officetype && o.Departmentid == officer.Department);
 
                 if (office == null)
                     return BadRequest(new { status = false, message = "Access denied." });
 
+                // Update all fields
                 detail.Officename = OfficeName;
+                detail.Officetype = Officetype;
+                detail.Divisioncode = Divisioncode;
+                detail.Districtcode = DistrictCode;
+                detail.Areacode = AreaCode;
                 detail.Areaname = AreaName ?? "";
 
                 await dbcontext.SaveChangesAsync();
@@ -547,15 +550,13 @@ namespace SahayataNidhi.Controllers.Admin
                 if (officer == null || officer.Department <= 0)
                     return BadRequest(new { status = false, message = "Invalid officer." });
 
-                // For now, use OfficeDetailId as primary key (adjust based on your model)
                 var detail = await dbcontext.Officesdetails
                     .Include(od => od.OfficetypeNavigation)
-                    .FirstOrDefaultAsync(od => od.Statecode + od.Divisioncode + od.Districtcode + od.Areacode == OfficeDetailId); // Adjust based on actual PK
+                    .FirstOrDefaultAsync(od => od.Officedetailid == OfficeDetailId);
 
                 if (detail == null)
                     return NotFound(new { status = false, message = "Office detail not found." });
 
-                // Verify department access
                 if (detail.OfficetypeNavigation?.Departmentid != officer.Department)
                     return BadRequest(new { status = false, message = "Access denied." });
 
@@ -570,5 +571,6 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { status = false, message = "Error deleting: " + ex.Message });
             }
         }
+
     }
 }
