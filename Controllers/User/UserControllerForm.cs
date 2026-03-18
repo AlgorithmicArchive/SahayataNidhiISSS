@@ -33,6 +33,62 @@ namespace SahayataNidhi.Controllers.User
             }
         }
 
+        // Helper method to validate email format
+        private static bool IsValidEmail(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return false;
+
+            try
+            {
+                var addr = new System.Net.Mail.MailAddress(email);
+                return addr.Address == email;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+
+        public int GetShiftedFromTo(string location)
+        {
+            try
+            {
+                var locationList = JsonConvert.DeserializeObject<List<JObject>>(location);
+
+                int? districtValue = null;
+
+                foreach (var item in locationList!)
+                {
+                    var name = item["name"]?.ToString();
+                    var valueStr = item["value"]?.ToString();
+
+                    if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(valueStr))
+                        continue;
+
+                    if (name == "Tehsil" && int.TryParse(valueStr, out int tehsil))
+                    {
+                        return tehsil; // Return immediately if Tehsil found
+                    }
+
+                    if (name == "District" && int.TryParse(valueStr, out int district))
+                    {
+                        districtValue = district; // Store District in case Tehsil not found
+                    }
+                }
+
+                return districtValue ?? 0; // Return District if Tehsil wasn't found
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to deserialize location JSON.");
+                return -1;
+            }
+        }
+
+
+
         [HttpPost]
         public async Task<IActionResult> InsertFormDetails([FromForm] IFormCollection form)
         {
@@ -322,60 +378,6 @@ namespace SahayataNidhi.Controllers.User
             }
         }
 
-
-        // Helper method to validate email format
-        private static bool IsValidEmail(string email)
-        {
-            if (string.IsNullOrWhiteSpace(email))
-                return false;
-
-            try
-            {
-                var addr = new System.Net.Mail.MailAddress(email);
-                return addr.Address == email;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-
-        public int GetShiftedFromTo(string location)
-        {
-            try
-            {
-                var locationList = JsonConvert.DeserializeObject<List<JObject>>(location);
-
-                int? districtValue = null;
-
-                foreach (var item in locationList!)
-                {
-                    var name = item["name"]?.ToString();
-                    var valueStr = item["value"]?.ToString();
-
-                    if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(valueStr))
-                        continue;
-
-                    if (name == "Tehsil" && int.TryParse(valueStr, out int tehsil))
-                    {
-                        return tehsil; // Return immediately if Tehsil found
-                    }
-
-                    if (name == "District" && int.TryParse(valueStr, out int district))
-                    {
-                        districtValue = district; // Store District in case Tehsil not found
-                    }
-                }
-
-                return districtValue ?? 0; // Return District if Tehsil wasn't found
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex, "Failed to deserialize location JSON.");
-                return -1;
-            }
-        }
 
         [HttpPost]
         public async Task<IActionResult> UpdateApplicationDetails([FromForm] IFormCollection form)

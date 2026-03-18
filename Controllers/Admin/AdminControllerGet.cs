@@ -866,9 +866,8 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { error = "Error fetching office details", details = ex.Message });
             }
         }
-
         [HttpGet]
-        public async Task<IActionResult> GetDistricts(int? divisionId = null)
+        public async Task<IActionResult> GetDistricts(int? divisionId = null, int? officeType = null)
         {
             try
             {
@@ -878,28 +877,45 @@ namespace SahayataNidhi.Controllers.Admin
                 if (divisionId.HasValue && divisionId.Value > 0)
                     query = query.Where(d => d.Division == divisionId.Value);
 
-                // Left join with OfficeDetails to exclude districts already used
-                var districts = await query
-                    .GroupJoin(
-                        dbcontext.Officesdetails,
-                        district => district.Districtid,
-                        office => office.Areacode,
-                        (district, offices) => new { district, offices }
-                    )
-                    .SelectMany(
-                        x => x.offices.DefaultIfEmpty(),
-                        (x, office) => new { x.district, office }
-                    )
-                    .Where(x => x.office == null) // keep only districts with no office
-                    .Select(x => new
-                    {
-                        districtId = x.district.Districtid,
-                        districtName = x.district.Districtname
-                    })
-                    .OrderBy(d => d.districtName)
-                    .ToListAsync();
+                // If officeType is 1 (DSWO), filter out districts already used in OfficeDetails
+                if (officeType.HasValue && officeType.Value == 1)
+                {
+                    var districts = await query
+                        .GroupJoin(
+                            dbcontext.Officesdetails.Where(o => o.Officetype == officeType.Value),
+                            district => district.Districtid,
+                            office => office.Areacode,
+                            (district, offices) => new { district, offices }
+                        )
+                        .SelectMany(
+                            x => x.offices.DefaultIfEmpty(),
+                            (x, office) => new { x.district, office }
+                        )
+                        .Where(x => x.office == null) // keep only districts with no office for DSWO
+                        .Select(x => new
+                        {
+                            districtId = x.district.Districtid,
+                            districtName = x.district.Districtname
+                        })
+                        .OrderBy(d => d.districtName)
+                        .ToListAsync();
 
-                return Json(districts);
+                    return Json(districts);
+                }
+                else
+                {
+                    // For other office types, just return all districts
+                    var districts = await query
+                        .Select(x => new
+                        {
+                            districtId = x.Districtid,
+                            districtName = x.Districtname
+                        })
+                        .OrderBy(d => d.districtName)
+                        .ToListAsync();
+
+                    return Json(districts);
+                }
             }
             catch (Exception ex)
             {

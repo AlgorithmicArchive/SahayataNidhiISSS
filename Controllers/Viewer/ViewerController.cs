@@ -56,11 +56,13 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 accessLevel = "Tehsil";
                 accessCode = int.TryParse(tehsil, out var tehsilVal) ? tehsilVal : DBNull.Value;
+                divisionCode = dbcontext.Tswotehsil.Where(t => t.Tehsilid == tehsilVal).Select(t => t.Divisioncode).FirstOrDefault();
             }
             else if (!string.IsNullOrWhiteSpace(district))
             {
                 accessLevel = "District";
                 accessCode = int.TryParse(district, out var districtVal) ? districtVal : DBNull.Value;
+                divisionCode = dbcontext.District.Where(d => d.Districtid == districtVal).Select(d => d.Division).FirstOrDefault();
             }
             else if (!string.IsNullOrWhiteSpace(division))
             {
@@ -71,7 +73,10 @@ namespace SahayataNidhi.Controllers.Officer
             else
             {
                 accessLevel = "State";
+                accessCode = 0;
             }
+
+            _logger.LogInformation("Access Level: {AccessLevel}, Access Code: {AccessCode},ServiceID: {ServiceId} Division Code: {DivisionCode}", accessLevel, accessCode, serviceId, divisionCode);
 
             var parameters = new List<NpgsqlParameter>
             {
@@ -84,7 +89,7 @@ namespace SahayataNidhi.Controllers.Officer
 
             var counts = dbcontext.Database
                 .SqlQueryRaw<MainStatusCounts>(
-                    "SELECT * FROM get_main_application_status_count(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)",
+                    "SELECT * FROM get_latest_main_application_status_counts(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)",
                     parameters.ToArray()
                 )
                 .AsEnumerable()

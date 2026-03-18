@@ -148,7 +148,12 @@ export default function AddOfficeDetails() {
       setLoadingDistricts(true);
       try {
         const response = await axiosInstance.get(
-          `/Admin/GetDistricts?divisionId=${divisionCode}`
+          `/Admin/GetDistricts`, {
+          params: {
+            divisionId: divisionCode,
+            officeType: officeType || null // Pass the selected office type
+          }
+        }
         );
         setDistricts(response.data || []);
       } catch (error) {
@@ -159,7 +164,7 @@ export default function AddOfficeDetails() {
     };
 
     fetchDistricts();
-  }, [divisionCode]);
+  }, [divisionCode, officeType]); // Add officeType as dependency
 
   // Fetch tehsils when district changes (if access level is Tehsil)
   useEffect(() => {

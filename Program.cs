@@ -151,7 +151,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UsePathBase("/swdjk");
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>

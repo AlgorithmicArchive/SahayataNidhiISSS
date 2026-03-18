@@ -206,8 +206,8 @@ const useFilters = (category) => {
           });
           setDistricts(
             res.data.districts.map((d) => ({
-              label: d.districtName,
-              value: d.districtId,
+              label: d.districtname,
+              value: d.districtid,
             })),
           );
           setDistrict("");
@@ -238,8 +238,8 @@ const useFilters = (category) => {
           });
           setTehsils(
             res.data.tehsils.map((t) => ({
-              label: t.tehsilName,
-              value: t.tehsilId,
+              label: t.tehsilname,
+              value: t.tehsilid,
             })),
           );
           setTehsil("");

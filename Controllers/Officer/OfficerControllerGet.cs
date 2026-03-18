@@ -203,10 +203,18 @@ namespace SahayataNidhi.Controllers.Officer
         };
 
                 // Fresh data every time — .AsEnumerable() is REQUIRED
+                // var counts = dbcontext.Database
+                //     .SqlQueryRaw<StatusCounts>("SELECT * FROM get_status_count(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @datatype)", parameters)
+                //     .AsEnumerable()
+                //     .FirstOrDefault() ?? new StatusCounts();
                 var counts = dbcontext.Database
-                    .SqlQueryRaw<StatusCounts>("SELECT * FROM get_status_count(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @datatype)", parameters)
-                    .AsEnumerable()
-                    .FirstOrDefault() ?? new StatusCounts();
+              .SqlQueryRaw<StatusCounts>(@"
+                    SELECT * FROM get_latest_status_counts(
+                        @accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @datatype
+                    )",
+                  parameters)
+              .AsEnumerable()
+              .FirstOrDefault() ?? new StatusCounts();
 
                 var shiftedCount = dbcontext.Database
                     .SqlQueryRaw<ShiftedCountModal>("SELECT * FROM get_shifted_count(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode)", parameters.Take(5).ToArray()) // only first 5

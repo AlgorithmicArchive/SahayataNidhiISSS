@@ -24,6 +24,8 @@ const Header = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { userType } = useContext(UserContext)
 
+  const API_BASE = window.__CONFIG__?.API_URL || ""; // fallback to empty string if undefined
+
   const [fontSizeValue, setFontSizeValue] = useState("normal");
 
   useEffect(() => {
@@ -266,7 +268,7 @@ const Header = () => {
               >
                 <Box
                   component="img"
-                  src="/assets/images/emblem.png"
+                  src={`${API_BASE}/assets/images/emblem.png`}
                   alt="Gov Emblem"
                   sx={{
                     width: "70%", // scale inside shaded box
@@ -339,7 +341,7 @@ const Header = () => {
             >
               <Box
                 component="img"
-                src="/assets/images/swach-bharat.png"
+                src={`${API_BASE}/assets/images/swach-bharat.png`}
                 alt="Swachh Bharat"
                 sx={{
                   height: { xs: "50px", sm: "60px", md: "100px" }, // responsive heights
