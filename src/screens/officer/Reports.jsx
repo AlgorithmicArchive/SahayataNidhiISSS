@@ -1,424 +1,633 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState } from 'react';
+import axiosInstance from '../../axiosConfig';
 import {
   Box,
+  Paper,
+  Typography,
+  Grid,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Button,
-  Typography,
   CircularProgress,
+  Alert,
+  Button,
+  Chip,
+  TextField,
   Card,
   CardContent,
-  TextField,
-} from "@mui/material";
-import { toast } from "react-toastify";
-import { Container, Row, Col } from "react-bootstrap";
-import styled from "@emotion/styled";
-import ServerSideTable from "../../components/ServerSideTable";
-import axiosInstance from "../../axiosConfig";
-
-const StyledCard = styled(Card)`
-  background: linear-gradient(135deg, #ffffff, #f8f9fa);
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.15);
-  }
-`;
-
-const StyledButton = styled(Button)`
-  background: linear-gradient(45deg, #1976d2, #2196f3);
-  padding: 12px 24px;
-  font-weight: 600;
-  border-radius: 8px;
-  text-transform: none;
-  &:hover {
-    background: linear-gradient(45deg, #1565c0, #1976d2);
-    transform: scale(1.05);
-  }
-  &:disabled {
-    background: #cccccc;
-    color: #666666;
-  }
-`;
+  Collapse
+} from '@mui/material';
+import { FormHelperText } from '@mui/material';
+import ServerSideTable from '../../components/ServerSideTable';
+import { toast } from 'react-toastify';
 
 export default function Reports() {
-  const [district, setDistrict] = useState("");               // kept but no longer used
-  const [service, setService] = useState("");
-  const [districts, setDistricts] = useState([]);            // kept but not rendered
-  const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [isTehsil, setIsTehsil] = useState(false);           // kept but not used
-  const [isButtonDisabled, setIsButtonDisabled] = useState(true);
-  const [showTable, setShowTable] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState("");
-  const [reportType, setReportType] = useState("TehsilWise");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [applicationStatusList] = useState([
-    { value: "", label: "All Statuses" },
-    { value: "pending", label: "Pending" },
-    { value: "forwarded", label: "Forwarded" },
-    { value: "returned", label: "Returned" },
-    { value: "returntoedit", label: "Return to Edit" },
-    { value: "sanctioned", label: "Sanctioned" },
-    { value: "rejected", label: "Rejected" },
-  ]);
+  const [officerAccessLevel, setOfficerAccessLevel] = useState(null);
+  const [officerAccessCode, setOfficerAccessCode] = useState(null);
+  const [officerRole, setOfficerRole] = useState(null);
 
-  const tableRef = useRef(null);
+  // Service state
+  const [services, setServices] = useState([]);
+  const [selectedService, setSelectedService] = useState('');
+  const [loadingServices, setLoadingServices] = useState(false);
+
+  // Report type state
+  const [reportTypes, setReportTypes] = useState([]);
+  const [selectedReportType, setSelectedReportType] = useState('');
+  const [loadingReportTypes, setLoadingReportTypes] = useState(false);
+
+  // Filter states
+  const [districts, setDistricts] = useState([]);
+  const [tehsils, setTehsils] = useState([]);
+  const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [selectedTehsil, setSelectedTehsil] = useState('');
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [loadingTehsils, setLoadingTehsils] = useState(false);
+
+  // Report specific states - Status Types (static)
+  const [statusTypes] = useState([
+    { value: "total", label: "Total Applications" },
+    { value: "Initiated", label: "Under Process" },
+    { value: "Sanctioned", label: "Sanctioned" },
+    { value: "Rejected", label: "Rejected" }
+  ]);
+  const [selectedStatus, setSelectedStatus] = useState('total');
+
+  // Age ranges (shared between AgeWise and PensionTypeWise)
+  const [ageRanges, setAgeRanges] = useState([
+    { min: 0, max: 59, label: "Below 60" },
+    { min: 60, max: 79, label: "60 to 79" },
+    { min: 80, max: 999, label: "80 and Above" }
+  ]);
+  const [showAgeRangeEditor, setShowAgeRangeEditor] = useState(false);
+  const [newAgeRange, setNewAgeRange] = useState({ min: 0, max: 0, label: '' });
+  const [editingAgeRangeIndex, setEditingAgeRangeIndex] = useState(null);
+
+  // Table refresh trigger
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [showReport, setShowReport] = useState(false);
+  const [reportParams, setReportParams] = useState({});
 
   useEffect(() => {
-    const fetchDropdowns = async () => {
-      setLoading(true);
-      setError(null);
+    const fetchOfficerData = async () => {
       try {
-        const [districtsRes, servicesRes] = await Promise.all([
-          axiosInstance.get(`/Base/GetAccessAreas`),
-          axiosInstance.get(`/Base/GetServices`),
-        ]);
-
-        if (districtsRes.data.status && servicesRes.data.status) {
-          if (districtsRes.data.tehsils) {
-            setIsTehsil(true);
-            setDistricts(
-              districtsRes.data.tehsils.map((d) => ({
-                value: d.tehsilId,
-                label: d.tehsilName,
-              })),
-            );
-          } else {
-            setDistricts(
-              districtsRes.data.districts.map((d) => ({
-                value: d.districtId,
-                label: d.districtName,
-              })),
-            );
-          }
-          setServices(
-            servicesRes.data.services.map((s) => ({
-              value: s.serviceId,
-              label: s.serviceName,
-            })),
-          );
-        } else {
-          throw new Error("Failed to fetch districts or services");
-        }
-      } catch (err) {
-        setError(err.message);
-        toast.error(`Error: ${err.message}`, {
-          position: "top-right",
-          autoClose: 3000,
-        });
-      } finally {
-        setLoading(false);
+        const response = await axiosInstance.get('/Officer/GetOfficerAccessDetails');
+        const data = response.data;
+        console.log('Fetched officer data:', data);
+        setOfficerAccessLevel(data.accessLevel);
+        setOfficerAccessCode(data.accessCode);
+        setOfficerRole(data.role);
+      } catch (error) {
+        console.error('Error fetching officer data:', error);
       }
     };
-    fetchDropdowns();
+    fetchOfficerData();
   }, []);
 
-  // 🔁 Updated button disable logic – district no longer required
+  // Fetch services
   useEffect(() => {
-    if (reportType === "AgeWise" || reportType === "PensionTypeWise") {
-      // Need service + both dates
-      setIsButtonDisabled(!(service && startDate && endDate));
-    } else if (reportType === "DetailedApplications") {
-      // Only service needed
-      setIsButtonDisabled(!service);
-    } else {
-      // TehsilWise, GenderWise – only service needed (district removed)
-      setIsButtonDisabled(!service);
-    }
-  }, [service, reportType, startDate, endDate]);   // district removed from deps
+    const fetchServices = async () => {
+      setLoadingServices(true);
+      try {
+        const response = await axiosInstance.get('/Base/GetServices');
+        if (response.data.status) {
+          setServices(response.data.services);
+          if (response.data.services.length > 0) {
+            setSelectedService(response.data.services[0].serviceId);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching services:', error);
+        toast.error('Failed to fetch services');
+      } finally {
+        setLoadingServices(false);
+      }
+    };
+    fetchServices();
+  }, []);
 
+  // Fetch report types
+  useEffect(() => {
+    const fetchReportTypes = async () => {
+      setLoadingReportTypes(true);
+      try {
+        const response = await axiosInstance.get('/Officer/GetReportTypes');
+        if (response.data.status) {
+          setReportTypes(response.data.reportTypes);
+        }
+      } catch (error) {
+        console.error('Error fetching report types:', error);
+        toast.error('Failed to fetch report types');
+      } finally {
+        setLoadingReportTypes(false);
+      }
+    };
+    fetchReportTypes();
+  }, []);
+
+  // Fetch districts based on access level
+  useEffect(() => {
+    const fetchDistricts = async () => {
+      if (officerAccessLevel === 'Division') {
+        setLoadingDistricts(true);
+        try {
+          const response = await axiosInstance.get('/Base/GetDistricts', {
+            params: { division: officerAccessCode }
+          });
+          if (response.data.status) {
+            setDistricts(response.data.districts);
+          }
+        } catch (error) {
+          console.error('Error fetching districts:', error);
+        } finally {
+          setLoadingDistricts(false);
+        }
+      } else if (officerAccessLevel === 'District') {
+        fetchTehsils(officerAccessCode);
+      }
+    };
+
+    if (officerAccessLevel) {
+      fetchDistricts();
+    }
+  }, [officerAccessLevel, officerAccessCode]);
+
+  // Fetch tehsils for selected district
+  const fetchTehsils = async (districtId) => {
+    if (!districtId) return;
+
+    setLoadingTehsils(true);
+    try {
+      const response = await axiosInstance.get('/Base/GetTeshilForDistrict', {
+        params: { districtId: districtId }
+      });
+      if (response.data.status) {
+        setTehsils(response.data.tehsils);
+      }
+    } catch (error) {
+      console.error('Error fetching tehsils:', error);
+    } finally {
+      setLoadingTehsils(false);
+    }
+  };
+
+  // Handle district change
   const handleDistrictChange = (event) => {
-    setDistrict(event.target.value);
+    const districtId = event.target.value;
+    setSelectedDistrict(districtId);
+    setSelectedTehsil('');
+    fetchTehsils(districtId);
   };
 
-  const handleServiceChange = (event) => {
-    setService(event.target.value);
-  };
-
+  // Handle report type change
   const handleReportTypeChange = (event) => {
-    setReportType(event.target.value);
-    setStartDate("");
-    setEndDate("");
-    setSelectedStatus("");
-    setShowTable(false);
+    const newReportType = event.target.value;
+    setSelectedReportType(newReportType);
+    setShowReport(false);
   };
 
-  const handleStartDateChange = (event) => {
-    setStartDate(event.target.value);
-  };
-
-  const handleEndDateChange = (event) => {
-    setEndDate(event.target.value);
-  };
-
-  const handleStatusChange = (event) => {
-    setSelectedStatus(event.target.value);
-  };
-
-  const handleGetReports = () => {
-    if (reportType === "AgeWise" || reportType === "PensionTypeWise") {
-      if (!startDate || !endDate) {
-        toast.error(
-          "Please select both start and end dates for this report type.",
-          { position: "top-right", autoClose: 3000 }
-        );
-        return;
-      }
-      if (new Date(startDate) > new Date(endDate)) {
-        toast.error("Start date cannot be later than end date.", {
-          position: "top-right",
-          autoClose: 3000,
-        });
-        return;
-      }
+  // Handle generate report
+  const handleGenerateReport = () => {
+    if (!selectedReportType) {
+      toast.error('Please select a report type');
+      return;
     }
-    setShowTable(true);
-    setTimeout(() => {
-      tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 100);
+
+    if (!selectedService) {
+      toast.error('Please select a service');
+      return;
+    }
+
+    // Determine filter values based on access level
+    let filterValue = null;
+    let accessLevel = officerAccessLevel;
+
+    if (officerAccessLevel === 'Division') {
+      if (selectedTehsil) {
+        filterValue = selectedTehsil;
+        accessLevel = 'Tehsil';
+      } else if (selectedDistrict) {
+        filterValue = selectedDistrict;
+        accessLevel = 'District';
+      } else {
+        filterValue = officerAccessCode;
+        accessLevel = 'Division';
+      }
+    } else if (officerAccessLevel === 'District') {
+      if (selectedTehsil) {
+        filterValue = selectedTehsil;
+        accessLevel = 'Tehsil';
+      } else {
+        filterValue = officerAccessCode;
+        accessLevel = 'District';
+      }
+    } else if (officerAccessLevel === 'Tehsil') {
+      filterValue = officerAccessCode;
+      accessLevel = 'Tehsil';
+    }
+
+    // Build extra parameters
+    const params = {
+      accessCode: filterValue,
+      serviceId: selectedService,
+      accessLevel: accessLevel,
+      reportType: selectedReportType
+    };
+
+    // Add status filter for reports that need it
+    if (selectedReportType === 'AgeWise' ||
+      selectedReportType === 'PensionTypeWise' ||
+      selectedReportType === 'GenderWise' ||
+      selectedReportType === 'DetailedApplications') {
+      params.statusType = selectedStatus;
+    }
+
+    // Add age ranges for AgeWise and PensionTypeWise reports
+    if (selectedReportType === 'AgeWise' || selectedReportType === 'PensionTypeWise') {
+      params.ageRanges = JSON.stringify(ageRanges);
+    }
+
+    // Add role for DetailedApplications
+    if (selectedReportType === 'DetailedApplications') {
+      params.role = officerRole;
+    }
+
+    setReportParams(params);
+    setShowReport(true);
+    setRefreshTrigger(prev => prev + 1);
   };
 
-  const getColumnsForReportType = () => {
-    switch (reportType) {
-      case "AgeWise":
-        return [
-          { accessorKey: "age", header: "Age" },
-          { accessorKey: "countOfApplicants", header: "Beneficiary Count" }
-        ];
-      case "PensionTypeWise":
-        return [
-          { accessorKey: "age", header: "Age" },
-          { accessorKey: "pensionType", header: "Pension Type" },
-          { accessorKey: "countOfApplicants", header: "Beneficiary Count" }
-        ];
-      case "GenderWise":
-        return [
-          { accessorKey: "gender", header: "Gender" },
-          { accessorKey: "countOfApplicants", header: "Beneficiary Count" }
-        ];
-      case "TehsilWise":
-        return [
-          { accessorKey: "tehsilName", header: "Tehsil Name" },
-          { accessorKey: "totalApplicationsSubmitted", header: "Total Applications Received" },
-          { accessorKey: "totalApplicationsPending", header: "Total Applications Pending" },
-          { accessorKey: "totalApplicationsReturnToEdit", header: "Pending With Citizens" },
-          { accessorKey: "totalApplicationsSanctioned", header: "Total Sanctioned" },
-          { accessorKey: "totalApplicationsRejected", header: "Total Rejected" },
-        ];
-      case "DetailedApplications":
-      default:
-        return [
-          { accessorKey: "districtname", header: "District" },
-          { accessorKey: "tswofficename", header: "TSWO Office" },
-          { accessorKey: "application_status", header: "Application Status" },
-          { accessorKey: "application_pending_with", header: "Application Pending With" },
-          { accessorKey: "referencenumber", header: "Reference Number" },
-          { accessorKey: "applicant_name", header: "Applicant Name" },
-          { accessorKey: "parentage", header: "Parentage" },
-          { accessorKey: "account_number", header: "Account Number" },
-          { accessorKey: "ifsc_code", header: "IFSC Code" },
-          { accessorKey: "bank_name", header: "Bank Name" },
-          { accessorKey: "branch_name", header: "Branch Name" },
-        ];
+  // Age range management functions
+  const addAgeRange = () => {
+    if (newAgeRange.min < newAgeRange.max && newAgeRange.label) {
+      setAgeRanges([...ageRanges, { ...newAgeRange }]);
+      setNewAgeRange({ min: 0, max: 0, label: '' });
     }
   };
 
-  // 🎯 Only include AccessCode if a district is actually selected (which never happens now)
-  const extraParams = {
-    ServiceId: service,
-    StatusType: selectedStatus || null,
-    ReportType: reportType,
-    ...((reportType !== "DetailedApplications" && district) && { AccessCode: district }),
-    ...((reportType === "AgeWise" || reportType === "PensionTypeWise") && {
-      StartDate: startDate,
-      EndDate: endDate,
-    }),
+  const updateAgeRange = () => {
+    if (editingAgeRangeIndex !== null && newAgeRange.min < newAgeRange.max && newAgeRange.label) {
+      const updatedRanges = [...ageRanges];
+      updatedRanges[editingAgeRangeIndex] = { ...newAgeRange };
+      setAgeRanges(updatedRanges);
+      setEditingAgeRangeIndex(null);
+      setNewAgeRange({ min: 0, max: 0, label: '' });
+    }
   };
 
-  if (loading) {
-    return (
-      <Box sx={{ width: "100%", height: "100vh", display: "flex", justifyContent: "center", alignItems: "center", bgcolor: "#f8f9fa" }}>
-        <CircularProgress size={60} />
-      </Box>
-    );
-  }
+  const editAgeRange = (index) => {
+    setEditingAgeRangeIndex(index);
+    setNewAgeRange({ ...ageRanges[index] });
+  };
 
-  if (error) {
-    return (
-      <Box sx={{ width: "100%", height: "100vh", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", bgcolor: "#f8f9fa" }}>
-        <Typography color="error" variant="h6" sx={{ mb: 2 }}>
-          {error}
-        </Typography>
-        <StyledButton variant="contained" onClick={() => window.location.reload()}>
-          Retry
-        </StyledButton>
-      </Box>
-    );
-  }
+  const removeAgeRange = (index) => {
+    setAgeRanges(ageRanges.filter((_, i) => i !== index));
+  };
 
-  return (
-    <Box sx={{ width: "100%", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", p: { xs: 3, md: 5 }, bgcolor: "#f8f9fa" }}>
-      <Typography variant="h4" sx={{ mb: 5, fontWeight: 700, color: "#2d3748", fontFamily: "'Inter', sans-serif" }}>
-        Reports
-      </Typography>
+  // Determine which filters to show based on access level
+  const renderLocationFilters = () => {
+    if (!officerAccessLevel) return null;
 
-      <Container>
-        <Row className="mb-4 justify-content-center">
-          {/* 🚫 District/Tehsil dropdown removed – commented out as requested */}
-          {/* {reportType !== "DetailedApplications" && (
-            <Col xs={12} md={4} lg={3}>
-              <FormControl fullWidth sx={{ mb: { xs: 2, md: 0 } }}>
-                <InputLabel id="district-select-label">
-                  {isTehsil ? "Tehsil" : "District"}
-                </InputLabel>
+    switch (officerAccessLevel) {
+      case 'Division':
+        return (
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth>
+                <InputLabel>District</InputLabel>
                 <Select
-                  labelId="district-select-label"
-                  value={district}
-                  label={isTehsil ? "Tehsil" : "District"}
+                  value={selectedDistrict}
                   onChange={handleDistrictChange}
-                  sx={{ bgcolor: "#fff", borderRadius: "8px" }}
+                  label="District"
+                  disabled={loadingDistricts}
                 >
                   <MenuItem value="">
-                    <em>Please Select</em>
+                    <em>Select District</em>
                   </MenuItem>
-                  {districts.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
+                  {districts.map((district) => (
+                    <MenuItem key={district.districtid} value={district.districtid}>
+                      {district.districtname}
                     </MenuItem>
                   ))}
                 </Select>
+                {loadingDistricts && <FormHelperText>Loading districts...</FormHelperText>}
               </FormControl>
-            </Col>
-          )} */}
+            </Grid>
 
-          <Col xs={12} md={4} lg={3}>
-            <FormControl fullWidth sx={{ mb: { xs: 2, md: 0 } }}>
-              <InputLabel id="service-select-label">Service</InputLabel>
-              <Select
-                labelId="service-select-label"
-                value={service}
-                label="Service"
-                onChange={handleServiceChange}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              >
-                <MenuItem value="">
-                  <em>Please Select</em>
-                </MenuItem>
-                {services.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Col>
+            {selectedDistrict && (
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel>Tehsil</InputLabel>
+                  <Select
+                    value={selectedTehsil}
+                    onChange={(e) => setSelectedTehsil(e.target.value)}
+                    label="Tehsil"
+                    disabled={loadingTehsils}
+                  >
+                    <MenuItem value="">
+                      <em>Select Tehsil</em>
+                    </MenuItem>
+                    {tehsils.map((tehsil) => (
+                      <MenuItem key={tehsil.tehsilid} value={tehsil.tehsilid}>
+                        {tehsil.tehsilname}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {loadingTehsils && <FormHelperText>Loading tehsils...</FormHelperText>}
+                </FormControl>
+              </Grid>
+            )}
+          </Grid>
+        );
 
-          <Col xs={12} md={4} lg={3}>
-            <FormControl fullWidth>
-              <InputLabel id="report-type-label">Report Type</InputLabel>
-              <Select
-                labelId="report-type-label"
-                value={reportType}
-                label="Report Type"
-                onChange={handleReportTypeChange}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              >
-                <MenuItem value="AgeWise">Age Wise</MenuItem>
-                <MenuItem value="PensionTypeWise">Pension Type Wise</MenuItem>
-                <MenuItem value="GenderWise">Gender Wise</MenuItem>
-                <MenuItem value="TehsilWise">Tehsil Wise</MenuItem>
-                <MenuItem value="DetailedApplications">Detailed Applications</MenuItem>
-              </Select>
-            </FormControl>
-          </Col>
-        </Row>
-
-        {(reportType === "AgeWise" || reportType === "PensionTypeWise") && (
-          <Row className="mb-4 justify-content-center">
-            <Col xs={12} md={4} lg={3}>
-              <TextField
-                fullWidth
-                label="Submission Start Date"
-                type="date"
-                value={startDate}
-                onChange={handleStartDateChange}
-                InputLabelProps={{ shrink: true }}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              />
-            </Col>
-            <Col xs={12} md={4} lg={3}>
-              <TextField
-                fullWidth
-                label="Submission End Date"
-                type="date"
-                value={endDate}
-                onChange={handleEndDateChange}
-                InputLabelProps={{ shrink: true }}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              />
-            </Col>
-          </Row>
-        )}
-
-        {reportType === "DetailedApplications" && (
-          <Row className="mb-4 justify-content-center">
-            <Col xs={12} md={4} lg={3}>
+      case 'District':
+        return (
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={4}>
               <FormControl fullWidth>
-                <InputLabel id="status-select-label">Application Status</InputLabel>
+                <InputLabel>Tehsil</InputLabel>
                 <Select
-                  labelId="status-select-label"
-                  value={selectedStatus}
-                  label="Application Status"
-                  onChange={handleStatusChange}
-                  sx={{ bgcolor: "#fff", borderRadius: "8px" }}
+                  value={selectedTehsil}
+                  onChange={(e) => setSelectedTehsil(e.target.value)}
+                  label="Tehsil"
+                  disabled={loadingTehsils}
                 >
-                  {applicationStatusList.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>
-                      {option.label}
+                  <MenuItem value="">
+                    <em>Select Tehsil</em>
+                  </MenuItem>
+                  {tehsils.map((tehsil) => (
+                    <MenuItem key={tehsil.tehsilid} value={tehsil.tehsilid}>
+                      {tehsil.tehsilname}
                     </MenuItem>
                   ))}
                 </Select>
+                {loadingTehsils && <FormHelperText>Loading tehsils...</FormHelperText>}
               </FormControl>
-            </Col>
-          </Row>
+            </Grid>
+          </Grid>
+        );
+
+      case 'Tehsil':
+        return (
+          <Typography variant="body2" color="textSecondary">
+            No location filters available for Tehsil level access
+          </Typography>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // Render additional filters (Status and Age Ranges)
+  const renderAdditionalFilters = () => {
+    if (!selectedReportType) return null;
+
+    const needsStatusFilter = ['AgeWise', 'PensionTypeWise', 'GenderWise', 'DetailedApplications'].includes(selectedReportType);
+    const needsAgeRanges = ['AgeWise', 'PensionTypeWise'].includes(selectedReportType);
+
+    if (!needsStatusFilter && !needsAgeRanges) return null;
+
+    return (
+      <Box sx={{ mt: 3 }}>
+        {needsStatusFilter && (
+          <>
+            <Typography variant="subtitle1" gutterBottom>
+              Status Filter
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel>Application Status</InputLabel>
+                  <Select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    label="Application Status"
+                  >
+                    {statusTypes.map((status) => (
+                      <MenuItem key={status.value} value={status.value}>
+                        {status.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </>
         )}
 
-        <Row className="mb-5 justify-content-center">
-          <Col xs="auto">
-            <StyledButton variant="contained" onClick={handleGetReports} disabled={isButtonDisabled}>
-              Generate Reports
-            </StyledButton>
-          </Col>
-        </Row>
+        {needsAgeRanges && (
+          <>
+            <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
+              Age Ranges (Dynamic)
+            </Typography>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setShowAgeRangeEditor(!showAgeRangeEditor)}
+              sx={{ mb: 2 }}
+            >
+              {showAgeRangeEditor ? 'Hide Range Editor' : 'Edit Age Ranges'}
+            </Button>
 
-        {showTable && (
-          <Row ref={tableRef} className="mt-5">
-            <Col xs={12}>
-              <StyledCard>
-                <CardContent>
-                  <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#2d3748" }}>
-                    {reportType === "DetailedApplications" ? "Detailed Applications Report" : "Application Reports"}
-                  </Typography>
-                  <ServerSideTable
-                    key={`${district}-${service}-${selectedStatus}-${reportType}-${startDate}-${endDate}`}
-                    url={`/Officer/GetApplicationsForReports`}
-                    Title={"Reports"}
-                    extraParams={extraParams}
-                    columns={getColumnsForReportType()}
-                  />
-                </CardContent>
-              </StyledCard>
-            </Col>
-          </Row>
+            <Collapse in={showAgeRangeEditor}>
+              <Card variant="outlined" sx={{ mb: 2, p: 2 }}>
+                <Typography variant="body2" gutterBottom>
+                  {editingAgeRangeIndex !== null ? 'Edit Age Range' : 'Add New Age Range'}
+                </Typography>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={3}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Min Age"
+                      size="small"
+                      value={newAgeRange.min}
+                      onChange={(e) => setNewAgeRange({ ...newAgeRange, min: parseInt(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                  <Grid item xs={3}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Max Age"
+                      size="small"
+                      value={newAgeRange.max}
+                      onChange={(e) => setNewAgeRange({ ...newAgeRange, max: parseInt(e.target.value) || 0 })}
+                    />
+                  </Grid>
+                  <Grid item xs={4}>
+                    <TextField
+                      fullWidth
+                      label="Label"
+                      size="small"
+                      value={newAgeRange.label}
+                      onChange={(e) => setNewAgeRange({ ...newAgeRange, label: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid item xs={2}>
+                    {editingAgeRangeIndex !== null ? (
+                      <Button variant="contained" onClick={updateAgeRange} fullWidth size="small">
+                        Update
+                      </Button>
+                    ) : (
+                      <Button variant="contained" onClick={addAgeRange} fullWidth size="small">
+                        Add
+                      </Button>
+                    )}
+                  </Grid>
+                </Grid>
+
+                <Box sx={{ mt: 2 }}>
+                  {ageRanges.map((range, index) => (
+                    <Chip
+                      key={index}
+                      label={`${range.min}-${range.max}: ${range.label}`}
+                      onDelete={() => removeAgeRange(index)}
+                      onClick={() => editAgeRange(index)}
+                      sx={{ mr: 1, mb: 1, cursor: 'pointer' }}
+                      size="small"
+                    />
+                  ))}
+                </Box>
+              </Card>
+            </Collapse>
+          </>
         )}
-      </Container>
+      </Box>
+    );
+  };
+
+  // Get report title
+  const getReportTitle = () => {
+    if (!selectedReportType) return 'Reports';
+    const reportType = reportTypes.find(r => r.value === selectedReportType);
+    const service = services.find(s => s.serviceId === selectedService);
+    return reportType ? `${reportType.label} - ${service?.serviceName || ''}` : 'Reports';
+  };
+
+  // Get searchable fields based on report type
+  const getSearchableFields = () => {
+    switch (selectedReportType) {
+      case 'AgeWise':
+        return ['age_range'];
+      case 'PensionTypeWise':
+        return ['age_range', 'pensiontype'];
+      case 'GenderWise':
+        return ['gender'];
+      case 'DetailedApplications':
+        return ['referencenumber', 'applicant_name', 'districtname', 'tswofficename'];
+      default:
+        return ['tehsilname'];
+    }
+  };
+
+  return (
+    <Box sx={{ p: 3 }}>
+      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h5" gutterBottom>
+          Reports
+        </Typography>
+
+        {/* Officer Info */}
+        {officerRole && (
+          <Typography variant="subtitle1" color="textSecondary" gutterBottom>
+            Role: {officerRole} | Level: {officerAccessLevel}
+          </Typography>
+        )}
+
+        {/* Service Selection */}
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Step 1: Select Service
+          </Typography>
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Service</InputLabel>
+                <Select
+                  value={selectedService}
+                  onChange={(e) => setSelectedService(e.target.value)}
+                  label="Service"
+                  disabled={loadingServices}
+                >
+                  {services.map((service) => (
+                    <MenuItem key={service.serviceId} value={service.serviceId}>
+                      {service.serviceName}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {loadingServices && <FormHelperText>Loading services...</FormHelperText>}
+              </FormControl>
+            </Grid>
+          </Grid>
+        </Box>
+
+        {/* Report Type Selection */}
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Step 2: Select Report Type
+          </Typography>
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Report Type</InputLabel>
+                <Select
+                  value={selectedReportType}
+                  onChange={handleReportTypeChange}
+                  label="Report Type"
+                  disabled={loadingReportTypes}
+                >
+                  <MenuItem value="">
+                    <em>Select Report Type</em>
+                  </MenuItem>
+                  {reportTypes.map((type) => (
+                    <MenuItem key={type.value} value={type.value}>
+                      {type.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {loadingReportTypes && <FormHelperText>Loading report types...</FormHelperText>}
+              </FormControl>
+            </Grid>
+          </Grid>
+        </Box>
+
+        {/* Filters Section */}
+        {selectedReportType && (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Step 3: Apply Filters (Optional)
+            </Typography>
+            {renderLocationFilters()}
+            {renderAdditionalFilters()}
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleGenerateReport}
+                disabled={!selectedService || !selectedReportType}
+                size="large"
+              >
+                Generate Report
+              </Button>
+            </Box>
+          </Box>
+        )}
+      </Paper>
+
+      {/* Report Display using ServerSideTable */}
+      {showReport && (
+        <ServerSideTable
+          key={refreshTrigger}
+          url="/Officer/GetApplicationsForReport"
+          extraParams={reportParams}
+          Title={getReportTitle()}
+          searchableFields={getSearchableFields()}
+          actionFunctions={{}}
+        />
+      )}
     </Box>
   );
 }

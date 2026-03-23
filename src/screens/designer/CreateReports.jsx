@@ -1,277 +1,245 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Container, Typography, Box, Button, FormControl, InputLabel, Select, MenuItem,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
-  Modal, TextField, IconButton, CircularProgress, Alert
+  Box,
+  Paper,
+  Typography,
+  Grid,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Chip,
+  OutlinedInput,
+  Checkbox,
+  ListItemText,
+  CircularProgress,
+  Alert,
+  Tabs,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Card,
+  CardContent
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import DragIndicator from '@mui/icons-material/DragIndicator';
-import { DndContext, closestCenter, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import axiosInstance from '../../axiosConfig';
-import { toast } from 'react-toastify';
-
-// Reuse SortableItem from your letter component
-const SortableItem = ({ id, children, disabled }) => { /* ... */ };
 
 export default function CreateReports() {
   const [tables, setTables] = useState([]);
-  const [selectedTable, setSelectedTable] = useState('');
-  const [columns, setColumns] = useState([]);
-  const [reportColumns, setReportColumns] = useState([]); // configured columns
+  const [loading, setLoading] = useState(false);
+  const [selectedTables, setSelectedTables] = useState([]);
+  const [error, setError] = useState('');
+  const [selectedTableForColumns, setSelectedTableForColumns] = useState('');
+  const [tableColumns, setTableColumns] = useState([]);
   const [loadingColumns, setLoadingColumns] = useState(false);
-  const [previewData, setPreviewData] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingIndex, setEditingIndex] = useState(-1);
-  const [columnConfig, setColumnConfig] = useState({ columnName: '', alias: '', jsonKey: '' });
-  const [jsonKeys, setJsonKeys] = useState([]);
+  const [tabValue, setTabValue] = useState(0);
 
-  // Fetch tables on mount
+  // Fetch all tables on component mount
   useEffect(() => {
-    axiosInstance.get('/Reports/GetTables').then(res => setTables(res.data));
+    fetchTables();
   }, []);
 
-  // Fetch columns when table changes
-  useEffect(() => {
-    if (!selectedTable) {
-      setColumns([]);
-      setReportColumns([]);
-      return;
-    }
-    setLoadingColumns(true);
-    axiosInstance.get(`/Reports/GetColumns?tableName=${selectedTable}`)
-      .then(res => {
-        setColumns(res.data);
-        setReportColumns([]);
-        setPreviewData([]);
-      })
-      .catch(() => toast.error('Failed to load columns'))
-      .finally(() => setLoadingColumns(false));
-  }, [selectedTable]);
-
-  // Open modal to add/edit column
-  const openModal = (index = -1) => {
-    if (index === -1) {
-      setColumnConfig({ columnName: '', alias: '', jsonKey: '' });
-      setJsonKeys([]);
-    } else {
-      const col = reportColumns[index];
-      setColumnConfig(col);
-      if (col.isJson) {
-        // fetch json keys for this column (you might have stored them earlier)
-        const original = columns.find(c => c.columnName === col.columnName);
-        setJsonKeys(original?.jsonKeys || []);
-      } else {
-        setJsonKeys([]);
-      }
-    }
-    setEditingIndex(index);
-    setModalOpen(true);
-  };
-
-  const closeModal = () => setModalOpen(false);
-
-  const saveColumn = () => {
-    if (!columnConfig.columnName) {
-      toast.error('Please select a column');
-      return;
-    }
-    const originalCol = columns.find(c => c.columnName === columnConfig.columnName);
-    const isJson = originalCol?.dataType?.includes('json');
-    if (isJson && !columnConfig.jsonKey) {
-      toast.error('Please select a JSON key');
-      return;
-    }
-
-    const newColumn = {
-      ...columnConfig,
-      isJson,
-      dataType: originalCol.dataType,
-    };
-
-    const updated = [...reportColumns];
-    if (editingIndex === -1) {
-      updated.push(newColumn);
-    } else {
-      updated[editingIndex] = newColumn;
-    }
-    setReportColumns(updated);
-    closeModal();
-  };
-
-  const removeColumn = (index) => {
-    setReportColumns(reportColumns.filter((_, i) => i !== index));
-  };
-
-  const handleDragEnd = (event) => {
-    const { active, over } = event;
-    if (active.id !== over.id) {
-      const oldIndex = reportColumns.findIndex(c => c.columnName === active.id);
-      const newIndex = reportColumns.findIndex(c => c.columnName === over.id);
-      const newColumns = [...reportColumns];
-      const [moved] = newColumns.splice(oldIndex, 1);
-      newColumns.splice(newIndex, 0, moved);
-      setReportColumns(newColumns);
-    }
-  };
-
-  // Fetch preview data
-  const fetchPreview = async () => {
-    if (!selectedTable || reportColumns.length === 0) return;
+  const fetchTables = async () => {
+    setLoading(true);
     try {
-      const response = await axiosInstance.post('/Reports/GenerateReport', {
-        tableName: selectedTable,
-        columns: reportColumns,
-        limit: 10
-      });
-      setPreviewData(response.data);
+      const response = await axiosInstance.get('/Designer/GetTables');
+      setTables(response.data);
+      setError('');
     } catch (error) {
-      toast.error('Failed to load preview');
+      console.error('Error fetching tables:', error);
+      setError('Failed to fetch tables');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const fetchTableColumns = async (tableName) => {
+    setLoadingColumns(true);
+    try {
+      const response = await axiosInstance.get(`/Designer/GetTableColumns`, {
+        params: { tableName }
+      });
+      console.log('Columns response:', response.data); // Debug log
+      if (response.data.status && response.data.columns) {
+        setTableColumns(response.data.columns);
+      } else {
+        setTableColumns([]);
+      }
+    } catch (error) {
+      console.error('Error fetching columns:', error);
+      setError('Failed to fetch table columns');
+      setTableColumns([]);
+    } finally {
+      setLoadingColumns(false);
+    }
+  };
+
+  const handleTableSelect = (event) => {
+    const { value } = event.target;
+    const newSelectedTables = typeof value === 'string' ? value.split(',') : value;
+    setSelectedTables(newSelectedTables);
+
+    // Reset selected table for columns if it's no longer selected
+    if (selectedTableForColumns && !newSelectedTables.includes(selectedTableForColumns)) {
+      setSelectedTableForColumns('');
+      setTableColumns([]);
+      setTabValue(0);
+    }
+  };
+
+  const handleTableClick = (tableName) => {
+    setSelectedTableForColumns(tableName);
+    fetchTableColumns(tableName);
+    // Find the index of the table in selectedTables to set the tab
+    const index = selectedTables.indexOf(tableName);
+    setTabValue(index);
+  };
+
+  const handleTabChange = (event, newValue) => {
+    setTabValue(newValue);
+    const tableName = selectedTables[newValue];
+    if (tableName) {
+      setSelectedTableForColumns(tableName);
+      fetchTableColumns(tableName);
+    }
+  };
 
   return (
-    <Box sx={{ p: 3, bgcolor: 'grey.100', minHeight: '100vh' }}>
-      <Container maxWidth="lg" sx={{ bgcolor: 'white', borderRadius: 2, boxShadow: 3, p: 4 }}>
-        <Typography variant="h4" gutterBottom>Create Report</Typography>
+    <Box sx={{ p: 3 }}>
+      <Paper elevation={3} sx={{ p: 3 }}>
+        <Typography variant="h5" gutterBottom>
+          Create Reports
+        </Typography>
 
-        {/* Table selection */}
-        <FormControl fullWidth sx={{ mb: 3 }}>
-          <InputLabel>Select Table</InputLabel>
-          <Select value={selectedTable} onChange={(e) => setSelectedTable(e.target.value)} label="Select Table">
-            <MenuItem value="" disabled>Select a table</MenuItem>
-            {tables.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-          </Select>
-        </FormControl>
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+          Select tables and view their columns
+        </Typography>
 
-        {/* Column configuration area */}
-        <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>Report Columns</Typography>
-        {loadingColumns && <CircularProgress />}
-        {!loadingColumns && selectedTable && (
-          <>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={reportColumns.map(c => c.columnName)} strategy={verticalListSortingStrategy}>
-                {reportColumns.map((col, index) => (
-                  <SortableItem key={col.columnName} id={col.columnName} disabled={false}>
-                    {(listeners) => (
-                      <Box sx={{ display: 'flex', alignItems: 'center', p: 2, bgcolor: 'grey.50', borderRadius: 1, mb: 2, boxShadow: 1 }}>
-                        <IconButton {...listeners} sx={{ cursor: 'grab' }}><DragIndicator /></IconButton>
-                        <Box sx={{ flex: 1, ml: 2 }}>
-                          <Typography variant="body1">
-                            {col.alias || col.columnName} {col.isJson && `→ ${col.jsonKey}`}
-                          </Typography>
-                        </Box>
-                        <Button size="small" onClick={() => openModal(index)} sx={{ mr: 1 }}>Edit</Button>
-                        <IconButton onClick={() => removeColumn(index)} color="error"><DeleteIcon /></IconButton>
-                      </Box>
-                    )}
-                  </SortableItem>
-                ))}
-              </SortableContext>
-            </DndContext>
-
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => openModal()}>
-              Add Column
-            </Button>
-          </>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
         )}
 
-        {/* Preview and Generate */}
-        {reportColumns.length > 0 && (
-          <Box sx={{ mt: 4 }}>
-            <Button variant="contained" color="primary" onClick={fetchPreview} sx={{ mr: 2 }}>
-              Preview
-            </Button>
-            <Button variant="contained" color="success">
-              Generate Report
-            </Button>
-
-            {previewData.length > 0 && (
-              <TableContainer component={Paper} sx={{ mt: 3 }}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      {reportColumns.map(col => (
-                        <TableCell key={col.columnName}>{col.alias || col.columnName}</TableCell>
-                      ))}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {previewData.map((row, idx) => (
-                      <TableRow key={idx}>
-                        {reportColumns.map(col => (
-                          <TableCell key={col.columnName}>{row[col.alias || col.columnName]}</TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </Box>
-        )}
-
-        {/* Column Configuration Modal */}
-        <Modal open={modalOpen} onClose={closeModal}>
-          <Box sx={{ ...modalStyle }}>
-            <Typography variant="h5" sx={{ mb: 3 }}>Configure Column</Typography>
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Column</InputLabel>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <FormControl fullWidth>
+              <InputLabel>Select Tables</InputLabel>
               <Select
-                value={columnConfig.columnName}
-                onChange={(e) => {
-                  const colName = e.target.value;
-                  const col = columns.find(c => c.columnName === colName);
-                  setColumnConfig({ columnName: colName, alias: '', jsonKey: '' });
-                  setJsonKeys(col?.jsonKeys || []);
-                }}
-                label="Column"
+                multiple
+                value={selectedTables}
+                onChange={handleTableSelect}
+                input={<OutlinedInput label="Select Tables" />}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip
+                        key={value}
+                        label={value}
+                        onClick={() => handleTableClick(value)}
+                        onDelete={() => {
+                          const newSelected = selectedTables.filter(t => t !== value);
+                          setSelectedTables(newSelected);
+                          if (selectedTableForColumns === value) {
+                            setSelectedTableForColumns('');
+                            setTableColumns([]);
+                          }
+                        }}
+                      />
+                    ))}
+                  </Box>
+                )}
+                disabled={loading}
               >
-                {columns.map(col => (
-                  <MenuItem key={col.columnName} value={col.columnName}>
-                    {col.columnName} ({col.dataType})
+                {tables.map((table) => (
+                  <MenuItem key={table} value={table}>
+                    <Checkbox checked={selectedTables.indexOf(table) > -1} />
+                    <ListItemText primary={table} />
                   </MenuItem>
                 ))}
               </Select>
+              {loading && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <CircularProgress size={24} />
+                </Box>
+              )}
             </FormControl>
+          </Grid>
 
-            <TextField
-              fullWidth
-              label="Alias (optional)"
-              value={columnConfig.alias}
-              onChange={(e) => setColumnConfig({ ...columnConfig, alias: e.target.value })}
-              sx={{ mb: 2 }}
-            />
+          {/* Display selected tables and their columns */}
+          {selectedTables.length > 0 && (
+            <Grid item xs={12}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Table Columns
+                  </Typography>
 
-            {jsonKeys.length > 0 && (
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>JSON Key</InputLabel>
-                <Select
-                  value={columnConfig.jsonKey}
-                  onChange={(e) => setColumnConfig({ ...columnConfig, jsonKey: e.target.value })}
-                  label="JSON Key"
-                >
-                  {jsonKeys.map(key => <MenuItem key={key} value={key}>{key}</MenuItem>)}
-                </Select>
-              </FormControl>
-            )}
+                  {selectedTables.length > 1 && (
+                    <Tabs
+                      value={tabValue}
+                      onChange={handleTabChange}
+                      sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
+                    >
+                      {selectedTables.map((table) => (
+                        <Tab key={table} label={table} />
+                      ))}
+                    </Tabs>
+                  )}
 
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 3 }}>
-              <Button onClick={closeModal}>Cancel</Button>
-              <Button variant="contained" onClick={saveColumn}>Save</Button>
-            </Box>
-          </Box>
-        </Modal>
-      </Container>
+                  <Box sx={{ mt: 2 }}>
+                    {selectedTableForColumns ? (
+                      <>
+                        <Typography variant="subtitle1" gutterBottom>
+                          Columns in <strong>{selectedTableForColumns}</strong>
+                        </Typography>
+
+                        {loadingColumns ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                            <CircularProgress />
+                          </Box>
+                        ) : tableColumns.length > 0 ? (
+                          <TableContainer component={Paper} variant="outlined">
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: '#f5f5f5' }}>
+                                  <TableCell><strong>Column Name</strong></TableCell>
+                                  <TableCell><strong>Data Type</strong></TableCell>
+                                  <TableCell><strong>Nullable</strong></TableCell>
+                                  <TableCell><strong>JSON Column</strong></TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {tableColumns.map((column, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell>{column.name}</TableCell>
+                                    <TableCell>{column.type}</TableCell>
+                                    <TableCell>{column.nullable ? 'Yes' : 'No'}</TableCell>
+                                    <TableCell>{column.isJson ? 'Yes' : 'No'}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        ) : (
+                          <Alert severity="info">No columns found for this table</Alert>
+                        )}
+                      </>
+                    ) : (
+                      <Alert severity="info">
+                        Click on any table chip above to view its columns
+                      </Alert>
+                    )}
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          )}
+        </Grid>
+      </Paper>
     </Box>
   );
 }
-
-const modalStyle = {
-  position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-  width: 600, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 24, p: 4,
-};

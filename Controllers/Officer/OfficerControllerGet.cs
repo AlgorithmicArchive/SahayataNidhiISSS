@@ -1899,287 +1899,552 @@ namespace SahayataNidhi.Controllers.Officer
 
         public class AgeWiseReportDto
         {
-            public string? age_range { get; set; }  // Changed from 'age'
-            public long countofapplicants { get; set; }
+            public string? Age_range { get; set; }
+            public long Countofapplicants { get; set; }
+        }
+
+        public class AgeRangeDto
+        {
+            public int Min { get; set; }
+            public int Max { get; set; }
+            public string? Label { get; set; }
         }
 
         public class PensionTypeWiseReportDto
         {
-            public string? Age { get; set; }          // was int Age
-            public string? PensionType { get; set; }
-            public int CountOfApplicants { get; set; }
+            public string? Age_range { get; set; }
+            public string? Pensiontype { get; set; }
+            public long Countofapplicants { get; set; }
         }
 
         public class GenderWiseReportDto
         {
             public string? Gender { get; set; }
-            public int CountOfApplicants { get; set; }
+            public long Countofapplicants { get; set; }
         }
-
         // DetailedApplicationsReportDto.cs
         public class DetailedApplicationsReportDto
         {
-            public string? districtname { get; set; }
-            public string? tswofficename { get; set; }
-            public string? application_status { get; set; }
-            public string? application_pending_with { get; set; }
-            public string? referencenumber { get; set; }
-            public string? applicant_name { get; set; }
-            public string? parentage { get; set; }
-            public string? account_number { get; set; }
-            public string? ifsc_code { get; set; }
-            public string? bank_name { get; set; }
-            public string? branch_name { get; set; }
-            public int totalcount { get; set; }
+            public string? Districtname { get; set; }
+            public string? Tswofficename { get; set; }
+            public string? Application_status { get; set; }
+            public string? Application_pending_with { get; set; }
+            public string? Referencenumber { get; set; }
+            public string? Applicant_name { get; set; }
+            public string? Parentage { get; set; }
+            public string? Account_number { get; set; }
+            public string? Ifsc_code { get; set; }
+            public string? Bank_name { get; set; }
+            public string? Branch_name { get; set; }
+            public long Totalcount { get; set; }
         }
 
         [HttpGet]
-        public IActionResult GetApplicationsForReports(int AccessCode, int Serviceid, string? StatusType = null, string ReportType = "TehsilWise", string? DataType = null, DateTime? StartDate = null, DateTime? EndDate = null, int pageIndex = 0, int pageSize = 10)
+        public IActionResult GetOfficerAccessDetails()
+        {
+            var officer = GetOfficerDetails();
+            if (officer == null)
+                return BadRequest(new { error = "Officer details not found" });
+
+            return Json(new
+            {
+                officer.AccessLevel,
+                officer.AccessCode,
+                officer.Role
+            });
+        }
+
+        // [HttpGet]
+        // public IActionResult GetApplicationsForReports(int AccessCode, int Serviceid, string? StatusType = null, string ReportType = "TehsilWise", string? DataType = null, DateTime? StartDate = null, DateTime? EndDate = null, int pageIndex = 0, int pageSize = 10)
+        // {
+        //     try
+        //     {
+        //         var officer = GetOfficerDetails();
+        //         if (officer == null)
+        //             return BadRequest(new { error = "Officer details not found" });
+
+        //         // Log officer details for debugging (remove in production)
+        //         _logger.LogInformation($"Officer Details - Role: {officer.Role}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
+
+        //         List<dynamic> data;
+        //         List<dynamic> columns;
+        //         int totalRecords;
+
+        //         switch (ReportType)
+        //         {
+        //             case "AgeWise":
+        //                 try
+        //                 {
+        //                     object startDateParam = StartDate.HasValue ? (object)StartDate.Value : DBNull.Value;
+        //                     object endDateParam = EndDate.HasValue ? (object)EndDate.Value : DBNull.Value;
+
+        //                     var ageParameters = new[]
+        //                     {
+        //                         new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+        //                         new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : officer.AccessLevel == "Division" ? "Division" : "District" },
+        //                         new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
+        //                         new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
+        //                         new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value },
+        //                         new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = startDateParam },
+        //                         new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = endDateParam }
+        //                     };
+
+        //                     _logger.LogInformation($"AgeWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}, Status: {StatusType ?? "NULL"}, DataType: {DataType ?? "NULL"}, StartDate: {StartDate?.ToString("yyyy-MM-dd") ?? "NULL"}, EndDate: {EndDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
+
+        //                     var ageData = dbcontext.Database
+        //                         .SqlQueryRaw<AgeWiseReportDto>(
+        //                             "SELECT * FROM get_age_counts_filtered(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
+        //                             ageParameters)
+        //                         .ToList();
+
+        //                     _logger.LogInformation($"AgeWise report returned {JsonConvert.SerializeObject(ageData)} records");
+
+        //                     totalRecords = ageData.Count;
+        //                     data = ageData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+        //                     columns = new List<dynamic>
+        //                     {
+        //                         new { accessorKey = "age_range", header = "Age Range" },  // Changed header
+        //                         new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+        //                     };
+        //                 }
+        //                 catch (Exception ex)
+        //                 {
+        //                     _logger.LogError(ex, "AgeWise report failed");
+        //                     return StatusCode(500, new { error = "AgeWise report failed", details = ex.Message });
+        //                 }
+        //                 break;
+
+        //             // Inside the switch case for "PensionTypeWise"
+        //             case "PensionTypeWise":
+        //                 try
+        //                 {
+        //                     object startDateParam = StartDate.HasValue ? (object)StartDate.Value : DBNull.Value;
+        //                     object endDateParam = EndDate.HasValue ? (object)EndDate.Value : DBNull.Value;
+
+        //                     // Default to "sanctioned" if StatusType is not provided
+        //                     string statusParam = string.IsNullOrEmpty(StatusType) ? "sanctioned" : StatusType;
+
+        //                     var pensionParameters = new[]
+        //                     {
+        //                         new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+        //                         new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
+        //                         new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
+        //                         new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = statusParam },
+        //                         new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value },
+        //                         new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = startDateParam },
+        //                         new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = endDateParam }
+        //                     };
+
+        //                     _logger.LogInformation($"PensionTypeWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}, Status: {statusParam}");
+
+        //                     // ✅ Aliased columns to match DTO property names
+        //                     var pensionData = dbcontext.Database
+        //                         .SqlQueryRaw<PensionTypeWiseReportDto>(
+        //                             "SELECT age_range AS \"Age\", pensiontype AS \"PensionType\", countofapplicants AS \"CountOfApplicants\" " +
+        //                             "FROM get_age_and_pension_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
+        //                             pensionParameters)
+        //                         .ToList();
+
+        //                     totalRecords = pensionData.Count;
+        //                     data = pensionData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+
+        //                     columns = new List<dynamic>
+        //                     {
+        //                         new { accessorKey = "age", header = "Age Range" },      // header updated for clarity
+        //                         new { accessorKey = "pensionType", header = "Pension Type" },
+        //                         new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
+        //                     };
+        //                 }
+        //                 catch (Exception ex)
+        //                 {
+        //                     _logger.LogError(ex, "PensionTypeWise report failed");
+        //                     return StatusCode(500, new { error = "PensionTypeWise report failed", details = ex.Message });
+        //                 }
+        //                 break;
+
+        //             case "GenderWise":
+        //                 try
+        //                 {
+        //                     var genderParameters = new[]
+        //                     {
+        //                 new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+        //                 new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
+        //                 new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
+        //                 new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
+        //                 new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value }
+        //             };
+
+        //                     _logger.LogInformation($"GenderWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
+
+        //                     var genderData = dbcontext.Database
+        //                         .SqlQueryRaw<GenderWiseReportDto>(
+        //                             "SELECT * FROM get_gender_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype)",
+        //                             genderParameters)
+        //                         .ToList();
+
+        //                     totalRecords = genderData.Count;
+        //                     data = genderData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+        //                     columns = new List<dynamic>
+        //             {
+        //                 new { accessorKey = "gender", header = "Gender" },
+        //                 new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
+        //             };
+        //                 }
+        //                 catch (Exception ex)
+        //                 {
+        //                     _logger.LogError(ex, "GenderWise report failed");
+        //                     return StatusCode(500, new { error = "GenderWise report failed", details = ex.Message });
+        //                 }
+        //                 break;
+
+        //             case "DetailedApplications":
+        //                 try
+        //                 {
+        //                     // For DetailedApplications, we IGNORE the incoming AccessCode and use officer's own
+        //                     // This is the key fix - we don't use the AccessCode parameter from the URL
+
+        //                     var detailedParameters = new[]
+        //                     {
+        //                 new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer.Role ?? (object)DBNull.Value },
+        //                 new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = officer.AccessLevel ?? (object)DBNull.Value },
+        //                 new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code, NOT the passed AccessCode
+        //                 new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(StatusType) ? DBNull.Value : StatusType },
+        //                 new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = Serviceid },
+        //                 new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
+        //                 new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
+        //                 new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
+        //                 new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(DataType) ? DBNull.Value : DataType },
+        //                 new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = DBNull.Value }
+        //             };
+
+        //                     // Log the actual values being passed to the function
+        //                     _logger.LogInformation($"DetailedApplications report - " +
+        //                         $"Role: {officer.Role}, " +
+        //                         $"AccessLevel: {officer.AccessLevel}, " +
+        //                         $"AccessCode: {officer.AccessCode} (using officer's own, ignoring URL AccessCode: {AccessCode}), " +
+        //                         $"Serviceid: {Serviceid}, " +
+        //                         $"Status: {StatusType ?? "NULL"}, " +
+        //                         $"PageIndex: {pageIndex}, " +
+        //                         $"PageSize: {pageSize}");
+
+        //                     var detailedData = dbcontext.Database
+        //                         .SqlQueryRaw<DetailedApplicationsReportDto>(
+        //                             "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
+        //                             detailedParameters)
+        //                         .ToList();
+
+        //                     totalRecords = detailedData.FirstOrDefault()?.totalcount ?? 0;
+        //                     data = detailedData.Cast<dynamic>().ToList();
+
+        //                     _logger.LogInformation($"DetailedApplications report returned {detailedData.Count} records, totalcount: {totalRecords}");
+
+        //                     columns = new List<dynamic>
+        //             {
+        //                 new { accessorKey = "districtname", header = "District" },
+        //                 new { accessorKey = "tswofficename", header = "TSWO Office" },
+        //                 new { accessorKey = "application_status", header = "Application Status" },
+        //                 new { accessorKey = "application_pending_with", header = "Application Pending With" },
+        //                 new { accessorKey = "referencenumber", header = "Reference Number" },
+        //                 new { accessorKey = "applicant_name", header = "Applicant Name" },
+        //                 new { accessorKey = "parentage", header = "Parentage" },
+        //                 new { accessorKey = "account_number", header = "Account Number" },
+        //                 new { accessorKey = "ifsc_code", header = "IFSC Code" },
+        //                 new { accessorKey = "bank_name", header = "Bank Name" },
+        //                 new { accessorKey = "branch_name", header = "Branch Name" }
+        //             };
+        //                 }
+        //                 catch (Exception ex)
+        //                 {
+        //                     _logger.LogError(ex, "Detailed Applications report failed");
+        //                     return StatusCode(500, new { error = "Detailed Applications report failed", details = ex.Message });
+        //                 }
+        //                 break;
+
+        //             case "TehsilWise":
+        //             default:
+        //                 try
+        //                 {
+        //                     var tehsilParameters = new[]
+        //                     {
+        //                 new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
+        //                 new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+        //                 new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" }
+        //             };
+
+        //                     _logger.LogInformation($"TehsilWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
+
+        //                     var tehsilData = dbcontext.Database
+        //                         .SqlQueryRaw<SummaryReports>(
+        //                             "SELECT * FROM get_applications_for_report(@accesscode, @serviceid, @accesslevel)",
+        //                             tehsilParameters)
+        //                         .ToList();
+
+        //                     totalRecords = tehsilData.Count;
+        //                     data = tehsilData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+        //                     columns = new List<dynamic>
+        //             {
+        //                 new { accessorKey = "tehsilName", header = "Tehsil Name" },
+        //                 new { accessorKey = "totalApplicationsSubmitted", header = "Total Applications Received" },
+        //                 new { accessorKey = "totalApplicationsPending", header = "Total Applications Pending" },
+        //                 new { accessorKey = "totalApplicationsReturnToEdit", header = "Pending With Citizens" },
+        //                 new { accessorKey = "totalApplicationsSanctioned", header = "Total Sanctioned" },
+        //                 new { accessorKey = "totalApplicationsRejected", header = "Total Rejected" }
+        //             };
+        //                 }
+        //                 catch (Exception ex)
+        //                 {
+        //                     _logger.LogError(ex, "TehsilWise report failed");
+        //                     return StatusCode(500, new { error = "TehsilWise report failed", details = ex.Message });
+        //                 }
+        //                 break;
+        //         }
+
+        //         return Json(new
+        //         {
+        //             data,
+        //             columns,
+        //             totalRecords,
+        //             pageIndex,
+        //             pageSize,
+        //             totalPages = (int)Math.Ceiling(totalRecords / (double)pageSize)
+        //         });
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         _logger.LogError(ex, $"Error executing report for AccessCode: {AccessCode}, Serviceid: {Serviceid}, ReportType: {ReportType}");
+        //         return StatusCode(500, new
+        //         {
+        //             error = "An error occurred while fetching the report",
+        //             details = ex.Message,
+        //             reportType = ReportType,
+        //             serviceId = Serviceid,
+        //             accessCode = AccessCode
+        //         });
+        //     }
+        // }
+
+        [HttpGet]
+        public IActionResult GetReportTypes()
+        {
+            try
+            {
+                var reportTypes = new List<dynamic>
+                {
+                    new { value = "TehsilWise", label = "Tehsil Wise Applications Report" },
+                    new { value = "AgeWise", label = "Age Wise Report" },
+                    new { value = "PensionTypeWise", label = "Pension Type Wise Report" },
+                    new { value = "GenderWise", label = "Gender Wise Report" },
+                    new { value = "DetailedApplications", label = "Detailed Applications Report" }
+                };
+
+                return Ok(new { status = true, reportTypes });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching report types");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetApplicationsForReport(
+       int accessCode,
+       int serviceId,
+       string accessLevel,
+       string? dataType = null,
+       string reportType = "TehsilWise",
+       string? statusType = null,
+       string? ageRanges = null,
+       int pageIndex = 0,  // Add pagination parameter
+       int pageSize = 10)   // Add pagination parameter
         {
             try
             {
                 var officer = GetOfficerDetails();
-                if (officer == null)
-                    return BadRequest(new { error = "Officer details not found" });
-
-                // Log officer details for debugging (remove in production)
-                _logger.LogInformation($"Officer Details - Role: {officer.Role}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
+                _logger.LogInformation($"GetApplicationsForReport - AccessCode: {accessCode}, ServiceId: {serviceId}, AccessLevel: {accessLevel}, DataType: {dataType}, ReportType: {reportType}, StatusType: {statusType}, PageIndex: {pageIndex}, PageSize: {pageSize}");
 
                 List<dynamic> data;
                 List<dynamic> columns;
-                int totalRecords;
+                int totalRecords = 0;
 
-                switch (ReportType)
+                switch (reportType)
                 {
-                    case "AgeWise":
-                        try
+                    case "TehsilWise":
+                        var tehsilParameters = new[]
                         {
-                            object startDateParam = StartDate.HasValue ? (object)StartDate.Value : DBNull.Value;
-                            object endDateParam = EndDate.HasValue ? (object)EndDate.Value : DBNull.Value;
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
+                };
 
-                            var ageParameters = new[]
-                            {
-                                new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                                new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : officer.AccessLevel == "Division" ? "Division" : "District" },
-                                new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
-                                new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
-                                new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = startDateParam },
-                                new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = endDateParam }
-                            };
+                        var tehsilResults = dbcontext.Database
+                            .SqlQueryRaw<TehsilWiseReportDto>(
+                                "SELECT * FROM get_applications_for_report(@p_access_code, @p_service_id, @p_access_level, @p_data_type)",
+                                tehsilParameters)
+                            .ToList();
 
-                            _logger.LogInformation($"AgeWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}, Status: {StatusType ?? "NULL"}, DataType: {DataType ?? "NULL"}, StartDate: {StartDate?.ToString("yyyy-MM-dd") ?? "NULL"}, EndDate: {EndDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
-
-                            var ageData = dbcontext.Database
-                                .SqlQueryRaw<AgeWiseReportDto>(
-                                    "SELECT * FROM get_age_counts_filtered(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-                                    ageParameters)
-                                .ToList();
-
-                            _logger.LogInformation($"AgeWise report returned {JsonConvert.SerializeObject(ageData)} records");
-
-                            totalRecords = ageData.Count;
-                            data = ageData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                            {
-                                new { accessorKey = "age_range", header = "Age Range" },  // Changed header
-                                new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                            };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "AgeWise report failed");
-                            return StatusCode(500, new { error = "AgeWise report failed", details = ex.Message });
-                        }
+                        data = tehsilResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                {
+                    new { accessorKey = "tehsilname", header = "Tehsil Name" },
+                    new { accessorKey = "totalapplicationssubmitted", header = "Total Applications Submitted" },
+                    new { accessorKey = "totalapplicationspending", header = "Total Applications Pending" },
+                    new { accessorKey = "totalapplicationsreturntoedit", header = "Total Applications Return to Edit" },
+                    new { accessorKey = "totalapplicationsrejected", header = "Total Applications Rejected" },
+                    new { accessorKey = "totalapplicationssanctioned", header = "Total Applications Sanctioned" }
+                };
                         break;
 
-                    // Inside the switch case for "PensionTypeWise"
+                    case "AgeWise":
+                        string ageRangesJson = ageRanges!;
+
+                        if (string.IsNullOrEmpty(ageRangesJson))
+                        {
+                            ageRangesJson = @"[
+                        {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
+                        {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
+                        {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
+                    ]";
+                        }
+
+                        var ageParameters = new[]
+                        {
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                    new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
+                };
+
+                        var ageResults = dbcontext.Database
+                            .SqlQueryRaw<AgeWiseReportDto>(
+                                "SELECT * FROM get_age_counts_with_dynamic_ranges(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type, @p_age_ranges)",
+                                ageParameters)
+                            .ToList();
+
+                        data = ageResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                {
+                    new { accessorKey = "age_range", header = "Age Range" },
+                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                };
+                        break;
+
                     case "PensionTypeWise":
-                        try
+                        ageRangesJson = ageRanges!;
+
+                        if (string.IsNullOrEmpty(ageRangesJson))
                         {
-                            object startDateParam = StartDate.HasValue ? (object)StartDate.Value : DBNull.Value;
-                            object endDateParam = EndDate.HasValue ? (object)EndDate.Value : DBNull.Value;
-
-                            // Default to "sanctioned" if StatusType is not provided
-                            string statusParam = string.IsNullOrEmpty(StatusType) ? "sanctioned" : StatusType;
-
-                            var pensionParameters = new[]
-                            {
-                                new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                                new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-                                new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
-                                new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = statusParam },
-                                new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = startDateParam },
-                                new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = endDateParam }
-                            };
-
-                            _logger.LogInformation($"PensionTypeWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}, Status: {statusParam}");
-
-                            // ✅ Aliased columns to match DTO property names
-                            var pensionData = dbcontext.Database
-                                .SqlQueryRaw<PensionTypeWiseReportDto>(
-                                    "SELECT age_range AS \"Age\", pensiontype AS \"PensionType\", countofapplicants AS \"CountOfApplicants\" " +
-                                    "FROM get_age_and_pension_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-                                    pensionParameters)
-                                .ToList();
-
-                            totalRecords = pensionData.Count;
-                            data = pensionData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-
-                            columns = new List<dynamic>
-                            {
-                                new { accessorKey = "age", header = "Age Range" },      // header updated for clarity
-                                new { accessorKey = "pensionType", header = "Pension Type" },
-                                new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
-                            };
+                            ageRangesJson = @"[
+                        {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
+                        {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
+                        {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
+                    ]";
                         }
-                        catch (Exception ex)
+
+                        var pensionParameters = new[]
                         {
-                            _logger.LogError(ex, "PensionTypeWise report failed");
-                            return StatusCode(500, new { error = "PensionTypeWise report failed", details = ex.Message });
-                        }
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                    new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
+                };
+
+                        var pensionResults = dbcontext.Database
+                            .SqlQueryRaw<PensionTypeWiseReportDto>(
+                                "SELECT * FROM get_age_and_pension_counts(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type, @p_age_ranges)",
+                                pensionParameters)
+                            .ToList();
+
+                        data = pensionResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                {
+                    new { accessorKey = "age_range", header = "Age Range" },
+                    new { accessorKey = "pensiontype", header = "Pension Type" },
+                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                };
                         break;
 
                     case "GenderWise":
-                        try
+                        var genderParameters = new[]
                         {
-                            var genderParameters = new[]
-                            {
-                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
-                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
-                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value }
-                    };
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
+                };
 
-                            _logger.LogInformation($"GenderWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
+                        var genderResults = dbcontext.Database
+                            .SqlQueryRaw<GenderWiseReportDto>(
+                                "SELECT * FROM get_gender_counts(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type)",
+                                genderParameters)
+                            .ToList();
 
-                            var genderData = dbcontext.Database
-                                .SqlQueryRaw<GenderWiseReportDto>(
-                                    "SELECT * FROM get_gender_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype)",
-                                    genderParameters)
-                                .ToList();
-
-                            totalRecords = genderData.Count;
-                            data = genderData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "gender", header = "Gender" },
-                        new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "GenderWise report failed");
-                            return StatusCode(500, new { error = "GenderWise report failed", details = ex.Message });
-                        }
+                        data = genderResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                {
+                    new { accessorKey = "gender", header = "Gender" },
+                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                };
                         break;
 
                     case "DetailedApplications":
-                        try
+                        var detailedParameters = new[]
                         {
-                            // For DetailedApplications, we IGNORE the incoming AccessCode and use officer's own
-                            // This is the key fix - we don't use the AccessCode parameter from the URL
+                    new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },  // Use the parameter
+                    new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },   // Use the parameter
+                    new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                    new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value }
+                };
 
-                            var detailedParameters = new[]
-                            {
-                        new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer.Role ?? (object)DBNull.Value },
-                        new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = officer.AccessLevel ?? (object)DBNull.Value },
-                        new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code, NOT the passed AccessCode
-                        new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(StatusType) ? DBNull.Value : StatusType },
-                        new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
-                        new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
-                        new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
-                        new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(DataType) ? DBNull.Value : DataType },
-                        new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = DBNull.Value }
-                    };
+                        var detailedResults = dbcontext.Database
+                            .SqlQueryRaw<DetailedApplicationsReportDto>(
+                                "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
+                                detailedParameters)
+                            .ToList();
 
-                            // Log the actual values being passed to the function
-                            _logger.LogInformation($"DetailedApplications report - " +
-                                $"Role: {officer.Role}, " +
-                                $"AccessLevel: {officer.AccessLevel}, " +
-                                $"AccessCode: {officer.AccessCode} (using officer's own, ignoring URL AccessCode: {AccessCode}), " +
-                                $"Serviceid: {Serviceid}, " +
-                                $"Status: {StatusType ?? "NULL"}, " +
-                                $"PageIndex: {pageIndex}, " +
-                                $"PageSize: {pageSize}");
+                        // Get the total count from the first record (it will be the same for all records)
+                        totalRecords = (int)(detailedResults.FirstOrDefault()?.Totalcount ?? 0);
+                        data = detailedResults.Cast<dynamic>().ToList();
 
-                            var detailedData = dbcontext.Database
-                                .SqlQueryRaw<DetailedApplicationsReportDto>(
-                                    "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
-                                    detailedParameters)
-                                .ToList();
-
-                            totalRecords = detailedData.FirstOrDefault()?.totalcount ?? 0;
-                            data = detailedData.Cast<dynamic>().ToList();
-
-                            _logger.LogInformation($"DetailedApplications report returned {detailedData.Count} records, totalcount: {totalRecords}");
-
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "districtname", header = "District" },
-                        new { accessorKey = "tswofficename", header = "TSWO Office" },
-                        new { accessorKey = "application_status", header = "Application Status" },
-                        new { accessorKey = "application_pending_with", header = "Application Pending With" },
-                        new { accessorKey = "referencenumber", header = "Reference Number" },
-                        new { accessorKey = "applicant_name", header = "Applicant Name" },
-                        new { accessorKey = "parentage", header = "Parentage" },
-                        new { accessorKey = "account_number", header = "Account Number" },
-                        new { accessorKey = "ifsc_code", header = "IFSC Code" },
-                        new { accessorKey = "bank_name", header = "Bank Name" },
-                        new { accessorKey = "branch_name", header = "Branch Name" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Detailed Applications report failed");
-                            return StatusCode(500, new { error = "Detailed Applications report failed", details = ex.Message });
-                        }
+                        columns = new List<dynamic>
+                {
+                    new { accessorKey = "districtname", header = "District" },
+                    new { accessorKey = "tswofficename", header = "TSWO Office" },
+                    new { accessorKey = "application_status", header = "Application Status" },
+                    new { accessorKey = "application_pending_with", header = "Application Pending With" },
+                    new { accessorKey = "referencenumber", header = "Reference Number" },
+                    new { accessorKey = "applicant_name", header = "Applicant Name" },
+                    new { accessorKey = "parentage", header = "Parentage" },
+                    new { accessorKey = "account_number", header = "Account Number" },
+                    new { accessorKey = "ifsc_code", header = "IFSC Code" },
+                    new { accessorKey = "bank_name", header = "Bank Name" },
+                    new { accessorKey = "branch_name", header = "Branch Name" }
+                };
                         break;
 
-                    case "TehsilWise":
                     default:
-                        try
-                        {
-                            var tehsilParameters = new[]
-                            {
-                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
-                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" }
-                    };
-
-                            _logger.LogInformation($"TehsilWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
-
-                            var tehsilData = dbcontext.Database
-                                .SqlQueryRaw<SummaryReports>(
-                                    "SELECT * FROM get_applications_for_report(@accesscode, @serviceid, @accesslevel)",
-                                    tehsilParameters)
-                                .ToList();
-
-                            totalRecords = tehsilData.Count;
-                            data = tehsilData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "tehsilName", header = "Tehsil Name" },
-                        new { accessorKey = "totalApplicationsSubmitted", header = "Total Applications Received" },
-                        new { accessorKey = "totalApplicationsPending", header = "Total Applications Pending" },
-                        new { accessorKey = "totalApplicationsReturnToEdit", header = "Pending With Citizens" },
-                        new { accessorKey = "totalApplicationsSanctioned", header = "Total Sanctioned" },
-                        new { accessorKey = "totalApplicationsRejected", header = "Total Rejected" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "TehsilWise report failed");
-                            return StatusCode(500, new { error = "TehsilWise report failed", details = ex.Message });
-                        }
-                        break;
+                        return BadRequest(new { status = false, message = "Invalid report type" });
                 }
 
-                return Json(new
+                return Ok(new
                 {
+                    status = true,
                     data,
                     columns,
                     totalRecords,
@@ -2190,17 +2455,42 @@ namespace SahayataNidhi.Controllers.Officer
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error executing report for AccessCode: {AccessCode}, Serviceid: {Serviceid}, ReportType: {ReportType}");
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while fetching the report",
-                    details = ex.Message,
-                    reportType = ReportType,
-                    serviceId = Serviceid,
-                    accessCode = AccessCode
-                });
+                _logger.LogError(ex, $"Error executing report - AccessCode: {accessCode}, ServiceId: {serviceId}, ReportType: {reportType}");
+                return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
+        private async Task<string> GetAgeRangesFromBody()
+        {
+            try
+            {
+                // Enable rewinding the request body
+                Request.EnableBuffering();
+
+                using (var reader = new StreamReader(Request.Body, leaveOpen: true))
+                {
+                    var body = await reader.ReadToEndAsync();
+                    Request.Body.Position = 0; // Reset the stream position
+
+                    if (!string.IsNullOrEmpty(body))
+                    {
+                        var json = Newtonsoft.Json.Linq.JObject.Parse(body);
+                        if (json["ageRanges"] != null)
+                        {
+                            return json["ageRanges"].ToString();
+                        }
+                    }
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reading age ranges from request body");
+                return null;
+            }
+        }
+
+
+
 
         [HttpGet]
         public IActionResult GetUserDetails(string applicationId)
@@ -2894,8 +3184,8 @@ namespace SahayataNidhi.Controllers.Officer
                     sno = index,
                     actionTaker = item.officer,
                     actionTaken = item.status,
-                    remarks = item.remarks,
-                    actionTakenOn = item.actionTakenOn,
+                    item.remarks,
+                    item.actionTakenOn,
                 });
                 index++;
             }
@@ -2956,7 +3246,7 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 status = true,
                 application = withheldDetails,
-                applicationDetails = applicationDetails,
+                applicationDetails,
                 canCreate,
                 canChooseWithheldType,
                 canChooseIsWithheld,

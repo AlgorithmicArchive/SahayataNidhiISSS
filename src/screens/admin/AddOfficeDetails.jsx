@@ -71,14 +71,12 @@ export default function AddOfficeDetails() {
   const [offices, setOffices] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [districts, setDistricts] = useState([]);
-  const [tehsils, setTehsils] = useState([]);
-  const [blocks, setBlocks] = useState([]);
+  const [areas, setAreas] = useState([]); // Combined areas (tehsils and blocks)
   const [existingOfficeDetails, setExistingOfficeDetails] = useState([]); // for duplicate prevention
 
   // Loading states for dynamic fetches
   const [loadingDistricts, setLoadingDistricts] = useState(false);
-  const [loadingTehsils, setLoadingTehsils] = useState(false);
-  const [loadingBlocks, setLoadingBlocks] = useState(false);
+  const [loadingAreas, setLoadingAreas] = useState(false); // Combined loading state
 
   // Set of used combinations (officeType + areaCode) to hide duplicates
   const [usedCombinations, setUsedCombinations] = useState(new Set());
@@ -164,52 +162,33 @@ export default function AddOfficeDetails() {
     };
 
     fetchDistricts();
-  }, [divisionCode, officeType]); // Add officeType as dependency
+  }, [divisionCode, officeType]);
 
-  // Fetch tehsils when district changes (if access level is Tehsil)
+  // Fetch areas (tehsils and blocks) when district changes and access level requires it
   useEffect(() => {
-    const fetchTehsils = async () => {
-      if (!districtCode || districtCode === 0 || accessLevel !== "Tehsil") {
-        setTehsils([]);
+    const fetchAreas = async () => {
+      // Only fetch if district is selected and access level is Tehsil or Block
+      if (!districtCode || districtCode === 0 || !accessLevel || !["Tehsil", "Block"].includes(accessLevel)) {
+        setAreas([]);
         return;
       }
-      setLoadingTehsils(true);
+
+      setLoadingAreas(true);
       try {
         const response = await axiosInstance.get(
-          `/Admin/GetTehsils?districtId=${districtCode}`
+          `/Admin/GetTehsils?districtId=${districtCode}` // Your combined endpoint
         );
-        setTehsils(response.data || []);
+
+        // Response now contains items with Id, Name, and Type fields
+        setAreas(response.data || []);
       } catch (error) {
-        setErrorMessage(`Error loading tehsils: ${error.message}`);
+        setErrorMessage(`Error loading areas: ${error.message}`);
       } finally {
-        setLoadingTehsils(false);
+        setLoadingAreas(false);
       }
     };
 
-    fetchTehsils();
-  }, [districtCode, accessLevel]);
-
-  // Fetch blocks when district changes (if access level is Block)
-  useEffect(() => {
-    const fetchBlocks = async () => {
-      if (!districtCode || districtCode === 0 || accessLevel !== "Block") {
-        setBlocks([]);
-        return;
-      }
-      setLoadingBlocks(true);
-      try {
-        const response = await axiosInstance.get(
-          `/Admin/GetBlocks?districtId=${districtCode}`
-        );
-        setBlocks(response.data || []);
-      } catch (error) {
-        setErrorMessage(`Error loading blocks: ${error.message}`);
-      } finally {
-        setLoadingBlocks(false);
-      }
-    };
-
-    fetchBlocks();
+    fetchAreas();
   }, [districtCode, accessLevel]);
 
   // When office type changes (new entry) – set access level and reset locations
@@ -266,8 +245,7 @@ export default function AddOfficeDetails() {
       setAccessLevel("");
       setSelectedOffice(null);
       setDistricts([]);
-      setTehsils([]);
-      setBlocks([]);
+      setAreas([]);
     }
   }, [editModalOpen, reset]);
 
@@ -285,14 +263,9 @@ export default function AddOfficeDetails() {
     } else if (accessLevel === "District" && districtCode && districtCode !== 0) {
       const district = districts.find((d) => d.districtId === districtCode);
       geoName = district ? district.districtName : "";
-    } else if (accessLevel === "Tehsil" && areaCode && areaCode.length > 0) {
+    } else if ((accessLevel === "Tehsil" || accessLevel === "Block") && areaCode && areaCode.length > 0) {
       geoName = areaCode.length === 1 ?
-        (tehsils.find(t => t.tehsilId === areaCode[0])?.tehsilName || "")
-        : "Multiple";
-    } else if (accessLevel === "Block" && areaCode && areaCode.length > 0) {
-      geoName = areaCode.length === 1 ?
-        (blocks.find(b => b.blockId === areaCode[0])?.blockName || "")
-        : "Multiple";
+        (areas.find(a => a.id === areaCode[0])?.name || "") : "Multiple";  // was a.Id, a.Name
     }
 
     const finalName = geoName
@@ -310,8 +283,7 @@ export default function AddOfficeDetails() {
     offices,
     divisions,
     districts,
-    tehsils,
-    blocks,
+    areas,
     setValue,
   ]);
 
@@ -331,13 +303,10 @@ export default function AddOfficeDetails() {
     } else if (accessLevel === "District" && districtCode && districtCode !== 0) {
       // For district level, we do NOT set areaCode to district ID – keep as empty array
       // because we want to use the selected district(s) directly for multi-select.
-      // areaName is not needed for district-level submission.
       setValue("areaCode", []);
       setValue("areaName", "");
-    } else if (accessLevel === "Tehsil" && areaCode && areaCode.length > 0) {
+    } else if ((accessLevel === "Tehsil" || accessLevel === "Block") && areaCode && areaCode.length > 0) {
       // areaName will be used for display but not needed for submission
-    } else if (accessLevel === "Block" && areaCode && areaCode.length > 0) {
-      // same
     } else {
       setValue("areaCode", []);
       setValue("areaName", "");
@@ -369,17 +338,20 @@ export default function AddOfficeDetails() {
     });
   }, [filteredDistricts, officeType, usedCombinations]);
 
-  const filteredAreas = accessLevel === "Tehsil" ? tehsils : blocks;
+  // Filter areas by the current access level (Tehsil or Block)
+  const filteredAreasByType = useMemo(() => {
+    if (!areas || !accessLevel) return [];
+    return areas.filter(area => area.type === accessLevel || officeType === 2 && area.type === "Block");  // was area.Type
+  }, [areas, accessLevel]);
 
   // Filter out already used areas (duplicate prevention) for Tehsil/Block
   const filteredAreasUnused = useMemo(() => {
-    if (!officeType || !filteredAreas) return filteredAreas || [];
-    return filteredAreas.filter(area => {
-      const id = accessLevel === "Tehsil" ? area.tehsilId : area.blockId;
-      const key = `${officeType}_${id}`;
+    if (!officeType || !filteredAreasByType.length) return filteredAreasByType;
+    return filteredAreasByType.filter(area => {
+      const key = `${officeType}_${area.id}`;  // was area.Id
       return !usedCombinations.has(key);
     });
-  }, [filteredAreas, officeType, usedCombinations, accessLevel]);
+  }, [filteredAreasByType, officeType, usedCombinations]);
 
   // ========== FORM SUBMISSION (MULTIPLE) ==========
   const onSubmit = async (data) => {
@@ -398,7 +370,7 @@ export default function AddOfficeDetails() {
         setErrorMessage("Please select at least one area.");
         return;
       }
-      itemsToSubmit = data.areaCode; // array of tehsil/block IDs
+      itemsToSubmit = data.areaCode; // array of area IDs
     }
 
     try {
@@ -415,19 +387,15 @@ export default function AddOfficeDetails() {
           if (level === "District") {
             // DSWO: each submission uses one district, and area code is also the district ID
             currentDistrictCode = id;
-            areaIdToSend = id; // <-- changed from 0 to id
+            areaIdToSend = id;
             const districtObj = districts.find(d => d.districtId === id);
             areaName = districtObj ? districtObj.districtName : "";
           } else {
             // Tehsil/Block: use the parent district (single value)
             currentDistrictCode = data.districtCode;
             areaIdToSend = id;
-            const areaObj = filteredAreas.find(a =>
-              accessLevel === "Tehsil" ? a.tehsilId === id : a.blockId === id
-            );
-            areaName = areaObj
-              ? (accessLevel === "Tehsil" ? areaObj.tehsilName : areaObj.blockName)
-              : "";
+            const areaObj = filteredAreasByType.find(a => a.id === id);  // was a.Id
+            areaName = areaObj ? areaObj.name : "";  // was areaObj.Name
           }
 
           formData.append("DistrictCode", currentDistrictCode.toString());
@@ -482,6 +450,7 @@ export default function AddOfficeDetails() {
       setErrorMessage(`Error: ${error.message}`);
     }
   };
+
   // ========== UPDATE (SINGLE) ==========
   const handleUpdate = async (data) => {
     if (!editingOfficeDetail) return;
@@ -498,6 +467,7 @@ export default function AddOfficeDetails() {
       // areaCode is an array in the form, but for update we assume single
       const singleAreaCode = data.areaCode[0] || 0;
       formData.append("AreaCode", singleAreaCode.toString());
+
       // areaName must be provided; find it
       let areaName = data.areaName;
       if (accessLevel === "District") {
@@ -505,13 +475,10 @@ export default function AddOfficeDetails() {
         const districtObj = districts.find(d => d.districtId === data.districtCode);
         areaName = districtObj ? districtObj.districtName : "";
       } else {
-        const areaObj = filteredAreas.find(a =>
-          accessLevel === "Tehsil" ? a.tehsilId === singleAreaCode : a.blockId === singleAreaCode
-        );
-        areaName = areaObj
-          ? (accessLevel === "Tehsil" ? areaObj.tehsilName : areaObj.blockName)
-          : data.areaName;
+        const areaObj = filteredAreasByType.find(a => a.Id === singleAreaCode);
+        areaName = areaObj ? areaObj.Name : data.areaName;
       }
+
       formData.append("AreaName", areaName);
       formData.append("OfficeName", data.officeName);
       formData.append("OfficeType", data.officeType.toString());
@@ -652,11 +619,6 @@ export default function AddOfficeDetails() {
   const shouldShowDistrict = ["District", "Tehsil", "Block"].includes(accessLevel);
   const shouldShowArea = ["Tehsil", "Block"].includes(accessLevel);
 
-  // Determine loading state for areas
-  const isLoadingAreas =
-    (accessLevel === "Tehsil" && loadingTehsils) ||
-    (accessLevel === "Block" && loadingBlocks);
-
   return (
     <Container maxWidth="lg" sx={{ py: 8 }}>
       <Typography variant="h4" fontWeight="bold" align="center" gutterBottom>
@@ -757,8 +719,8 @@ export default function AddOfficeDetails() {
                         <Select
                           {...field}
                           multiple
-                          value={Array.isArray(field.value) ? field.value : []}   // ensure array
-                          onChange={(e) => field.onChange(e.target.value)}        // e.target.value is already an array
+                          value={Array.isArray(field.value) ? field.value : []}
+                          onChange={(e) => field.onChange(e.target.value)}
                           renderValue={(selected) => {
                             if (selected.length === 0) return "Select Districts";
                             const names = selected.map(id => {
@@ -820,7 +782,7 @@ export default function AddOfficeDetails() {
                       fullWidth
                       variant="outlined"
                       error={!!errors.areaCode}
-                      disabled={isLoadingAreas}
+                      disabled={loadingAreas}
                     >
                       <InputLabel shrink>{accessLevel}</InputLabel>
                       <Select
@@ -831,29 +793,23 @@ export default function AddOfficeDetails() {
                         renderValue={(selected) => {
                           if (selected.length === 0) return `Select ${accessLevel}(s)`;
                           const names = selected.map(id => {
-                            const area = filteredAreas.find(a =>
-                              accessLevel === "Tehsil" ? a.tehsilId === id : a.blockId === id
-                            );
-                            return area
-                              ? (accessLevel === "Tehsil" ? area.tehsilName : area.blockName)
-                              : id;
+                            const area = filteredAreasUnused.find(a => a.id === id);  // was a.Id
+                            return area ? area.name : id;  // was area.Name
                           });
                           return names.join(", ");
                         }}
                       >
-                        {filteredAreasUnused.length === 0 ? (
+                        {loadingAreas ? (
+                          <MenuItem disabled>Loading {accessLevel}s...</MenuItem>
+                        ) : filteredAreasUnused.length === 0 ? (
                           <MenuItem disabled>All {accessLevel}s already added</MenuItem>
                         ) : (
-                          filteredAreasUnused.map((area) => {
-                            const id = accessLevel === "Tehsil" ? area.tehsilId : area.blockId;
-                            const name = accessLevel === "Tehsil" ? area.tehsilName : area.blockName;
-                            return (
-                              <MenuItem key={id} value={id}>
-                                <Checkbox checked={field.value?.includes(id)} />
-                                <ListItemText primary={name} />
-                              </MenuItem>
-                            );
-                          })
+                          filteredAreasUnused.map((area) => (
+                            <MenuItem key={area.id} value={area.id}>  {/* was area.Id */}
+                              <Checkbox checked={field.value?.includes(area.id)} />  {/* was area.Id */}
+                              <ListItemText primary={area.name} />  {/* was area.Name */}
+                            </MenuItem>
+                          ))
                         )}
                       </Select>
                     </FormControl>
@@ -1091,7 +1047,7 @@ export default function AddOfficeDetails() {
                         fullWidth
                         variant="outlined"
                         error={!!errors.areaCode}
-                        disabled={isLoadingAreas}
+                        disabled={loadingAreas}
                       >
                         <InputLabel shrink>{accessLevel}</InputLabel>
                         <Select
@@ -1102,24 +1058,14 @@ export default function AddOfficeDetails() {
                           }
                         >
                           <MenuItem value={0}>Select {accessLevel}</MenuItem>
-                          {isLoadingAreas ? (
+                          {loadingAreas ? (
                             <MenuItem disabled>Loading {accessLevel}s...</MenuItem>
                           ) : (
-                            filteredAreas.map((area) => {
-                              const id =
-                                accessLevel === "Tehsil"
-                                  ? area.tehsilId
-                                  : area.blockId;
-                              const name =
-                                accessLevel === "Tehsil"
-                                  ? area.tehsilName
-                                  : area.blockName;
-                              return (
-                                <MenuItem key={id} value={id}>
-                                  {name}
-                                </MenuItem>
-                              );
-                            })
+                            filteredAreasByType.map((area) => (
+                              <MenuItem key={area.id} value={area.id}>  {/* was area.Id */}
+                                {area.name}  {/* was area.Name */}
+                              </MenuItem>
+                            ))
                           )}
                         </Select>
                       </FormControl>

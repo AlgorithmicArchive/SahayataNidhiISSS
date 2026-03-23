@@ -630,7 +630,7 @@ namespace SahayataNidhi.Controllers
             }
         }
 
-        [HttpGet("GetTables")]
+        [HttpGet]
         public IActionResult GetTables()
         {
             // Using Entity Framework Core with Npgsql
@@ -641,7 +641,56 @@ namespace SahayataNidhi.Controllers
             return Ok(tables);
         }
 
-        
+        [HttpGet]
+        public IActionResult GetTableColumns(string tableName, bool includeJsonStructure = false)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(tableName))
+                {
+                    return BadRequest(new { status = false, message = "Table name is required" });
+                }
+
+                // Get the entity type for the specified table
+                var entityType = dbcontext.Model.GetEntityTypes()
+                    .FirstOrDefault(t => t.GetTableName() == tableName);
+
+                if (entityType == null)
+                {
+                    return NotFound(new { status = false, message = $"Table '{tableName}' not found" });
+                }
+
+                // Get column information
+                var columns = entityType.GetProperties()
+                    .Select(p =>
+                    {
+                        var columnType = p.GetColumnType();
+                        var isJson = columnType.Contains("json", StringComparison.OrdinalIgnoreCase);
+
+                        var columnInfo = new
+                        {
+                            name = p.Name,
+                            type = columnType,
+                            nullable = p.IsNullable,
+                            isPrimaryKey = p.IsPrimaryKey(),
+                            maxLength = p.GetMaxLength(),
+                            isJson = isJson
+                        };
+
+                        return columnInfo;
+                    })
+                    .OrderBy(c => c.name)
+                    .ToList();
+
+                var result = new { status = true, columns };
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
 
     }
 }

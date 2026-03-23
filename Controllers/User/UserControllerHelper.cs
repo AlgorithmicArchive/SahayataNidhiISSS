@@ -484,10 +484,12 @@ namespace SahayataNidhi.Controllers.User
 
             string serviceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == details.Serviceid)?.Servicename!;
             // 2) Load and parse the Letters JSON from the related service
+            _logger.LogInformation($"Fetching Letters JSON for Service ID: {details.Serviceid}");
             var lettersJson = (dbcontext.Services
                 .FirstOrDefault(s => s.Serviceid == Convert.ToInt32(details.Serviceid))?.Letters) ?? throw new InvalidOperationException("No letters JSON configured for this service.");
             var parsedLetters = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(lettersJson!)
                 ?? throw new InvalidOperationException("Letters JSON parsing failed.");
+
 
             // 3) Get the Acknowledgement section
             if (!parsedLetters.TryGetValue("Acknowledgement", out var ackSection))

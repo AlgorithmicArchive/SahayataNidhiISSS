@@ -27,7 +27,7 @@ namespace SahayataNidhi.Controllers.Admin
 
                 // Call PostgreSQL function using FromSqlRaw
                 var response = dbcontext.Database
-                    .SqlQueryRaw<SummaryReports>(
+                    .SqlQueryRaw<TehsilWiseReportDto>(
                         "SELECT * FROM get_applications_for_report({0}, {1}, {2}, {3})",
                         AccessCode, ServiceId, "District", "new")
                     .ToList();
@@ -39,7 +39,7 @@ namespace SahayataNidhi.Controllers.Admin
                     _logger.LogWarning($"No data returned for AccessCode: {AccessCode}, ServiceId: {ServiceId}");
                 }
 
-                var sortedResponse = response.OrderBy(a => a.TehsilName).ToList();
+                var sortedResponse = response.OrderBy(a => a.Tehsilname).ToList();
                 var totalRecords = sortedResponse.Count;
                 var pagedResponse = sortedResponse
                     .Skip(pageIndex * pageSize)
@@ -56,10 +56,10 @@ namespace SahayataNidhi.Controllers.Admin
 
                 List<dynamic> data = pagedResponse.Select(item => new
                 {
-                    tehsilName = item.TehsilName,
-                    totalApplicationsSubmitted = item.TotalApplicationsSubmitted,
-                    totalApplicationsRejected = item.TotalApplicationsRejected,
-                    totalApplicationsSanctioned = item.TotalApplicationsSanctioned
+                    tehsilName = item.Tehsilname,
+                    totalApplicationsSubmitted = item.Totalapplicationssubmitted,
+                    totalApplicationsRejected = item.Totalapplicationsrejected,
+                    totalApplicationsSanctioned = item.Totalapplicationssanctioned
                 }).Cast<dynamic>().ToList();
 
                 return Json(new
@@ -871,51 +871,28 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                var query = dbcontext.District
-                    .AsQueryable();
+                var query = dbcontext.District.AsQueryable();
 
                 if (divisionId.HasValue && divisionId.Value > 0)
                     query = query.Where(d => d.Division == divisionId.Value);
 
-                // If officeType is 1 (DSWO), filter out districts already used in OfficeDetails
+                // If officeType is 1 (DSWO), exclude districts already used in OfficeDetails
                 if (officeType.HasValue && officeType.Value == 1)
                 {
-                    var districts = await query
-                        .GroupJoin(
-                            dbcontext.Officesdetails.Where(o => o.Officetype == officeType.Value),
-                            district => district.Districtid,
-                            office => office.Areacode,
-                            (district, offices) => new { district, offices }
-                        )
-                        .SelectMany(
-                            x => x.offices.DefaultIfEmpty(),
-                            (x, office) => new { x.district, office }
-                        )
-                        .Where(x => x.office == null) // keep only districts with no office for DSWO
-                        .Select(x => new
-                        {
-                            districtId = x.district.Districtid,
-                            districtName = x.district.Districtname
-                        })
-                        .OrderBy(d => d.districtName)
-                        .ToListAsync();
-
-                    return Json(districts);
+                    query = query.Where(d => !dbcontext.Officesdetails.Any(o =>
+                        o.Areacode == d.Districtid && o.Officetype == officeType.Value));
                 }
-                else
-                {
-                    // For other office types, just return all districts
-                    var districts = await query
-                        .Select(x => new
-                        {
-                            districtId = x.Districtid,
-                            districtName = x.Districtname
-                        })
-                        .OrderBy(d => d.districtName)
-                        .ToListAsync();
 
-                    return Json(districts);
-                }
+                var districts = await query
+                    .Select(x => new
+                    {
+                        districtId = x.Districtid,
+                        districtName = x.Districtname
+                    })
+                    .OrderBy(d => d.districtName)
+                    .ToListAsync();
+
+                return Json(districts);
             }
             catch (Exception ex)
             {
@@ -929,70 +906,66 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                var query = dbcontext.Tehsil
-                    .AsQueryable();
-
-                if (districtId.HasValue && districtId.Value > 0)
-                    query = query.Where(t => t.Districtid == districtId.Value);
-
-                // Left join with OfficeDetails to exclude tehsils already used
-                var tehsils = await query
-                    .GroupJoin(
-                        dbcontext.Officesdetails,
-                        tehsil => tehsil.Tehsilid,
-                        office => office.Areacode,
-                        (tehsil, offices) => new { tehsil, offices }
-                    )
-                    .SelectMany(
-                        x => x.offices.DefaultIfEmpty(),
-                        (x, office) => new { x.tehsil, office }
-                    )
-                    .Where(x => x.office == null) // keep only tehsils with no office
-                    .Select(x => new
+                // Build and execute tehsil query
+                var tehsils = await dbcontext.Tehsil
+                    .Where(t => !districtId.HasValue || t.Districtid == districtId.Value)
+                    .Where(t => !dbcontext.Officesdetails.Any(o => o.Areacode == t.Tehsilid))
+                    .Select(t => new
                     {
-                        tehsilId = x.tehsil.Tehsilid,
-                        tehsilName = x.tehsil.Tehsilname
+                        Id = t.Tehsilid,
+                        Name = $"{t.Tehsilname ?? ""} (Tehsil)",  // Add (Tehsil) after name
+                        Type = "Tehsil"
                     })
-                    .OrderBy(t => t.tehsilName)
                     .ToListAsync();
 
-                return Json(tehsils);
+                // Build and execute block query
+                var blocks = await dbcontext.Blocks
+                    .Where(b => !districtId.HasValue || b.Districtid == districtId.Value)
+                    .Where(b => !dbcontext.Officesdetails.Any(o => o.Areacode == b.Blockid && o.Areaname == b.Blockname))
+                    .Select(b => new
+                    {
+                        Id = b.Blockid,
+                        Name = $"{b.Blockname ?? ""} (Block)",  // Add (Block) after name
+                        Type = "Block"
+                    })
+                    .ToListAsync();
+
+                // Create a new list and add items from both collections
+                var areas = new List<object>();
+                areas.AddRange(tehsils);
+                areas.AddRange(blocks);
+
+                // Order by Name
+                areas = areas.OrderBy(a =>
+                    ((dynamic)a).Name ?? ""  // Using dynamic to access the Name property
+                ).ToList();
+
+                return Json(areas);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching tehsils");
-                return StatusCode(500, new { error = "Error fetching tehsils", details = ex.Message });
+                _logger.LogError(ex, "Error fetching areas");
+                return StatusCode(500, new { error = "Error fetching areas", details = ex.Message });
             }
         }
-
         [HttpGet]
         public async Task<IActionResult> GetBlocks(int? districtId = null)
         {
             try
             {
-                var query = dbcontext.Blocks
-                    .AsQueryable();
+                var query = dbcontext.Blocks.AsQueryable();
 
                 if (districtId.HasValue && districtId.Value > 0)
                     query = query.Where(b => b.Districtid == districtId.Value);
 
-                // Left join with OfficeDetails to exclude blocks already used
+                // Exclude blocks already used in any OfficeDetails record
+                query = query.Where(b => !dbcontext.Officesdetails.Any(o => o.Areacode == b.Blockid));
+
                 var blocks = await query
-                    .GroupJoin(
-                        dbcontext.Officesdetails,
-                        block => block.Blockid,
-                        office => office.Areacode,
-                        (block, offices) => new { block, offices }
-                    )
-                    .SelectMany(
-                        x => x.offices.DefaultIfEmpty(),
-                        (x, office) => new { x.block, office }
-                    )
-                    .Where(x => x.office == null) // keep only blocks with no office
                     .Select(x => new
                     {
-                        blockId = x.block.Blockid,
-                        blockName = x.block.Blockname
+                        blockId = x.Blockid,
+                        blockName = x.Blockname
                     })
                     .OrderBy(b => b.blockName)
                     .ToListAsync();
@@ -1005,5 +978,7 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { error = "Error fetching blocks", details = ex.Message });
             }
         }
+
+
     }
 }

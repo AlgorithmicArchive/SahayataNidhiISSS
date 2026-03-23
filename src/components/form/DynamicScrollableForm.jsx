@@ -2219,14 +2219,14 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           <Controller
             name={field.name}
             control={control}
-            defaultValue={field.options[0]?.value || "Please Select"}
+            defaultValue="Please Select" // Always default to "Please Select"
             rules={{
               validate: async (value) =>
                 await runValidations(field, value, getValues()),
             }}
             render={({ field: { onChange, value, ref } }) => {
               let options = [];
-              if (field.dependentOn && field.dependentOn != "") {
+              if (field.dependentOn && field.dependentOn !== "") {
                 const parentValue = watch(field.dependentOn);
                 options =
                   field.dependentOptions && field.dependentOptions[parentValue]
@@ -2235,6 +2235,14 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               } else {
                 options = field.options || [];
               }
+
+              // --- Add "Please Select" at the beginning if not already present ---
+              const pleaseSelect = { value: "Please Select", label: "Please Select" };
+              if (!options.some(opt => opt.value === pleaseSelect.value)) {
+                options = [pleaseSelect, ...options];
+              }
+              // -------------------------------------------------------------------
+
               if (
                 value &&
                 !options.some(
@@ -2395,44 +2403,73 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 )}
               />
             ) : (
-              <Controller
-                name={selectFieldName}
-                control={control}
-                defaultValue={initialData?.[field.name]?.selected || ""}
-                rules={{
-                  validate: async (value) =>
-                    field.required && !value ? "Please select an option" : true,
-                }}
-                render={({ field: { onChange, value } }) => (
-                  <TextField
-                    select
-                    label={getLabelWithAsteriskJSX(field)}
-                    value={value || ""}
-                    onChange={(e) => {
-                      onChange(e.target.value);
-                      setValue(fileFieldName, null, { shouldValidate: true });
-                      trigger(selectFieldName);
+              (() => {
+                // Prepare options with "Please Select" at the beginning
+                let options = field.options || [];
+                const placeholderOption = { value: "placeholder", label: "Please Select" };
+
+                // Check if placeholder already exists (by label or by special value)
+                const hasPlaceholder = options.some(
+                  opt => opt.label === "Please Select" || opt.value === "placeholder" || opt.value === ""
+                );
+
+                if (!hasPlaceholder) {
+                  options = [placeholderOption, ...options];
+                }
+
+                return (
+                  <Controller
+                    name={selectFieldName}
+                    control={control}
+                    defaultValue={initialData?.[field.name]?.selected || "placeholder"}
+                    rules={{
+                      validate: async (value) => {
+                        if (field.required && (!value || value === "placeholder")) {
+                          return "Please select an option";
+                        }
+                        return true;
+                      },
                     }}
-                    onBlur={() => trigger(selectFieldName)}
-                    disabled={isDisabled}
-                    error={Boolean(errors[selectFieldName])}
-                    helperText={errors[selectFieldName]?.message || ""}
-                    fullWidth
-                    margin="normal"
-                    SelectProps={{ native: true }}
-                    sx={{ mb: 2, ...commonStyles }}
-                  >
-                    {field.options.map((option) => (
-                      <option
-                        key={option.id || option.value}
-                        value={option.value}
+                    render={({ field: { onChange, value } }) => (
+                      <TextField
+                        select
+                        label={getLabelWithAsteriskJSX(field)}
+                        value={value || "placeholder"}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          // Only trigger actual change if it's not the placeholder
+                          if (newValue !== "placeholder") {
+                            onChange(newValue);
+                            setValue(fileFieldName, null, { shouldValidate: true });
+                          } else {
+                            // If placeholder is selected, set empty value
+                            onChange("");
+                            setValue(fileFieldName, null, { shouldValidate: true });
+                          }
+                          trigger(selectFieldName);
+                        }}
+                        onBlur={() => trigger(selectFieldName)}
+                        disabled={isDisabled}
+                        error={Boolean(errors[selectFieldName])}
+                        helperText={errors[selectFieldName]?.message || ""}
+                        fullWidth
+                        margin="normal"
+                        SelectProps={{ native: true }}
+                        sx={{ mb: 2, ...commonStyles }}
                       >
-                        {option.label}
-                      </option>
-                    ))}
-                  </TextField>
-                )}
-              />
+                        {options.map((option) => (
+                          <option
+                            key={option.id || option.value}
+                            value={option.value === "placeholder" ? "placeholder" : option.value}
+                          >
+                            {option.label}
+                          </option>
+                        ))}
+                      </TextField>
+                    )}
+                  />
+                );
+              })()
             )}
 
             <Controller
@@ -2442,7 +2479,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               rules={{
                 validate: async (value) => {
                   const selectValue = getValues(selectFieldName);
-                  if (field.required && !value && selectValue) {
+                  // Check if a valid option is selected (not placeholder)
+                  if (field.required && !value && selectValue && selectValue !== "placeholder") {
                     return "Please upload a file";
                   }
                   if (value instanceof File) {
@@ -2514,7 +2552,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       borderRadius: "12px",
                       ...buttonStyles,
                     }}
-                    disabled={isDisabled || !getValues(selectFieldName)}
+                    disabled={isDisabled || !getValues(selectFieldName) || getValues(selectFieldName) === "placeholder"}
                     onBlur={() => trigger(fileFieldName)}
                   >
                     Upload File
@@ -2541,7 +2579,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
             />
           </Box>
         );
-
       default:
         return null;
     }
@@ -2595,8 +2632,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               {formSections.map((section, index) => {
                 const isFullRow =
                   section.section === "Applicant Details" ||
-                  section.section === "Declearation" ||
-                  selectedServiceId != 1;
+                  section.section === "Declearation"
 
                 return (
                   <Grid

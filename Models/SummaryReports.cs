@@ -1,9 +1,9 @@
-public class SummaryReports
+public class TehsilWiseReportDto
 {
-    public string? TehsilName { get; set; }
-    public int TotalApplicationsSubmitted { get; set; }
-    public int TotalApplicationsPending { get; set; }
-    public int TotalApplicationsReturnToEdit { get; set; }
-    public int TotalApplicationsRejected { get; set; }
-    public int TotalApplicationsSanctioned { get; set; }
+    public string? Tehsilname { get; set; }
+    public long Totalapplicationssubmitted { get; set; }
+    public long Totalapplicationspending { get; set; }
+    public long Totalapplicationsreturntoedit { get; set; }
+    public long Totalapplicationsrejected { get; set; }
+    public long Totalapplicationssanctioned { get; set; }
 }
