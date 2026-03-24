@@ -948,6 +948,8 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { error = "Error fetching areas", details = ex.Message });
             }
         }
+     
+     
         [HttpGet]
         public async Task<IActionResult> GetBlocks(int? districtId = null)
         {

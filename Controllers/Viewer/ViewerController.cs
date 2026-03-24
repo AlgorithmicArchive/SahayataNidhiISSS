@@ -89,7 +89,7 @@ namespace SahayataNidhi.Controllers.Officer
 
             var counts = dbcontext.Database
                 .SqlQueryRaw<MainStatusCounts>(
-                    "SELECT * FROM get_latest_main_application_status_counts(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)",
+                    "SELECT * FROM get_main_application_status_counts(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)",
                     parameters.ToArray()
                 )
                 .AsEnumerable()

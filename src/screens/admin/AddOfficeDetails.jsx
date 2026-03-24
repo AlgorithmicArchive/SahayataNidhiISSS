@@ -71,12 +71,12 @@ export default function AddOfficeDetails() {
   const [offices, setOffices] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [districts, setDistricts] = useState([]);
-  const [areas, setAreas] = useState([]); // Combined areas (tehsils and blocks)
+  const [areas, setAreas] = useState([]); // Combined areas (tehsils and blocks) with prefixed IDs
   const [existingOfficeDetails, setExistingOfficeDetails] = useState([]); // for duplicate prevention
 
   // Loading states for dynamic fetches
   const [loadingDistricts, setLoadingDistricts] = useState(false);
-  const [loadingAreas, setLoadingAreas] = useState(false); // Combined loading state
+  const [loadingAreas, setLoadingAreas] = useState(false);
 
   // Set of used combinations (officeType + areaCode) to hide duplicates
   const [usedCombinations, setUsedCombinations] = useState(new Set());
@@ -149,7 +149,7 @@ export default function AddOfficeDetails() {
           `/Admin/GetDistricts`, {
           params: {
             divisionId: divisionCode,
-            officeType: officeType || null // Pass the selected office type
+            officeType: officeType || null
           }
         }
         );
@@ -167,7 +167,6 @@ export default function AddOfficeDetails() {
   // Fetch areas (tehsils and blocks) when district changes and access level requires it
   useEffect(() => {
     const fetchAreas = async () => {
-      // Only fetch if district is selected and access level is Tehsil or Block
       if (!districtCode || districtCode === 0 || !accessLevel || !["Tehsil", "Block"].includes(accessLevel)) {
         setAreas([]);
         return;
@@ -176,10 +175,9 @@ export default function AddOfficeDetails() {
       setLoadingAreas(true);
       try {
         const response = await axiosInstance.get(
-          `/Admin/GetTehsils?districtId=${districtCode}` // Your combined endpoint
+          `/Admin/GetTehsils?districtId=${districtCode}`
         );
-
-        // Response now contains items with Id, Name, and Type fields
+        // Response now contains items with Id (prefixed), OriginalId, Name, and Type
         setAreas(response.data || []);
       } catch (error) {
         setErrorMessage(`Error loading areas: ${error.message}`);
@@ -265,7 +263,7 @@ export default function AddOfficeDetails() {
       geoName = district ? district.districtName : "";
     } else if ((accessLevel === "Tehsil" || accessLevel === "Block") && areaCode && areaCode.length > 0) {
       geoName = areaCode.length === 1 ?
-        (areas.find(a => a.id === areaCode[0])?.name || "") : "Multiple";  // was a.Id, a.Name
+        (areas.find(a => a.id === areaCode[0])?.name || "") : "Multiple";
     }
 
     const finalName = geoName
@@ -294,15 +292,13 @@ export default function AddOfficeDetails() {
     if (accessLevel === "Division" && divisionCode && divisionCode !== 0) {
       const division = divisions.find((d) => d.divisionId === divisionCode);
       if (division) {
-        setValue("areaCode", [division.divisionId]);
+        setValue("areaCode", [division.divisionId.toString()]);
         setValue("areaName", division.divisionName);
       } else {
         setValue("areaCode", []);
         setValue("areaName", "");
       }
     } else if (accessLevel === "District" && districtCode && districtCode !== 0) {
-      // For district level, we do NOT set areaCode to district ID – keep as empty array
-      // because we want to use the selected district(s) directly for multi-select.
       setValue("areaCode", []);
       setValue("areaName", "");
     } else if ((accessLevel === "Tehsil" || accessLevel === "Block") && areaCode && areaCode.length > 0) {
@@ -323,11 +319,11 @@ export default function AddOfficeDetails() {
   // Determine if the selected office type is DSWO (for multi-select at district level)
   const isDSWO = useMemo(() => {
     const office = offices.find(o => o.officeid === officeType);
-    return office?.officetype === "DSWO"; // adjust exact string as needed
+    return office?.officetype === "DSWO";
   }, [officeType, offices]);
 
   // Filtered lists
-  const filteredDistricts = districts; // already filtered by division
+  const filteredDistricts = districts;
 
   // Filter out already used districts (for duplicate prevention)
   const filteredDistrictsUnused = useMemo(() => {
@@ -341,14 +337,16 @@ export default function AddOfficeDetails() {
   // Filter areas by the current access level (Tehsil or Block)
   const filteredAreasByType = useMemo(() => {
     if (!areas || !accessLevel) return [];
-    return areas.filter(area => area.type === accessLevel || officeType === 2 && area.type === "Block");  // was area.Type
+    return areas.filter(area => area.type === accessLevel);
   }, [areas, accessLevel]);
 
   // Filter out already used areas (duplicate prevention) for Tehsil/Block
   const filteredAreasUnused = useMemo(() => {
     if (!officeType || !filteredAreasByType.length) return filteredAreasByType;
     return filteredAreasByType.filter(area => {
-      const key = `${officeType}_${area.id}`;  // was area.Id
+      // Extract original ID from prefixed ID for duplicate check
+      const originalId = area.originalId;
+      const key = `${officeType}_${originalId}`;
       return !usedCombinations.has(key);
     });
   }, [filteredAreasByType, officeType, usedCombinations]);
@@ -364,13 +362,18 @@ export default function AddOfficeDetails() {
         setErrorMessage("Please select at least one district.");
         return;
       }
-      itemsToSubmit = data.districtCode; // array of district IDs
+      itemsToSubmit = data.districtCode; // array of district IDs (original numeric IDs)
     } else {
       if (!data.areaCode || data.areaCode.length === 0) {
         setErrorMessage("Please select at least one area.");
         return;
       }
-      itemsToSubmit = data.areaCode; // array of area IDs
+      // Extract original IDs from prefixed IDs
+      const originalAreaIds = data.areaCode.map(prefixedId => {
+        const area = areas.find(a => a.id === prefixedId);
+        return area ? area.originalId : prefixedId;
+      });
+      itemsToSubmit = originalAreaIds;
     }
 
     try {
@@ -394,8 +397,8 @@ export default function AddOfficeDetails() {
             // Tehsil/Block: use the parent district (single value)
             currentDistrictCode = data.districtCode;
             areaIdToSend = id;
-            const areaObj = filteredAreasByType.find(a => a.id === id);  // was a.Id
-            areaName = areaObj ? areaObj.name : "";  // was areaObj.Name
+            const areaObj = filteredAreasByType.find(a => a.originalId === id);
+            areaName = areaObj ? areaObj.name : "";
           }
 
           formData.append("DistrictCode", currentDistrictCode.toString());
@@ -464,21 +467,25 @@ export default function AddOfficeDetails() {
       formData.append("StateCode", "0");
       formData.append("Divisioncode", data.divisionCode.toString());
       formData.append("DistrictCode", data.districtCode.toString());
-      // areaCode is an array in the form, but for update we assume single
-      const singleAreaCode = data.areaCode[0] || 0;
-      formData.append("AreaCode", singleAreaCode.toString());
 
-      // areaName must be provided; find it
+      // areaCode is an array in the form, but for update we assume single
+      let singleAreaCode = 0;
       let areaName = data.areaName;
+
       if (accessLevel === "District") {
-        // For district level, areaName should be district name
+        // For district level, areaCode should be district ID
+        singleAreaCode = data.districtCode;
         const districtObj = districts.find(d => d.districtId === data.districtCode);
         areaName = districtObj ? districtObj.districtName : "";
-      } else {
-        const areaObj = filteredAreasByType.find(a => a.Id === singleAreaCode);
-        areaName = areaObj ? areaObj.Name : data.areaName;
+      } else if (accessLevel === "Tehsil" || accessLevel === "Block") {
+        // Get the selected area and extract original ID
+        const selectedPrefixedId = data.areaCode[0];
+        const selectedArea = filteredAreasByType.find(a => a.id === selectedPrefixedId);
+        singleAreaCode = selectedArea ? selectedArea.originalId : 0;
+        areaName = selectedArea ? selectedArea.name : "";
       }
 
+      formData.append("AreaCode", singleAreaCode.toString());
       formData.append("AreaName", areaName);
       formData.append("OfficeName", data.officeName);
       formData.append("OfficeType", data.officeType.toString());
@@ -562,7 +569,14 @@ export default function AddOfficeDetails() {
       // Then set the rest – cascading fetches will happen
       setValue("divisionCode", userdata.divisionCode);
       setValue("districtCode", userdata.districtCode);
-      setValue("areaCode", [userdata.areaCode]); // as array
+
+      // For areaCode, we need to find the prefixed ID from the area name
+      const area = areas.find(a => a.originalId === userdata.areaCode);
+      if (area) {
+        setValue("areaCode", [area.id]);
+      } else {
+        setValue("areaCode", [userdata.areaCode]);
+      }
       setValue("areaName", userdata.areaName);
       setValue("officeName", userdata.officeName);
 
@@ -792,9 +806,9 @@ export default function AddOfficeDetails() {
                         onChange={(e) => field.onChange(e.target.value)}
                         renderValue={(selected) => {
                           if (selected.length === 0) return `Select ${accessLevel}(s)`;
-                          const names = selected.map(id => {
-                            const area = filteredAreasUnused.find(a => a.id === id);  // was a.Id
-                            return area ? area.name : id;  // was area.Name
+                          const names = selected.map(prefixedId => {
+                            const area = filteredAreasUnused.find(a => a.id === prefixedId);
+                            return area ? area.name : prefixedId;
                           });
                           return names.join(", ");
                         }}
@@ -805,9 +819,9 @@ export default function AddOfficeDetails() {
                           <MenuItem disabled>All {accessLevel}s already added</MenuItem>
                         ) : (
                           filteredAreasUnused.map((area) => (
-                            <MenuItem key={area.id} value={area.id}>  {/* was area.Id */}
-                              <Checkbox checked={field.value?.includes(area.id)} />  {/* was area.Id */}
-                              <ListItemText primary={area.name} />  {/* was area.Name */}
+                            <MenuItem key={area.id} value={area.id}>
+                              <Checkbox checked={field.value?.includes(area.id)} />
+                              <ListItemText primary={area.name} />
                             </MenuItem>
                           ))
                         )}
@@ -1054,7 +1068,7 @@ export default function AddOfficeDetails() {
                           {...field}
                           value={field.value?.[0] || 0}
                           onChange={(e) =>
-                            field.onChange([Number(e.target.value)])
+                            field.onChange([e.target.value])
                           }
                         >
                           <MenuItem value={0}>Select {accessLevel}</MenuItem>
@@ -1062,8 +1076,8 @@ export default function AddOfficeDetails() {
                             <MenuItem disabled>Loading {accessLevel}s...</MenuItem>
                           ) : (
                             filteredAreasByType.map((area) => (
-                              <MenuItem key={area.id} value={area.id}>  {/* was area.Id */}
-                                {area.name}  {/* was area.Name */}
+                              <MenuItem key={area.id} value={area.id}>
+                                {area.name}
                               </MenuItem>
                             ))
                           )}
