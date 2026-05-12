@@ -7,8 +7,7 @@ using System.Reflection;
 public interface ICronScheduler
 {
     Task ScheduleTaskAsync(string cronExpression, string actionType, Func<CancellationToken, Task> action);
-    Task<List<Scheduledjobs>> GetAllJobsAsync();
-    Task UnscheduleTaskAsync(string taskId);
+    Task UpdateCronAsync(string actionType, string newCronExpression);
 }
 
 public class CronScheduler : BackgroundService, ICronScheduler
@@ -240,6 +239,53 @@ public class CronScheduler : BackgroundService, ICronScheduler
             {
                 _logger.LogError(ex, "Invalid cron in DB for job {JobId}. Skipping.", job.Id);
             }
+        }
+    }
+
+    public async Task UpdateCronAsync(string actionType, string newCronExpression)
+    {
+        if (string.IsNullOrWhiteSpace(actionType))
+            throw new ArgumentNullException(nameof(actionType));
+        if (string.IsNullOrWhiteSpace(newCronExpression))
+            throw new ArgumentNullException(nameof(newCronExpression));
+
+        // Validate cron expression
+        CrontabSchedule newSchedule;
+        try
+        {
+            newSchedule = CrontabSchedule.Parse(newCronExpression, new CrontabSchedule.ParseOptions { IncludingSeconds = false });
+        }
+        catch (CrontabException ex)
+        {
+            _logger.LogError(ex, "Invalid cron expression: {CronExpression}", newCronExpression);
+            throw;
+        }
+
+        // Find the task entry by actionType
+        var entry = _scheduledTasks.FirstOrDefault(kvp => kvp.Value.ActionType == actionType);
+        if (entry.Key == null)
+        {
+            _logger.LogWarning("No scheduled task found with ActionType '{ActionType}' to update.", actionType);
+            return;
+        }
+
+        // Update in-memory schedule
+        var (_, _, action) = entry.Value;
+        _scheduledTasks[entry.Key] = (newSchedule, actionType, action);
+
+        // Update database record
+        using var scope = _serviceProvider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
+        var job = await db.Scheduledjobs.FindAsync(Guid.Parse(entry.Key));
+        if (job != null)
+        {
+            job.Cronexpression = newCronExpression;
+            await db.SaveChangesAsync();
+            _logger.LogInformation("Updated cron for task '{ActionType}' to '{CronExpression}'", actionType, newCronExpression);
+        }
+        else
+        {
+            _logger.LogWarning("Database record for task '{ActionType}' not found.", actionType);
         }
     }
 

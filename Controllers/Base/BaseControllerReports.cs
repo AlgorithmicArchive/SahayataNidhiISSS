@@ -12,6 +12,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using NpgsqlTypes;
 
 namespace SahayataNidhi.Controllers
 {
@@ -509,8 +510,294 @@ namespace SahayataNidhi.Controllers
             return JsonConvert.SerializeObject(result);
         }
 
+        public class AgeWiseReportDto
+        {
+            public string? Age_range { get; set; }
+            public long Countofapplicants { get; set; }
+        }
+
+        public class AgeRangeDto
+        {
+            public int Min { get; set; }
+            public int Max { get; set; }
+            public string? Label { get; set; }
+        }
+
+        public class PensionTypeWiseReportDto
+        {
+            public string? Age_range { get; set; }
+            public string? Pensiontype { get; set; }
+            public long Countofapplicants { get; set; }
+        }
+
+        public class GenderWiseReportDto
+        {
+            public string? Gender { get; set; }
+            public long Countofapplicants { get; set; }
+        }
+        // DetailedApplicationsReportDto.cs
+        public class DetailedApplicationsReportDto
+        {
+            // Existing fields
+            public string? Districtname { get; set; }
+            public string? Tswofficename { get; set; }
+            public string? Application_status { get; set; }
+            public string? Application_pending_with { get; set; }
+            public string? Referencenumber { get; set; }
+            public string? Applicant_name { get; set; }
+            public string? Parentage { get; set; }
+            public string? Account_number { get; set; }
+            public string? Ifsc_code { get; set; }
+            public string? Bank_name { get; set; }
+            public string? Branch_name { get; set; }
+
+            // === NEW FIELDS ADDED ===
+
+            // Present Address Fields
+            public string? Present_address { get; set; }
+            public string? Present_district { get; set; }
+            public string? Present_tehsil { get; set; }
+
+            // Permanent Address Fields
+            public string? Permanent_address { get; set; }
+            public string? Permanent_district { get; set; }
+            public string? Permanent_tehsil { get; set; }
+
+            // Pension & Disability Fields
+            public string? Pension_type { get; set; }
+            public string? Type_of_disability { get; set; }
+            public string? Kind_of_disability { get; set; }
+            public string? Percentage_of_disability { get; set; }
+            public string? Disability_others { get; set; }
+            public string? Temporary_disability_valid_upto { get; set; }
+            public string? Civil_condition { get; set; }
+            public string? Udid_card_number { get; set; }
+
+            // Total count (kept at the end)
+            public long Totalcount { get; set; }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetApplicationsForReport(int accessCode, int serviceId, string accessLevel, string? dataType = null, string reportType = "TehsilWise", string? statusType = null, string? ageRanges = null, int pageIndex = 0, int pageSize = 10, bool isPaginated = true)  // Add this parameter
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                _logger.LogInformation($"GetApplicationsForReport - AccessCode: {accessCode}, ServiceId: {serviceId}, AccessLevel: {accessLevel}, DataType: {dataType}, ReportType: {reportType}, StatusType: {statusType}, PageIndex: {pageIndex}, PageSize: {pageSize}, IsPaginated: {isPaginated}");
+
+                List<dynamic> data;
+                List<dynamic> columns;
+                int totalRecords = 0;
+
+                switch (reportType)
+                {
+                    case "TehsilWise":
+                        var tehsilParameters = new[]
+                        {
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
+                        };
+
+                        var tehsilResults = dbcontext.Database
+                            .SqlQueryRaw<TehsilWiseReportDto>(
+                                "SELECT * FROM get_applications_for_report(@p_access_code, @p_service_id, @p_access_level, @p_data_type)",
+                                tehsilParameters)
+                            .ToList();
+
+                        data = tehsilResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                        {
+                            new { accessorKey = "tehsilname", header = "Tehsil Name" },
+                            new { accessorKey = "totalapplicationssubmitted", header = "Total Applications Submitted" },
+                            new { accessorKey = "totalapplicationspending", header = "Total Applications Pending" },
+                            new { accessorKey = "totalapplicationsreturntoedit", header = "Total Applications Return to Edit" },
+                            new { accessorKey = "totalapplicationsrejected", header = "Total Applications Rejected" },
+                            new { accessorKey = "totalapplicationssanctioned", header = "Total Applications Sanctioned" }
+                        };
+                        break;
+
+                    case "AgeWise":
+                        string ageRangesJson = ageRanges!;
+
+                        if (string.IsNullOrEmpty(ageRangesJson))
+                        {
+                            ageRangesJson = @"[
+                                {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
+                                {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
+                                {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
+                            ]";
+                        }
+
+                        var ageParameters = new[]
+                        {
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                            new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
+                        };
+
+                        var ageResults = dbcontext.Database
+                            .SqlQueryRaw<AgeWiseReportDto>(
+                                "SELECT * FROM get_age_counts_with_dynamic_ranges(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type, @p_age_ranges)",
+                                ageParameters)
+                            .ToList();
+
+                        data = ageResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                        {
+                            new { accessorKey = "age_range", header = "Age Range" },
+                            new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                        };
+                        break;
+
+                    case "PensionTypeWise":
+                        ageRangesJson = ageRanges!;
+
+                        if (string.IsNullOrEmpty(ageRangesJson))
+                        {
+                            ageRangesJson = @"[
+                                {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
+                                {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
+                                {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
+                            ]";
+                        }
+
+                        var pensionParameters = new[]
+                        {
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                            new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
+                        };
+
+                        var pensionResults = dbcontext.Database
+                            .SqlQueryRaw<PensionTypeWiseReportDto>(
+                                "SELECT * FROM get_age_and_pension_counts(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type, @p_age_ranges)",
+                                pensionParameters)
+                            .ToList();
+
+                        data = pensionResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                        {
+                            new { accessorKey = "age_range", header = "Age Range" },
+                            new { accessorKey = "pensiontype", header = "Pension Type" },
+                            new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                        };
+                        break;
+
+                    case "GenderWise":
+                        var genderParameters = new[]
+                        {
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
+                        };
+
+                        var genderResults = dbcontext.Database
+                            .SqlQueryRaw<GenderWiseReportDto>(
+                                "SELECT * FROM get_gender_counts(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type)",
+                                genderParameters)
+                            .ToList();
+
+                        data = genderResults.Cast<dynamic>().ToList();
+                        totalRecords = data.Count;
+                        columns = new List<dynamic>
+                        {
+                            new { accessorKey = "gender", header = "Gender" },
+                            new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                        };
+                        break;
+
+                    case "DetailedApplications":
+                        var detailedParameters = new[]
+                        {
+                            new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
+                            new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
+                            new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = isPaginated },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value }
+                        };
+
+                        var detailedResults = dbcontext.Database
+                            .SqlQueryRaw<DetailedApplicationsReportDto>(
+                                "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
+                                detailedParameters)
+                            .ToList();
+
+                        // Get the total count from the first record
+                        totalRecords = (int)(detailedResults.FirstOrDefault()?.Totalcount ?? 0);
+                        data = detailedResults.Cast<dynamic>().ToList();
+
+                        columns = new List<dynamic>
+                        {
+                            new { accessorKey = "districtname", header = "District" },
+                            new { accessorKey = "tswofficename", header = "TSWO Office" },
+                            new { accessorKey = "application_status", header = "Application Status" },
+                            new { accessorKey = "application_pending_with", header = "Application Pending With" },
+                            new { accessorKey = "referencenumber", header = "Reference Number" },
+                            new { accessorKey = "applicant_name", header = "Applicant Name" },
+                            new { accessorKey = "parentage", header = "Parentage" },
+                            new { accessorKey = "account_number", header = "Account Number" },
+                            new { accessorKey = "ifsc_code", header = "IFSC Code" },
+                            new { accessorKey = "bank_name", header = "Bank Name" },
+                            new { accessorKey = "branch_name", header = "Branch Name" },
+                            new { accessorKey = "present_address", header = "Present Address" },
+                            new { accessorKey = "present_district", header = "Present District" },
+                            new { accessorKey = "present_tehsil", header = "Present Tehsil" },
+                            new { accessorKey = "permanent_address", header = "Permanent Address" },
+                            new { accessorKey = "permanent_district", header = "Permanent District" },
+                            new { accessorKey = "permanent_tehsil", header = "Permanent Tehsil" },
+                            new { accessorKey = "pension_type", header = "Pension Type" },
+                            new { accessorKey = "udid_card_number", header = "UDID Card Number" },
+                            new { accessorKey = "type_of_disability", header = "Type of Disability" },
+                            new { accessorKey = "kind_of_disability", header = "Kind of Disability" },
+                            new { accessorKey = "percentage_of_disability", header = "Percentage of Disability" },
+                            new { accessorKey = "disability_others", header = "Disability (If Others)" },
+                            new { accessorKey = "temporary_disability_valid_upto", header = "Temporary Disability Valid Upto" },
+                            new { accessorKey = "civil_condition", header = "Civil Condition" }
+                        };
+                        break;
+
+                    default:
+                        return BadRequest(new { status = false, message = "Invalid report type" });
+                }
+
+                return Ok(new
+                {
+                    status = true,
+                    data,
+                    columns,
+                    totalRecords,
+                    pageIndex,
+                    pageSize,
+                    totalPages = (int)Math.Ceiling(totalRecords / (double)pageSize)
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error executing report - AccessCode: {accessCode}, ServiceId: {serviceId}, ReportType: {reportType}");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
         [HttpPost]
-        public IActionResult ExportData([FromForm] IFormCollection form)
+        public async Task<IActionResult> ExportData([FromForm] IFormCollection form)
         {
             try
             {
@@ -520,36 +807,110 @@ namespace SahayataNidhi.Controllers
                 string? format = form["format"];
                 int pageIndex = Convert.ToInt32(form["pageIndex"]);
                 int pageSize = Convert.ToInt32(form["pageSize"]);
-                int Serviceid = Convert.ToInt32(form["Serviceid"]);
-                string? type = form["type"];
                 string? function = form["function"];
 
-                dynamic? result = null;
+                List<Dictionary<string, object>> dataList = new List<Dictionary<string, object>>();
+                List<Dictionary<string, string>> columnList = new List<Dictionary<string, string>>();
+
+                // Handle different function types
                 if (function == "GetApplications")
                 {
-                    result = JsonConvert.DeserializeObject<dynamic>(GetApplications(scope, columnOrder, columnVisibility, Serviceid, type, pageIndex, pageSize));
+                    int Serviceid = Convert.ToInt32(form["Serviceid"]);
+                    string? type = form["type"];
+                    var result = JsonConvert.DeserializeObject<dynamic>(
+                        GetApplications(scope, columnOrder, columnVisibility, Serviceid, type, pageIndex, pageSize)
+                    );
+
+                    if (result != null)
+                    {
+                        var data = result.Value.data;
+                        var columns = result.Value.columns;
+                        dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(data.ToString());
+                        columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columns.ToString());
+                    }
                 }
                 else if (function == "GetInitiatedApplications")
                 {
-                    result = JsonConvert.DeserializeObject<dynamic>(GetInitiatedApplications(scope, columnOrder, columnVisibility, pageIndex, pageSize));
-                }
+                    var result = JsonConvert.DeserializeObject<dynamic>(
+                        GetInitiatedApplications(scope, columnOrder, columnVisibility, pageIndex, pageSize)
+                    );
 
-                if (result == null)
+                    if (result != null)
+                    {
+                        var data = result.Value.data;
+                        var columns = result.Value.columns;
+                        dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(data.ToString());
+                        columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columns.ToString());
+                    }
+                }
+                else if (function == "GetApplicationsForReport")
                 {
-                    _logger.LogError("No data returned from GetApplications.");
-                    return Json(new { status = false, error = "No data available." });
+                    // Extract report parameters
+                    int accessCode = Convert.ToInt32(form["accessCode"]);
+                    int serviceId = Convert.ToInt32(form["serviceId"]);
+                    string accessLevel = form["accessLevel"].ToString();
+                    string? dataType = form["dataType"].ToString();
+                    string reportType = form["reportType"].ToString();
+                    string? statusType = form["statusType"].ToString();
+                    string? ageRanges = form["ageRanges"].ToString();
+                    bool isPaginated = scope == "InView";
+
+                    // For "All" scope, fetch all records
+                    int fetchPageIndex = pageIndex;
+                    int fetchPageSize = pageSize;
+
+                    if (scope == "All")
+                    {
+                        fetchPageIndex = 0;
+                        fetchPageSize = int.MaxValue;
+                        isPaginated = false;
+                    }
+
+                    // Call the GetApplicationsForReport endpoint directly
+                    var reportResult = await GetApplicationsForReport(
+                        accessCode, serviceId, accessLevel, dataType, reportType,
+                        statusType, ageRanges, fetchPageIndex, fetchPageSize, isPaginated);
+
+                    // Extract the data from the response
+                    var okResult = reportResult as OkObjectResult;
+                    if (okResult?.Value != null)
+                    {
+                        // The value should be an anonymous object with status, data, columns, etc.
+                        dynamic result = okResult.Value;
+
+                        if (result.status == true)
+                        {
+                            var data = result.data;
+                            var columns = result.columns;
+
+                            // Serialize the objects to JSON, then deserialize to the expected format
+                            string dataJson = JsonConvert.SerializeObject(data);
+                            string columnsJson = JsonConvert.SerializeObject(columns);
+
+                            dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(dataJson)!
+                            .Select(dict => new Dictionary<string, object>(dict, StringComparer.OrdinalIgnoreCase))
+                            .ToList();
+                            columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columnsJson)!;
+                        }
+                        else
+                        {
+                            return Json(new { status = false, error = "Failed to generate report data." });
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogError("No data returned from GetApplicationsForReport");
+                        return Json(new { status = false, error = "No data available." });
+                    }
                 }
 
-                var obj = result!["Value"];
-                var data = obj["data"];
-                var columns = obj["columns"]; // Note: Changed from "column" to match typical JSON structure
-
-                // Deserialize columns and columnOrder for processing
-                var columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columns.ToString());
-                var dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(data.ToString());
+                if (dataList == null || !dataList.Any())
+                {
+                    return Json(new { status = false, error = "No data to export." });
+                }
 
                 // Generate file based on format
-                string fileName = $"Report_{scope}_{DateTime.Now:yyyyMMdd_HHmmss}";
+                string fileName = $"{function}_{scope}_{DateTime.Now:yyyyMMdd_HHmmss}";
                 byte[] fileBytes;
                 string contentType;
 
@@ -583,7 +944,6 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, error = $"Error generating file: {ex.Message}" });
             }
         }
-
 
     }
 }

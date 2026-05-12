@@ -35,56 +35,106 @@ export function onlyDigits(field, value) {
   return true;
 }
 
-export function specificLength(field, value, formData = {}) {
+function resolveLengthConfig(lengthConfig, formData, fieldLabel = "value") {
+  // 1. Plain number
+  if (typeof lengthConfig === "number") {
+    return { value: lengthConfig };
+  }
 
-  // Helper to resolve a length value that may be dependent
-  const resolveLength = (lengthConfig, lengthType) => {
-    // If it's a plain number, return it directly
-    if (typeof lengthConfig === "number") return lengthConfig;
+  // 2. Not an object – shouldn't happen
+  if (typeof lengthConfig !== "object" || lengthConfig === null) {
+    return { error: `Invalid ${fieldLabel} configuration.` };
+  }
 
-    // If it's an object with dependentOn, use formData to get the dependent value
-    if (typeof lengthConfig === "object" && lengthConfig.dependentOn) {
-      const dependentFieldId = lengthConfig.dependentOn;
-      const dependentValue = formData[dependentFieldId];
-      if (
-        dependentValue === undefined ||
-        dependentValue === null ||
-        dependentValue === ""
-      ) {
-        return {
-          error: `Dependent field (${dependentFieldId}) value is missing for ${lengthType}.`,
-        };
-      }
-      const resolved = lengthConfig[dependentValue];
-      if (resolved === undefined) {
-        return {
-          error: `No ${lengthType} defined for option "${dependentValue}".`,
-        };
-      }
-      return resolved;
+  const { dependentOn } = lengthConfig;
+  if (!dependentOn) {
+    return { error: `Missing dependent field for ${fieldLabel}.` };
+  }
+
+  const primaryValue = formData[dependentOn];
+  if (
+    primaryValue === undefined ||
+    primaryValue === null ||
+    primaryValue === ""
+  ) {
+    return { error: `Dependent field (${dependentOn}) value is missing.` };
+  }
+
+  // 3. New two‑field style with primaryConfig
+  if (lengthConfig.primaryConfig) {
+    const primaryConfig = lengthConfig.primaryConfig[primaryValue];
+    if (!primaryConfig) {
+      return {
+        error: `No ${fieldLabel} defined for option "${primaryValue}".`,
+      };
     }
 
-    // Fallback (should not happen)
-    return lengthConfig;
+    // If secondary is not used, return the single value
+    if (!primaryConfig.useSecondary || !lengthConfig.secondaryDependentOn) {
+      if (
+        primaryConfig.singleValue === undefined ||
+        primaryConfig.singleValue === ""
+      ) {
+        return { error: `No ${fieldLabel} defined for "${primaryValue}".` };
+      }
+      return { value: primaryConfig.singleValue };
+    }
+
+    // Secondary is used – need secondary field value
+    const secondaryValue = formData[lengthConfig.secondaryDependentOn];
+    if (
+      secondaryValue === undefined ||
+      secondaryValue === null ||
+      secondaryValue === ""
+    ) {
+      return {
+        error: `Secondary dependent field (${lengthConfig.secondaryDependentOn}) value is missing.`,
+      };
+    }
+
+    const secondaryLength = primaryConfig.secondaryValues?.[secondaryValue];
+    if (secondaryLength === undefined || secondaryLength === "") {
+      return {
+        error: `No ${fieldLabel} defined for combination "${primaryValue} + ${secondaryValue}".`,
+      };
+    }
+    return { value: secondaryLength };
+  }
+
+  // 4. Old single‑field style: keys are option values directly on the object
+  const resolved = lengthConfig[primaryValue];
+  if (resolved === undefined) {
+    return { error: `No ${fieldLabel} defined for option "${primaryValue}".` };
+  }
+  return { value: resolved };
+}
+
+export function specificLength(field, value, formData = {}) {
+  // Helper to resolve length with error handling
+  const getLengthValue = (lengthConfig, type) => {
+    if (lengthConfig === undefined || lengthConfig === null) return null;
+    const result = resolveLengthConfig(lengthConfig, formData, type);
+    if (result.error) {
+      throw new Error(result.error);
+    }
+    return result.value;
   };
 
-  // Resolve minLength if it exists
   let minLengthValue = null;
-  if (field.minLength !== undefined) {
-    const minResult = resolveLength(field.minLength, "minimum length");
-    if (minResult?.error) return minResult.error;
-    minLengthValue = minResult;
-  }
-
-  // Resolve maxLength if it exists
   let maxLengthValue = null;
-  if (field.maxLength !== undefined) {
-    const maxResult = resolveLength(field.maxLength, "maximum length");
-    if (maxResult?.error) return maxResult.error;
-    maxLengthValue = maxResult;
+
+  try {
+    if (field.minLength !== undefined) {
+      minLengthValue = getLengthValue(field.minLength, "minimum length");
+    }
+    if (field.maxLength !== undefined) {
+      maxLengthValue = getLengthValue(field.maxLength, "maximum length");
+    }
+  } catch (err) {
+    return err.message; // Return the error string from resolveLengthConfig
   }
 
-  // Case 1: Both minLength and maxLength are defined and equal
+  // Case 1: Both defined and equal
   if (
     minLengthValue !== null &&
     maxLengthValue !== null &&
@@ -96,7 +146,7 @@ export function specificLength(field, value, formData = {}) {
     return true;
   }
 
-  // Case 2: Both minLength and maxLength are defined but different
+  // Case 2: Both defined but different
   if (minLengthValue !== null && maxLengthValue !== null) {
     if (value.length !== minLengthValue && value.length !== maxLengthValue) {
       return `This must be exactly ${minLengthValue} or ${maxLengthValue} characters long.`;
@@ -104,7 +154,7 @@ export function specificLength(field, value, formData = {}) {
     return true;
   }
 
-  // Case 3: Only minLength is defined
+  // Case 3: Only minLength defined
   if (minLengthValue !== null && maxLengthValue === null) {
     if (value.length !== minLengthValue) {
       return `This must be exactly ${minLengthValue} characters long.`;
@@ -112,7 +162,7 @@ export function specificLength(field, value, formData = {}) {
     return true;
   }
 
-  // Case 4: Only maxLength is defined (original behavior)
+  // Case 4: Only maxLength defined
   if (maxLengthValue !== null && minLengthValue === null) {
     if (value.length !== maxLengthValue) {
       return `This must be exactly ${maxLengthValue} characters long.`;
@@ -120,7 +170,6 @@ export function specificLength(field, value, formData = {}) {
     return true;
   }
 
-  // Case 5: Neither defined (shouldn't happen if validation is applied correctly)
   return true;
 }
 
@@ -310,19 +359,16 @@ function parseDDMMYYYY(value) {
 
 export function isAgeGreaterThan(field, value, formData) {
   let maxLengthValue;
-
-  if (typeof field.maxLength === "object" && field.maxLength.dependentOn) {
-    const dependentFieldId = field.maxLength.dependentOn;
-    const dependentValue = formData[dependentFieldId];
-    if (!dependentValue) {
-      return `Dependent field (${dependentFieldId}) value is missing.`;
-    }
-    maxLengthValue = field.maxLength[dependentValue];
-    if (maxLengthValue === undefined) {
-      return `No maximum length defined for option (${dependentValue}).`;
-    }
-  } else {
-    maxLengthValue = field.maxLength;
+  try {
+    const result = resolveLengthConfig(
+      field.maxLength,
+      formData,
+      "maximum age",
+    );
+    if (result.error) return result.error;
+    maxLengthValue = result.value;
+  } catch (err) {
+    return err.message;
   }
 
   const inputDate = parseDDMMYYYY(value);
@@ -346,26 +392,65 @@ export function isAgeGreaterThan(field, value, formData) {
   return true;
 }
 
-export function isDateWithinRange(field, value) {
+export function isDateWithinRange(field, value, formData) {
   const dateOfMarriage = parseDDMMYYYY(value);
   if (!dateOfMarriage) {
     return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
   }
 
+  // Resolve minLength and maxLength (they may be dependency objects)
+  let minMonths, maxMonths;
+  try {
+    minMonths = resolveLengthConfig(
+      field.minLength,
+      formData,
+      "min months",
+    )?.value;
+    maxMonths = resolveLengthConfig(
+      field.maxLength,
+      formData,
+      "max months",
+    )?.value;
+  } catch (err) {
+    return err.message;
+  }
+
+  // Ensure they are numbers
+  minMonths = parseInt(minMonths, 10);
+  maxMonths = parseInt(maxMonths, 10);
+
   const currentDate = new Date();
   currentDate.setHours(0, 0, 0, 0);
 
   const minDate = new Date(currentDate);
-  minDate.setMonth(currentDate.getMonth() + parseInt(field.minLength));
+  minDate.setMonth(currentDate.getMonth() + minMonths);
 
   const maxDate = new Date(currentDate);
-  maxDate.setMonth(currentDate.getMonth() + parseInt(field.maxLength));
+  maxDate.setMonth(currentDate.getMonth() + maxMonths);
 
   if (dateOfMarriage < minDate || dateOfMarriage > maxDate) {
-    return `The date should be between ${field.minLength} to ${field.maxLength} months from current date.`;
+    return `The date should be between ${minMonths} to ${maxMonths} months from current date.`;
   }
   return true;
 }
+
+// export function range(field, value, formData) {
+//   let min, max;
+//   try {
+//     min = resolveLengthConfig(field.minLength, formData, "min value")?.value;
+//     max = resolveLengthConfig(field.maxLength, formData, "max value")?.value;
+//   } catch (err) {
+//     return err.message;
+//   }
+
+//   min = parseFloat(min);
+//   max = parseFloat(max);
+
+//   if (value < min || value > max) {
+//     return `The value must be between ${min} and ${max}.`;
+//   }
+//   return true;
+// }
 
 export function isDateAfterCurrentDate(field, value, formData) {
   const inputDate = parseDDMMYYYY(value);

@@ -1786,7 +1786,7 @@ namespace SahayataNidhi.Controllers.Officer
                         string applicantName = GetFieldValue("ApplicantName", formDetailsObj) ?? "Unknown Applicant";
 
                         // Fetch expiring eligibility record
-                        var expiringApplication = dbcontext.Applicationswithexpiringeligibility
+                        var expiringApplication = dbcontext.ApplicationExpirations
                             .FirstOrDefault(ae => ae.Referencenumber == application.Referencenumber);
 
                         dynamic applicationObject = new ExpandoObject();
@@ -1800,12 +1800,12 @@ namespace SahayataNidhi.Controllers.Officer
                         bool hasValidExpiry = false;
 
                         if (expiringApplication != null &&
-                            !string.IsNullOrWhiteSpace(expiringApplication.ExpirationDate) &&
-                            DateTime.TryParse(expiringApplication.ExpirationDate, out DateTime expirationDate))
+                            !string.IsNullOrWhiteSpace(expiringApplication.ExpirationDate.ToString()) &&
+                            DateTime.TryParse(expiringApplication.ExpirationDate.ToString(), out DateTime expirationDate))
                         {
                             int daysLeft = (expirationDate.Date - DateTime.Today).Days;
                             expiryDisplay = expirationDate.ToString("dd MMM yyyy") + (daysLeft >= 0 ? $" ({daysLeft} days left)" : " (Expired)");
-                            mailSentCount = expiringApplication.MailSent;
+                            mailSentCount = expiringApplication.MailSentCount;
                             hasValidExpiry = true;
                         }
                         else
@@ -1925,6 +1925,7 @@ namespace SahayataNidhi.Controllers.Officer
         // DetailedApplicationsReportDto.cs
         public class DetailedApplicationsReportDto
         {
+            // Existing fields
             public string? Districtname { get; set; }
             public string? Tswofficename { get; set; }
             public string? Application_status { get; set; }
@@ -1936,6 +1937,30 @@ namespace SahayataNidhi.Controllers.Officer
             public string? Ifsc_code { get; set; }
             public string? Bank_name { get; set; }
             public string? Branch_name { get; set; }
+
+            // === NEW FIELDS ADDED ===
+
+            // Present Address Fields
+            public string? Present_address { get; set; }
+            public string? Present_district { get; set; }
+            public string? Present_tehsil { get; set; }
+
+            // Permanent Address Fields
+            public string? Permanent_address { get; set; }
+            public string? Permanent_district { get; set; }
+            public string? Permanent_tehsil { get; set; }
+
+            // Pension & Disability Fields
+            public string? Pension_type { get; set; }
+            public string? Type_of_disability { get; set; }
+            public string? Kind_of_disability { get; set; }
+            public string? Percentage_of_disability { get; set; }
+            public string? Disability_others { get; set; }
+            public string? Temporary_disability_valid_upto { get; set; }
+            public string? Civil_condition { get; set; }
+            public string? Udid_card_number { get; set; }
+
+            // Total count (kept at the end)
             public long Totalcount { get; set; }
         }
 
@@ -2400,17 +2425,17 @@ namespace SahayataNidhi.Controllers.Officer
                     case "DetailedApplications":
                         var detailedParameters = new[]
                         {
-                    new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
-                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
-                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                    new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },  // Use the parameter
-                    new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },   // Use the parameter
-                    new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
-                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                    new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value }
-                };
+                            new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
+                            new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
+                            new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value }
+                        };
 
                         var detailedResults = dbcontext.Database
                             .SqlQueryRaw<DetailedApplicationsReportDto>(
@@ -2418,26 +2443,44 @@ namespace SahayataNidhi.Controllers.Officer
                                 detailedParameters)
                             .ToList();
 
-                        // Get the total count from the first record (it will be the same for all records)
+                        // Get the total count from the first record
                         totalRecords = (int)(detailedResults.FirstOrDefault()?.Totalcount ?? 0);
                         data = detailedResults.Cast<dynamic>().ToList();
 
+                        // === UPDATED COLUMNS LIST (Add all new fields) ===
                         columns = new List<dynamic>
-                {
-                    new { accessorKey = "districtname", header = "District" },
-                    new { accessorKey = "tswofficename", header = "TSWO Office" },
-                    new { accessorKey = "application_status", header = "Application Status" },
-                    new { accessorKey = "application_pending_with", header = "Application Pending With" },
-                    new { accessorKey = "referencenumber", header = "Reference Number" },
-                    new { accessorKey = "applicant_name", header = "Applicant Name" },
-                    new { accessorKey = "parentage", header = "Parentage" },
-                    new { accessorKey = "account_number", header = "Account Number" },
-                    new { accessorKey = "ifsc_code", header = "IFSC Code" },
-                    new { accessorKey = "bank_name", header = "Bank Name" },
-                    new { accessorKey = "branch_name", header = "Branch Name" }
-                };
-                        break;
+    {
+        new { accessorKey = "districtname", header = "District" },
+        new { accessorKey = "tswofficename", header = "TSWO Office" },
+        new { accessorKey = "application_status", header = "Application Status" },
+        new { accessorKey = "application_pending_with", header = "Application Pending With" },
+        new { accessorKey = "referencenumber", header = "Reference Number" },
+        new { accessorKey = "applicant_name", header = "Applicant Name" },
+        new { accessorKey = "parentage", header = "Parentage" },
+        new { accessorKey = "account_number", header = "Account Number" },
+        new { accessorKey = "ifsc_code", header = "IFSC Code" },
+        new { accessorKey = "bank_name", header = "Bank Name" },
+        new { accessorKey = "branch_name", header = "Branch Name" },
 
+        // ==================== NEW COLUMNS ====================
+        new { accessorKey = "present_address", header = "Present Address" },
+        new { accessorKey = "present_district", header = "Present District" },
+        new { accessorKey = "present_tehsil", header = "Present Tehsil" },
+
+        new { accessorKey = "permanent_address", header = "Permanent Address" },
+        new { accessorKey = "permanent_district", header = "Permanent District" },
+        new { accessorKey = "permanent_tehsil", header = "Permanent Tehsil" },
+
+        new { accessorKey = "pension_type", header = "Pension Type" },
+        new { accessorKey = "udid_card_number", header = "UDID Card Number" },
+        new { accessorKey = "type_of_disability", header = "Type of Disability" },
+        new { accessorKey = "kind_of_disability", header = "Kind of Disability" },
+        new { accessorKey = "percentage_of_disability", header = "Percentage of Disability" },
+        new { accessorKey = "disability_others", header = "Disability (If Others)" },
+        new { accessorKey = "temporary_disability_valid_upto", header = "Temporary Disability Valid Upto" },
+        new { accessorKey = "civil_condition", header = "Civil Condition" }
+    };
+                        break;
                     default:
                         return BadRequest(new { status = false, message = "Invalid report type" });
                 }

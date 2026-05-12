@@ -692,5 +692,110 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            try
+            {
+                var types = await dbcontext.ExpirationTypes
+                    .OrderByDescending(x => x.CreatedAt)
+                    .ToListAsync();
+                return Ok(new { status = true, data = types });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var type = await dbcontext.ExpirationTypes.FindAsync(id);
+            if (type == null)
+                return NotFound(new { status = false, message = "Record not found" });
+            return Ok(new { status = true, data = type });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] ExpirationTypes dto)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(new { status = false, message = "Invalid data", errors = ModelState });
+
+            // Check uniqueness of TypeCode
+            var exists = await dbcontext.ExpirationTypes.AnyAsync(x => x.TypeCode == dto.TypeCode);
+            if (exists)
+                return Conflict(new { status = false, message = $"TypeCode '{dto.TypeCode}' already exists." });
+
+            var entity = new ExpirationTypes
+            {
+                TypeCode = dto.TypeCode,
+                ServiceId = dto.ServiceId,
+                ExpirationName = dto.ExpirationName,
+                Description = dto.Description,
+                MessageTemplate = dto.MessageTemplate,
+                BasedOnField = dto.BasedOnField,
+                ConditionField = dto.ConditionField,
+                ValueField = dto.ValueField,
+                ValidityPeriod = dto.ValidityPeriod,
+                ReminderBefore = dto.ReminderBefore,
+                StopPaymentOnExpiry = dto.StopPaymentOnExpiry,
+                StopPaymentGracePeriod = dto.StopPaymentGracePeriod,
+                IsActive = dto.IsActive,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            dbcontext.ExpirationTypes.Add(entity);
+            await dbcontext.SaveChangesAsync();
+
+            return Ok(new { status = true, message = "Created successfully", data = entity });
+        }
+
+        [HttpPut]
+        public async Task<IActionResult> Update(int id, [FromBody] ExpirationTypes dto)
+        {
+            _logger.LogInformation("Updating ExpirationType with ID {Id}", id);
+            var entity = await dbcontext.ExpirationTypes.FindAsync(id);
+            if (entity == null)
+                return NotFound(new { status = false, message = "Record not found" });
+
+            // Check uniqueness of TypeCode excluding current record
+            var duplicate = await dbcontext.ExpirationTypes
+                .AnyAsync(x => x.TypeCode == dto.TypeCode && x.Id != id);
+            if (duplicate)
+                return Conflict(new { status = false, message = $"TypeCode '{dto.TypeCode}' already exists." });
+
+            entity.TypeCode = dto.TypeCode;
+            entity.ServiceId = dto.ServiceId;
+            entity.ExpirationName = dto.ExpirationName;
+            entity.Description = dto.Description;
+            entity.MessageTemplate = dto.MessageTemplate;
+            entity.BasedOnField = dto.BasedOnField;
+            entity.ConditionField = dto.ConditionField;
+            entity.ValueField = dto.ValueField;
+            entity.ValidityPeriod = dto.ValidityPeriod;
+            entity.ReminderBefore = dto.ReminderBefore;
+            entity.StopPaymentOnExpiry = dto.StopPaymentOnExpiry;
+            entity.StopPaymentGracePeriod = dto.StopPaymentGracePeriod;
+            entity.IsActive = dto.IsActive;
+
+            await dbcontext.SaveChangesAsync();
+
+            return Ok(new { status = true, message = "Updated successfully", data = entity });
+        }
+
+        [HttpDelete]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var entity = await dbcontext.ExpirationTypes.FindAsync(id);
+            if (entity == null)
+                return NotFound(new { status = false, message = "Record not found" });
+
+            dbcontext.ExpirationTypes.Remove(entity);
+            await dbcontext.SaveChangesAsync();
+
+            return Ok(new { status = true, message = "Deleted successfully" });
+        }
     }
 }

@@ -35,6 +35,8 @@ public partial class Services
 
     public bool? Activeforofficers { get; set; }
 
+    public virtual ICollection<ExpirationTypes> ExpirationTypes { get; set; } = new List<ExpirationTypes>();
+
     public virtual ICollection<Pool> Pool { get; set; } = new List<Pool>();
 
     public virtual ICollection<Webservice> Webservice { get; set; } = new List<Webservice>();

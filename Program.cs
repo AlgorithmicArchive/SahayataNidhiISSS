@@ -122,6 +122,7 @@ builder.Services.AddCors();
 builder.Services.AddDetection();
 
 builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
+builder.Services.AddScoped<IExpirationSyncService, ExpirationSyncService>();
 builder.Services.AddHostedService<QueuedHostedService>();
 builder.Services.AddSingleton<ICronScheduler, CronScheduler>();
 builder.Services.AddHostedService<CronScheduler>();
@@ -137,9 +138,7 @@ app.Lifetime.ApplicationStarted.Register(async () =>
 {
     using var scope = app.Services.CreateScope();
     var cronService = scope.ServiceProvider.GetRequiredService<CronServices>();
-
-    // Automatically registers NotifyExpiringEligibilities
-    await cronService.RegisterAllTasksAsync("44 12 * * *"); // daily at 12 AM
+    await cronService.RegisterAllTasksAsync();
 });
 
 

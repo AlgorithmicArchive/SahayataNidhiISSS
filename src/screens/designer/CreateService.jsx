@@ -81,6 +81,11 @@ const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
   // IMPORTANT: preserve existing values, only use defaults if missing
   isOfficeField: field.isOfficeField !== undefined ? field.isOfficeField : false,
   officeTypeId: field.officeTypeId !== undefined ? field.officeTypeId : null,
+
+  // ADDED: Conditional visibility fields
+  enableConditionalVisibility: field.enableConditionalVisibility || false,
+  conditionalField: field.conditionalField || "",
+  conditionalValues: field.conditionalValues || [],
 });
 
 // Function to recursively normalize additionalFields
@@ -299,6 +304,11 @@ export default function CreateService() {
       optionsType: "independent",
       isOfficeField: false,
       officeTypeId: null,
+
+      // ADDED: Conditional visibility defaults
+      enableConditionalVisibility: false,
+      conditionalField: "",
+      conditionalValues: [],
     };
 
     setSections((prev) =>

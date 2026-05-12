@@ -17,6 +17,8 @@ public partial class SwdjkContext : DbContext
 
     public virtual DbSet<Actionhistory> Actionhistory { get; set; }
 
+    public virtual DbSet<ApplicationExpirations> ApplicationExpirations { get; set; }
+
     public virtual DbSet<Applicationperdistrict> Applicationperdistrict { get; set; }
 
     public virtual DbSet<Applicationswithexpiringeligibility> Applicationswithexpiringeligibility { get; set; }
@@ -33,6 +35,8 @@ public partial class SwdjkContext : DbContext
 
     public virtual DbSet<CitizenApplications> CitizenApplications { get; set; }
 
+    public virtual DbSet<CitizenApplicationsLegacy> CitizenApplicationsLegacy { get; set; }
+
     public virtual DbSet<Corrigendum> Corrigendum { get; set; }
 
     public virtual DbSet<Departments> Departments { get; set; }
@@ -40,6 +44,8 @@ public partial class SwdjkContext : DbContext
     public virtual DbSet<District> District { get; set; }
 
     public virtual DbSet<Emailsettings> Emailsettings { get; set; }
+
+    public virtual DbSet<ExpirationTypes> ExpirationTypes { get; set; }
 
     public virtual DbSet<Feedback> Feedback { get; set; }
 
@@ -134,6 +140,56 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Remarks)
                 .HasMaxLength(255)
                 .HasColumnName("remarks");
+        });
+
+        modelBuilder.Entity<ApplicationExpirations>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("application_expirations_pkey");
+
+            entity.ToTable("application_expirations");
+
+            entity.HasIndex(e => new { e.Referencenumber, e.ExpirationTypeId }, "unique_active_expiration_idx")
+                .IsUnique()
+                .HasFilter("(is_active = true)");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.BaseDate).HasColumnName("base_date");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Email)
+                .HasMaxLength(255)
+                .HasColumnName("email");
+            entity.Property(e => e.ExpirationDate).HasColumnName("expiration_date");
+            entity.Property(e => e.ExpirationTypeId).HasColumnName("expiration_type_id");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.LastNotifiedAt).HasColumnName("last_notified_at");
+            entity.Property(e => e.MailSentCount)
+                .HasDefaultValue(0)
+                .HasColumnName("mail_sent_count");
+            entity.Property(e => e.MobileNumber)
+                .HasMaxLength(20)
+                .HasColumnName("mobile_number");
+            entity.Property(e => e.Referencenumber)
+                .HasMaxLength(50)
+                .HasColumnName("referencenumber");
+            entity.Property(e => e.ResolvedAt).HasColumnName("resolved_at");
+            entity.Property(e => e.ServiceId).HasColumnName("service_id");
+            entity.Property(e => e.SmsSentCount)
+                .HasDefaultValue(0)
+                .HasColumnName("sms_sent_count");
+            entity.Property(e => e.SourceEvent).HasColumnName("source_event");
+            entity.Property(e => e.SourceValue).HasColumnName("source_value");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.ExpirationType).WithMany(p => p.ApplicationExpirations)
+                .HasForeignKey(d => d.ExpirationTypeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("application_expirations_expiration_type_id_fkey");
         });
 
         modelBuilder.Entity<Applicationperdistrict>(entity =>
@@ -352,6 +408,78 @@ public partial class SwdjkContext : DbContext
                 .HasColumnName("workflow");
         });
 
+        modelBuilder.Entity<CitizenApplicationsLegacy>(entity =>
+        {
+            entity.HasKey(e => e.Referencenumber).HasName("citizen_applications_legacy_pkey");
+
+            entity.ToTable("citizen_applications_legacy");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Datatype }, "idx_citizen_applications_legacy_active")
+                .HasFilter("(status <> 'Incomplete'::text)")
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.HasIndex(e => e.ApplId, "idx_citizen_applications_legacy_appl_id")
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.HasIndex(e => e.CreatedAt, "idx_citizen_applications_legacy_created_at")
+                .IsDescending()
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.Status }, "idx_citizen_applications_legacy_service_datatype")
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Status }, "idx_citizen_applications_legacy_service_status")
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.HasIndex(e => e.Status, "idx_citizen_applications_legacy_status")
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.HasIndex(e => e.Workflow, "idx_citizen_applications_legacy_workflow_gin")
+                .HasMethod("gin")
+                .HasAnnotation("Npgsql:StorageParameter:fastupdate", "true")
+                .HasAnnotation("Npgsql:StorageParameter:gin_pending_list_limit", "4194304");
+
+            entity.HasIndex(e => e.Serviceid, "ix_citizen_applications_legacy_serviceid")
+                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
+                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+
+            entity.Property(e => e.Referencenumber)
+                .HasMaxLength(50)
+                .HasColumnName("referencenumber");
+            entity.Property(e => e.Additionaldetails)
+                .HasColumnType("jsonb")
+                .HasColumnName("additionaldetails");
+            entity.Property(e => e.ApplId).HasColumnName("appl_id");
+            entity.Property(e => e.CitizenId).HasColumnName("citizen_id");
+            entity.Property(e => e.CreatedAt)
+                .HasMaxLength(50)
+                .HasColumnName("created_at");
+            entity.Property(e => e.Currentplayer).HasColumnName("currentplayer");
+            entity.Property(e => e.Datatype)
+                .HasMaxLength(20)
+                .HasColumnName("datatype");
+            entity.Property(e => e.Districtuidforbank)
+                .HasMaxLength(6)
+                .HasColumnName("districtuidforbank");
+            entity.Property(e => e.Formdetails)
+                .HasColumnType("jsonb")
+                .HasColumnName("formdetails");
+            entity.Property(e => e.Referencenumberalphanumeric)
+                .HasMaxLength(50)
+                .HasColumnName("referencenumberalphanumeric");
+            entity.Property(e => e.Serviceid).HasColumnName("serviceid");
+            entity.Property(e => e.Status).HasColumnName("status");
+            entity.Property(e => e.Workflow)
+                .HasColumnType("jsonb")
+                .HasColumnName("workflow");
+        });
+
         modelBuilder.Entity<Corrigendum>(entity =>
         {
             entity.HasKey(e => e.Corrigendumid).HasName("corrigendum_pkey");
@@ -448,6 +576,59 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Templates)
                 .HasColumnType("jsonb")
                 .HasColumnName("templates");
+        });
+
+        modelBuilder.Entity<ExpirationTypes>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("expiration_types_pkey");
+
+            entity.ToTable("expiration_types");
+
+            entity.HasIndex(e => e.TypeCode, "expiration_types_type_code_key").IsUnique();
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.BasedOnField)
+                .HasDefaultValue(false)
+                .HasColumnName("based_on_field");
+            entity.Property(e => e.ConditionField)
+                .HasColumnType("json")
+                .HasColumnName("condition_field");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.ExpirationName)
+                .HasMaxLength(255)
+                .HasColumnName("expiration_name");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.MessageTemplate).HasColumnName("message_template");
+            entity.Property(e => e.ReminderBefore)
+                .HasMaxLength(50)
+                .HasColumnName("reminder_before");
+            entity.Property(e => e.ServiceId).HasColumnName("service_id");
+            entity.Property(e => e.StopPaymentGracePeriod)
+                .HasMaxLength(50)
+                .HasColumnName("stop_payment_grace_period");
+            entity.Property(e => e.StopPaymentOnExpiry)
+                .HasDefaultValue(false)
+                .HasColumnName("stop_payment_on_expiry");
+            entity.Property(e => e.TypeCode)
+                .HasMaxLength(50)
+                .HasColumnName("type_code");
+            entity.Property(e => e.ValidityPeriod)
+                .HasMaxLength(50)
+                .HasColumnName("validity_period");
+            entity.Property(e => e.ValueField)
+                .HasMaxLength(255)
+                .HasColumnName("value_field");
+
+            entity.HasOne(d => d.Service).WithMany(p => p.ExpirationTypes)
+                .HasForeignKey(d => d.ServiceId)
+                .HasConstraintName("expiration_types_service_id_fkey");
         });
 
         modelBuilder.Entity<Feedback>(entity =>
@@ -583,9 +764,12 @@ public partial class SwdjkContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("accesslevel");
             entity.Property(e => e.Departmentid).HasColumnName("departmentid");
-            entity.Property(e => e.Officetype)
-                .HasMaxLength(50)
-                .HasColumnName("officetype");
+            entity.Property(e => e.Officename)
+                .HasMaxLength(100)
+                .HasColumnName("officename");
+            entity.Property(e => e.Officenameshort)
+                .HasMaxLength(20)
+                .HasColumnName("officenameshort");
         });
 
         modelBuilder.Entity<Officesdetails>(entity =>
@@ -595,24 +779,36 @@ public partial class SwdjkContext : DbContext
             entity.ToTable("officesdetails");
 
             entity.Property(e => e.Officedetailid).HasColumnName("officedetailid");
-            entity.Property(e => e.Areacode).HasColumnName("areacode");
+            entity.Property(e => e.Areacode)
+                .ValueGeneratedOnAdd()
+                .HasColumnName("areacode");
             entity.Property(e => e.Areaname)
                 .HasMaxLength(50)
                 .HasColumnName("areaname");
-            entity.Property(e => e.Districtcode).HasColumnName("districtcode");
-            entity.Property(e => e.Divisioncode).HasColumnName("divisioncode");
+            entity.Property(e => e.Districtcode)
+                .HasDefaultValue(0)
+                .HasColumnName("districtcode");
+            entity.Property(e => e.Divisioncode)
+                .HasDefaultValue(0)
+                .HasColumnName("divisioncode");
+            entity.Property(e => e.Officeid).HasColumnName("officeid");
             entity.Property(e => e.Officename)
                 .HasMaxLength(255)
                 .HasColumnName("officename");
-            entity.Property(e => e.Officetype).HasColumnName("officetype");
+            entity.Property(e => e.Parentofficedetailid).HasColumnName("parentofficedetailid");
             entity.Property(e => e.Statecode)
                 .HasDefaultValue(0)
                 .HasColumnName("statecode");
 
-            entity.HasOne(d => d.OfficetypeNavigation).WithMany(p => p.Officesdetails)
-                .HasForeignKey(d => d.Officetype)
+            entity.HasOne(d => d.Office).WithMany(p => p.Officesdetails)
+                .HasForeignKey(d => d.Officeid)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_officesdetails_offices");
+
+            entity.HasOne(d => d.Parentofficedetail).WithMany(p => p.InverseParentofficedetail)
+                .HasForeignKey(d => d.Parentofficedetailid)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_officesdetails_parent");
         });
 
         modelBuilder.Entity<Pensionpayments>(entity =>
@@ -837,6 +1033,8 @@ public partial class SwdjkContext : DbContext
             entity.ToTable("status_counts_snapshot");
 
             entity.HasIndex(e => new { e.PServiceId, e.PAccessLevel, e.PAccessCode, e.PDivisionCode, e.PTakenBy, e.PDataType, e.CapturedAt }, "idx_status_counts_params");
+
+            entity.HasIndex(e => new { e.PServiceId, e.PAccessLevel, e.PAccessCode, e.PDivisionCode, e.PTakenBy, e.PDataType }, "uq_status_counts_snapshot").IsUnique();
 
             entity.Property(e => e.SnapshotId).HasColumnName("snapshot_id");
             entity.Property(e => e.Amendmentcount)
@@ -1192,6 +1390,7 @@ public partial class SwdjkContext : DbContext
                 .HasColumnType("jsonb")
                 .HasColumnName("workflow");
         });
+        modelBuilder.HasSequence("officesdetails_areacode_seq");
 
         OnModelCreatingPartial(modelBuilder);
     }

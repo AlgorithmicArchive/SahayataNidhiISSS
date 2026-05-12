@@ -371,8 +371,11 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                if (!form.TryGetValue("Officetype", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
-                    return Json(new { status = false, message = "Office Type is required." });
+                if (!form.TryGetValue("Officename", out var officeNameValues) || string.IsNullOrWhiteSpace(officeNameValues[0]))
+                    return Json(new { status = false, message = "Office Name is required." });
+
+                if (!form.TryGetValue("Officenameshort", out var officeNameShortValues) || string.IsNullOrWhiteSpace(officeNameShortValues[0]))
+                    return Json(new { status = false, message = "Short Name is required." });
 
                 if (!form.TryGetValue("Accesslevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
                     return Json(new { status = false, message = "Access Level is required." });
@@ -383,7 +386,8 @@ namespace SahayataNidhi.Controllers.Admin
                 var office = new Offices
                 {
                     Departmentid = departmentId,
-                    Officetype = officeTypeValues[0]!.Trim(),
+                    Officename = officeNameValues[0]!.Trim(),
+                    Officenameshort = officeNameShortValues[0]!.Trim(),
                     Accesslevel = accessLevelValues[0]!.Trim()
                 };
 
@@ -407,8 +411,11 @@ namespace SahayataNidhi.Controllers.Admin
                 if (!form.TryGetValue("Officeid", out var idValues) || !int.TryParse(idValues[0], out int officeId))
                     return Json(new { status = false, message = "Invalid Office ID." });
 
-                if (!form.TryGetValue("Officetype", out var officeTypeValues) || string.IsNullOrWhiteSpace(officeTypeValues[0]))
-                    return Json(new { status = false, message = "Office Type is required." });
+                if (!form.TryGetValue("Officename", out var officeNameValues) || string.IsNullOrWhiteSpace(officeNameValues[0]))
+                    return Json(new { status = false, message = "Office Name is required." });
+
+                if (!form.TryGetValue("Officenameshort", out var officeNameShortValues) || string.IsNullOrWhiteSpace(officeNameShortValues[0]))
+                    return Json(new { status = false, message = "Short Name is required." });
 
                 if (!form.TryGetValue("Accesslevel", out var accessLevelValues) || string.IsNullOrWhiteSpace(accessLevelValues[0]))
                     return Json(new { status = false, message = "Access Level is required." });
@@ -423,7 +430,8 @@ namespace SahayataNidhi.Controllers.Admin
                 if (office.Departmentid != departmentId)
                     return Json(new { status = false, message = "You cannot modify offices from another department." });
 
-                office.Officetype = officeTypeValues[0]!.Trim();
+                office.Officename = officeNameValues[0]!.Trim();
+                office.Officenameshort = officeNameShortValues[0]!.Trim();
                 office.Accesslevel = accessLevelValues[0]!.Trim();
 
                 await dbcontext.SaveChangesAsync();
@@ -436,7 +444,6 @@ namespace SahayataNidhi.Controllers.Admin
                 return Json(new { status = false, message = ex.Message });
             }
         }
-
         [HttpPost]
         public async Task<IActionResult> DeleteOffice([FromForm] IFormCollection form)
         {
@@ -462,45 +469,7 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public async Task<IActionResult> AddOfficeDetail([FromForm] string OfficeName, [FromForm] int Officetype, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
-        {
-            try
-            {
-                var officer = GetOfficerDetails();
-                if (officer == null || officer.Department <= 0)
-                    return BadRequest(new { status = false, message = "Invalid officer or department." });
-
-                var office = await dbcontext.Offices
-                    .FirstOrDefaultAsync(o => o.Officeid == Officetype && o.Departmentid == officer.Department);
-
-                if (office == null)
-                    return BadRequest(new { status = false, message = "Invalid office type or access denied." });
-
-                var newDetail = new Officesdetails
-                {
-                    Statecode = 0,
-                    Divisioncode = Divisioncode,
-                    Districtcode = DistrictCode,
-                    Areacode = AreaCode,
-                    Areaname = AreaName ?? "",
-                    Officename = OfficeName,
-                    Officetype = Officetype
-                };
-
-                dbcontext.Officesdetails.Add(newDetail);
-                await dbcontext.SaveChangesAsync();
-
-                return Json(new { status = true, message = "Office detail added successfully." });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error adding office detail");
-                return StatusCode(500, new { status = false, message = "Error adding office detail: " + ex.Message });
-            }
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> UpdateOfficeDetail([FromForm] int OfficeDetailId, [FromForm] string OfficeName, [FromForm] int Officetype, [FromForm] int Divisioncode, [FromForm] int DistrictCode, [FromForm] int AreaCode, [FromForm] string AreaName)
+        public async Task<IActionResult> AddOfficeDetail([FromForm] int OfficeTypeId, [FromForm] int DivisionCode, [FromForm] int DistrictCode, [FromForm] string AreaNames)
         {
             try
             {
@@ -508,36 +477,129 @@ namespace SahayataNidhi.Controllers.Admin
                 if (officer == null || officer.Department <= 0)
                     return BadRequest(new { status = false, message = "Invalid officer." });
 
-                // Find by primary key
-                var detail = await dbcontext.Officesdetails
-                    .FirstOrDefaultAsync(od => od.Officedetailid == OfficeDetailId);
-
-                if (detail == null)
-                    return NotFound(new { status = false, message = "Office detail not found." });
-
-                // Verify department access via the linked office
                 var office = await dbcontext.Offices
-                    .FirstOrDefaultAsync(o => o.Officeid == Officetype && o.Departmentid == officer.Department);
-
+                    .FirstOrDefaultAsync(o => o.Officeid == OfficeTypeId
+                                             && o.Departmentid == officer.Department);
                 if (office == null)
-                    return BadRequest(new { status = false, message = "Access denied." });
+                    return BadRequest(new { status = false, message = "Invalid office type." });
 
-                // Update all fields
-                detail.Officename = OfficeName;
-                detail.Officetype = Officetype;
-                detail.Divisioncode = Divisioncode;
-                detail.Districtcode = DistrictCode;
-                detail.Areacode = AreaCode;
-                detail.Areaname = AreaName ?? "";
+                if (string.IsNullOrWhiteSpace(AreaNames))
+                    return BadRequest(new { status = false, message = "Area names required." });
+
+                var areas = AreaNames.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(a => a.Trim())
+                                     .Where(a => !string.IsNullOrWhiteSpace(a))
+                                     .Distinct()
+                                     .ToList();
+
+                if (office.Accesslevel.Equals("District", StringComparison.OrdinalIgnoreCase))
+                {
+                    // For District‑level offices, area names are district names.
+                    // Look up each district name in the selected division.
+                    var districtCodes = new Dictionary<string, int>();
+                    foreach (var area in areas)
+                    {
+                        var district = await dbcontext.District
+                            .FirstOrDefaultAsync(d => d.Division == DivisionCode
+                                                     && d.Districtname == area);
+                        if (district == null)
+                            return BadRequest(new
+                            {
+                                status = false,
+                                message = $"District '{area}' not found in division {DivisionCode}."
+                            });
+                        districtCodes[area] = district.Districtid;
+                    }
+
+                    foreach (var area in areas)
+                    {
+                        var detail = new Officesdetails
+                        {
+                            Officeid = OfficeTypeId,
+                            Statecode = 0,
+                            Divisioncode = DivisionCode,
+                            Districtcode = districtCodes[area],
+                            Areaname = area,
+                            Officename = $"{office.Officename} – {area}"
+                        };
+                        dbcontext.Officesdetails.Add(detail);
+                    }
+                }
+                else
+                {
+                    // For Tehsil / Block / other levels, use the selected DistrictCode
+                    foreach (var area in areas)
+                    {
+                        var detail = new Officesdetails
+                        {
+                            Officeid = OfficeTypeId,
+                            Statecode = 0,
+                            Divisioncode = DivisionCode,
+                            Districtcode = DistrictCode,
+                            Areaname = area,
+                            Officename = $"{office.Officename} – {area}"
+                        };
+                        dbcontext.Officesdetails.Add(detail);
+                    }
+                }
 
                 await dbcontext.SaveChangesAsync();
-
-                return Json(new { status = true, message = "Office detail updated successfully." });
+                return Json(new { status = true, message = $"{areas.Count} detail(s) added." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating office detail");
-                return StatusCode(500, new { status = false, message = "Error updating: " + ex.Message });
+                _logger.LogError(ex, "Error adding office details");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> UpdateOfficeDetail([FromForm] int OfficeDetailId, [FromForm] string AreaName, [FromForm] int DivisionCode, [FromForm] int DistrictCode)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return BadRequest(new { status = false, message = "Invalid officer." });
+
+                var detail = await dbcontext.Officesdetails
+                    .Include(d => d.Office)
+                    .FirstOrDefaultAsync(d => d.Officedetailid == OfficeDetailId);
+
+                if (detail == null)
+                    return NotFound(new { status = false, message = "Not found." });
+
+                if (detail.Office.Departmentid != officer.Department)
+                    return BadRequest(new { status = false, message = "Access denied." });
+
+                detail.Areaname = AreaName?.Trim() ?? detail.Areaname;
+                detail.Divisioncode = DivisionCode;
+
+                if (detail.Office.Accesslevel.Equals("District", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Look up the district by name in the new division
+                    var district = await dbcontext.District
+                        .FirstOrDefaultAsync(d => d.Division == DivisionCode
+                                                 && d.Districtname == detail.Areaname);
+                    if (district == null)
+                        return BadRequest(new { status = false, message = "District not found in selected division." });
+
+                    detail.Districtcode = district.Districtid;
+                }
+                else
+                {
+                    detail.Districtcode = DistrictCode;
+                }
+
+                detail.Officename = $"{detail.Office.Officename} – {detail.Areaname}";
+
+                await dbcontext.SaveChangesAsync();
+                return Json(new { status = true, message = "Updated." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating");
+                return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
 
@@ -551,24 +613,20 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { status = false, message = "Invalid officer." });
 
                 var detail = await dbcontext.Officesdetails
-                    .Include(od => od.OfficetypeNavigation)
-                    .FirstOrDefaultAsync(od => od.Officedetailid == OfficeDetailId);
+                    .Include(d => d.Office)
+                    .FirstOrDefaultAsync(d => d.Officedetailid == OfficeDetailId);
 
-                if (detail == null)
-                    return NotFound(new { status = false, message = "Office detail not found." });
-
-                if (detail.OfficetypeNavigation?.Departmentid != officer.Department)
-                    return BadRequest(new { status = false, message = "Access denied." });
+                if (detail == null) return NotFound();
+                if (detail.Office.Departmentid != officer.Department) return BadRequest("Access denied.");
 
                 dbcontext.Officesdetails.Remove(detail);
                 await dbcontext.SaveChangesAsync();
-
-                return Json(new { status = true, message = "Office detail deleted successfully." });
+                return Json(new { status = true, message = "Deleted." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting office detail");
-                return StatusCode(500, new { status = false, message = "Error deleting: " + ex.Message });
+                _logger.LogError(ex, "Error deleting");
+                return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
 

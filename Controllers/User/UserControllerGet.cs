@@ -117,7 +117,9 @@ namespace SahayataNidhi.Controllers.User
             // Ensure size is positive for pagination
             return Json(new { data, columns, totalRecords });
         }
-        public IActionResult GetInitiatedApplications(int pageIndex = 0, int pageSize = 10)
+
+
+        public async Task<IActionResult> GetInitiatedApplications(int pageIndex = 0, int pageSize = 10)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!int.TryParse(userIdClaim, out int userId))
@@ -138,8 +140,8 @@ namespace SahayataNidhi.Controllers.User
                 .ToList();
 
             // Get total count for pagination
-            var totalRecords = dbcontext.CitizenApplications
-                .Count(ca => ca.CitizenId == userId && ca.Status != "Incomplete");
+            var totalRecords = await dbcontext.CitizenApplications
+                .CountAsync(ca => ca.CitizenId == userId && ca.Status != "Incomplete");
 
             // Define columns
             var columns = new List<dynamic>
@@ -158,18 +160,18 @@ namespace SahayataNidhi.Controllers.User
 
             // Case-insensitive status mapping
             var actionMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                {"pending", "Pending"},
-                {"forwarded", "Forwarded"},
-                {"sanctioned", "Sanctioned"},
-                {"returned", "Returned"},
-                {"rejected", "Rejected"},
-                {"returntoedit", "Returned to citizen for correction"},
-                {"Deposited", "Inserted to Bank File"},
-                {"Dispatched", "Payment Under Process"},
-                {"Disbursed", "Payment Disbursed"},
-                {"Failure", "Payment Failed"}
-            };
+    {
+        {"pending", "Pending"},
+        {"forwarded", "Forwarded"},
+        {"sanctioned", "Sanctioned"},
+        {"returned", "Returned"},
+        {"rejected", "Rejected"},
+        {"returntoedit", "Returned to citizen for correction"},
+        {"Deposited", "Inserted to Bank File"},
+        {"Dispatched", "Payment Under Process"},
+        {"Disbursed", "Payment Disbursed"},
+        {"Failure", "Payment Failed"}
+    };
 
             foreach (var application in applications)
             {
@@ -227,10 +229,6 @@ namespace SahayataNidhi.Controllers.User
                     }
                 }
 
-                // Expiring eligibility check
-                var expiringEligibility = dbcontext.Applicationswithexpiringeligibility
-                    .FirstOrDefault(aee => aee.Referencenumber == application.Referencenumber);
-
                 // Define actions
                 var actions = new List<dynamic>();
 
@@ -261,28 +259,52 @@ namespace SahayataNidhi.Controllers.User
                     actions.Add(new { tooltip = "Edit Form", color = "#F0C38E", actionFunction = "EditForm" });
                 }
 
-                // Handle expiring eligibility (only for sanctioned applications)
-                if (expiringEligibility != null &&
-                    !string.IsNullOrWhiteSpace(expiringEligibility.ExpirationDate))
+                // --- Expiring Eligibility Handling (Multiple Types) ---
+                if (application.Status == "Sanctioned")
                 {
-                    bool hasInitiatedCorrection = dbcontext.Corrigendum
-                        .Any(co => co.Referencenumber == application.Referencenumber && co.Status == "Initiated");
+                    var activeExpirations = await dbcontext.ApplicationExpirations
+                        .Include(ae => ae.ExpirationType)
+                        .Where(ae => ae.Referencenumber == application.Referencenumber)
+                        .Where(ae => ae.IsActive == true)
+                        .ToListAsync();
 
-                    if (!hasInitiatedCorrection &&
-                        DateTime.TryParse(expiringEligibility.ExpirationDate, out DateTime expirationDate))
+                    bool hasInitiatedCorrection = await dbcontext.Corrigendum
+                        .AnyAsync(co => co.Referencenumber == application.Referencenumber && co.Status == "Initiated");
+
+                    foreach (var exp in activeExpirations)
                     {
-                        int daysLeft = (expirationDate - DateTime.Today).Days;
-                        bool isExpiringSoon = daysLeft >= 0 && daysLeft <= 90;
+                        if (hasInitiatedCorrection)
+                            break; // Already being corrected globally, skip all
 
-                        if (isExpiringSoon && application.Status == "Sanctioned")
+                        var expType = exp.ExpirationType;
+                        if (expType == null) continue;
+
+                        // Determine reminder start date
+                        DateOnly reminderStart = exp.ExpirationDate;
+                        if (!string.IsNullOrEmpty(expType.ReminderBefore))
                         {
-                            actions.Clear();
+                            if (TryParseInterval(expType.ReminderBefore, out TimeSpan reminderBefore))
+                            {
+                                reminderStart = exp.ExpirationDate.AddDays((int)-reminderBefore.TotalDays);
+                            }
+                        }
+
+                        var today = DateOnly.FromDateTime(DateTime.Today);
+                        bool isExpiringSoon = today >= reminderStart && today <= exp.ExpirationDate;
+
+                        if (isExpiringSoon)
+                        {
+                            string tooltip = $"Update {expType.ExpirationName}";
+                            string tooltipText = $"To update {expType.ExpirationName} as its validity is expiring soon.";
+
                             actions.Add(new
                             {
-                                tooltip = "Update PCP UDID Card",
-                                tooltipText = "To update UDID Card as its validity is expiring soon",
+                                tooltip = tooltip,
+                                tooltipText = tooltipText,
                                 color = "#F0C38E",
-                                actionFunction = "UpdateExpiringDocument"
+                                actionFunction = "UpdateExpiringDocument",
+                                expirationTypeId = exp.ExpirationTypeId,
+                                expirationTypeName = expType.ExpirationName
                             });
                         }
                     }
@@ -327,6 +349,32 @@ namespace SahayataNidhi.Controllers.User
             return Json(new { data, columns, totalRecords });
         }
 
+        // Helper method to parse interval strings (same as in CronServices)
+        private bool TryParseInterval(string intervalStr, out TimeSpan interval)
+        {
+            interval = TimeSpan.Zero;
+            var parts = intervalStr.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2) return false;
+            if (!int.TryParse(parts[0], out int value)) return false;
+
+            switch (parts[1].ToLower())
+            {
+                case "year":
+                case "years":
+                    interval = TimeSpan.FromDays(value * 365);
+                    return true;
+                case "month":
+                case "months":
+                    interval = TimeSpan.FromDays(value * 30);
+                    return true;
+                case "day":
+                case "days":
+                    interval = TimeSpan.FromDays(value);
+                    return true;
+                default:
+                    return false;
+            }
+        }
         [HttpGet]
         public async Task<IActionResult> GetApplicationHistory(string ApplicationId, int page, int size)
         {

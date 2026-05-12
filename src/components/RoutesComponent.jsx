@@ -61,6 +61,7 @@ import AddOffices from "../screens/admin/AddOffices";
 import AddOfficeDetails from "../screens/admin/AddOfficeDetails";
 import NotValidated from "../screens/home/NotValidated";
 import OfficerChoice from "../screens/home/OfficerChoice";
+import CreateExpirations from "../screens/designer/CreateExpirations";
 
 const RoutesComponent = () => {
   return (
@@ -148,6 +149,7 @@ const RoutesComponent = () => {
           <Route path="dynamicform" element={<DynamicScrollableForm />} />
           <Route path="emailsettings" element={<EmailSettings />} />
           <Route path="corrections" element={<Corrections />} />
+          <Route path="expirations" element={<CreateExpirations />} />
           <Route
             path="submissionlimitations"
             element={<SubmissionLimitations />}

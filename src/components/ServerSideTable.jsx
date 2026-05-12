@@ -295,6 +295,7 @@ const ServerSideTable = React.forwardRef(
       setSelectedAction,
       Title,
       searchableFields = ["referenceNumber", "applicantName"],
+      showDownloadButtons = false, // New prop with default false
     },
     ref
   ) => {
@@ -592,7 +593,7 @@ const ServerSideTable = React.forwardRef(
       } finally {
         setIsLoading(false);
       }
-    }, [actionFunctions, inputValues, columnOrder.length, settingsLoaded, hasActions]);
+    }, [actionFunctions, inputValues, columnOrder.length, settingsLoaded, hasActions, handleUserTypeChange]);
 
     // Trigger fetch
     useEffect(() => {
@@ -760,42 +761,56 @@ const ServerSideTable = React.forwardRef(
               Total Records: {totalRecords}
             </Typography>
 
-            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              <Tooltip title="Download as Excel" arrow>
-                <StyledIconButton onClick={(e) => handleMenuOpen(e, "Excel")}>
-                  <TableChartIcon />
-                </StyledIconButton>
-              </Tooltip>
-              <Tooltip title="Download as CSV" arrow>
-                <StyledIconButton onClick={(e) => handleMenuOpen(e, "Csv")}>
-                  <DescriptionIcon />
-                </StyledIconButton>
-              </Tooltip>
-              <Tooltip title="Download as PDF" arrow>
-                <StyledIconButton onClick={(e) => handleMenuOpen(e, "Pdf")}>
-                  <PictureAsPdfIcon />
-                </StyledIconButton>
-              </Tooltip>
-              <Tooltip title="Refresh Data" arrow>
-                <StyledIconButton onClick={fetchData}>
-                  <RefreshIcon />
-                </StyledIconButton>
-              </Tooltip>
-              <Menu
-                anchorEl={anchorEl}
-                open={Boolean(anchorEl)}
-                onClose={handleMenuClose}
-                anchorOrigin={{ vertical: "top", horizontal: "right" }}
-                transformOrigin={{ vertical: "bottom", horizontal: "right" }}
-              >
-                <MenuItem onClick={() => handleDownload(downloadType, "All")}>
-                  All Data
-                </MenuItem>
-                <MenuItem onClick={() => handleDownload(downloadType, "InView")}>
-                  Visible Screen Data
-                </MenuItem>
-              </Menu>
-            </Box>
+            {/* Conditionally render download buttons based on showDownloadButtons prop */}
+            {showDownloadButtons && (
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Tooltip title="Download as Excel" arrow>
+                  <StyledIconButton onClick={(e) => handleMenuOpen(e, "Excel")}>
+                    <TableChartIcon />
+                  </StyledIconButton>
+                </Tooltip>
+                <Tooltip title="Download as CSV" arrow>
+                  <StyledIconButton onClick={(e) => handleMenuOpen(e, "Csv")}>
+                    <DescriptionIcon />
+                  </StyledIconButton>
+                </Tooltip>
+                <Tooltip title="Download as PDF" arrow>
+                  <StyledIconButton onClick={(e) => handleMenuOpen(e, "Pdf")}>
+                    <PictureAsPdfIcon />
+                  </StyledIconButton>
+                </Tooltip>
+                <Tooltip title="Refresh Data" arrow>
+                  <StyledIconButton onClick={fetchData}>
+                    <RefreshIcon />
+                  </StyledIconButton>
+                </Tooltip>
+                <Menu
+                  anchorEl={anchorEl}
+                  open={Boolean(anchorEl)}
+                  onClose={handleMenuClose}
+                  anchorOrigin={{ vertical: "top", horizontal: "right" }}
+                  transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+                >
+                  <MenuItem onClick={() => handleDownload(downloadType, "All")}>
+                    All Data
+                  </MenuItem>
+                  <MenuItem onClick={() => handleDownload(downloadType, "InView")}>
+                    Visible Screen Data
+                  </MenuItem>
+                </Menu>
+              </Box>
+            )}
+
+            {/* If download buttons are hidden, still show refresh button if needed */}
+            {!showDownloadButtons && (
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Tooltip title="Refresh Data" arrow>
+                  <StyledIconButton onClick={fetchData}>
+                    <RefreshIcon />
+                  </StyledIconButton>
+                </Tooltip>
+              </Box>
+            )}
           </Box>
 
           {showToggleButtons && (

@@ -13,6 +13,11 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SahayataNidhi.Models.Entities;
+using iText.Kernel.Colors;
+using System.Text;
+using iText.Kernel.Geom;
+using iText.Kernel.Font;
+using iText.IO.Font.Constants;
 
 namespace SahayataNidhi.Controllers
 {
@@ -308,70 +313,96 @@ namespace SahayataNidhi.Controllers
 
             switch (table)
             {
+                // --------------------------------------------------------------------------------
+                case "OfficeDetails":
+                    var odQuery = dbcontext.Officesdetails.AsQueryable();
+                    if (officeTypeId.HasValue)
+                        odQuery = odQuery.Where(od => od.Officeid == officeTypeId.Value);
+                    if (parentId > 0)
+                        odQuery = odQuery.Where(od => od.Districtcode == parentId);
+
+                    data = odQuery
+                        .OrderBy(od => od.Officename)
+                        .Select(od => new { value = od.Officedetailid, label = od.Officename })
+                        .ToList();
+                    break;
+
+                // --------------------------------------------------------------------------------
                 case "District":
                     if (isOfficeField && officeTypeId.HasValue)
                     {
                         data = dbcontext.Officesdetails
-                            .Where(od => od.Officetype == officeTypeId.Value)
-                            .Select(od => new { value = od.Districtcode, label = od.Officename }) // Adjust column names
+                            .Where(od => od.Officeid == officeTypeId.Value)
+                            .Select(od => new { value = od.Districtcode, label = od.Officename })
                             .Distinct()
+                            .OrderBy(x => x.label)
                             .ToList();
                     }
                     else
                     {
-                        // Return all districts from master table
-                        data = dbcontext.District
-                            .Where(d => d.Districtid == parentId) // or filter by whatever parent is
+                        var distQuery = dbcontext.District.AsQueryable();
+                        if (parentId > 0)
+                            distQuery = distQuery.Where(d => d.Division == parentId);
+                        data = distQuery
+                            .OrderBy(d => d.Districtname)
                             .Select(d => new { value = d.Districtid, label = d.Districtname })
                             .ToList();
                     }
                     break;
-                case "TehsilAll":
+
+                // --------------------------------------------------------------------------------
+                // Tehsil – now perfectly mirrors the old "TehsilAll" logic
+                // --------------------------------------------------------------------------------
+                case "Tehsil":   // (formerly "TehsilAll")
                     if (isOfficeField && officeTypeId.HasValue)
                     {
-                        // Fetch tehsils already configured as offices (from Officesdetails)
                         data = dbcontext.Officesdetails
-                            .Where(od => od.Districtcode == parentId && od.Officetype == officeTypeId.Value)
-                            .Select(od => new { value = od.Areacode, label = od.Areaname })
+                            .Where(od => od.Officeid == officeTypeId.Value)
+                            .Select(od => new { value = od.Officedetailid, label = od.Areaname })
+                            .Distinct()
+                            .OrderBy(x => x.label)
                             .ToList();
                     }
                     else
                     {
-                        // Fetch all tehsils from master table
                         data = dbcontext.Tehsil
                             .Where(t => t.Districtid == parentId)
+                            .OrderBy(t => t.Tehsilname)
                             .Select(t => new { value = t.Tehsilid, label = t.Tehsilname })
                             .ToList();
                     }
                     break;
 
+                // If you still need "TehsilAll" for backward compatibility, keep it as an alias:
+                case "TehsilAll":
+                    goto case "Tehsil";   // reuse exactly the same logic
+
+                // --------------------------------------------------------------------------------
                 case "Block":
                     if (isOfficeField && officeTypeId.HasValue)
                     {
-                        // If your Officesdetails table has a Blockcode column, use it.
-                        // Otherwise, adapt this to the correct parent column.
-                        // Example: assume Officesdetails has Blockcode
                         data = dbcontext.Officesdetails
-                            .Where(od => od.Districtcode == parentId && od.Officetype == officeTypeId.Value)
-                            .Select(od => new { value = od.Areacode, label = od.Areaname })
+                            .Where(od => od.Officeid == officeTypeId.Value)
+                            .Select(od => new { value = od.Officedetailid, label = od.Areaname })
+                            .Distinct()
+                            .OrderBy(x => x.label)
                             .ToList();
                     }
                     else
                     {
                         data = dbcontext.Blocks
                             .Where(b => b.Districtid == parentId)
+                            .OrderBy(b => b.Blockname)
                             .Select(b => new { value = b.Blockid, label = b.Blockname })
                             .ToList();
                     }
                     break;
 
-                // For District, you might need a separate endpoint because parentId would be divisionId.
-                // If you have a case for District, add it similarly.
-
+                // --------------------------------------------------------------------------------
                 case "Muncipality":
-                    // No office data expected; always use master table
                     data = dbcontext.Muncipalities
                         .Where(m => m.Districtid == parentId)
+                        .OrderBy(m => m.Muncipalityname)
                         .Select(m => new { value = m.Muncipalityid, label = m.Muncipalityname })
                         .ToList();
                     break;
@@ -387,6 +418,7 @@ namespace SahayataNidhi.Controllers
                 case "HalqaPanchayat":
                     data = dbcontext.Halqapanchayat
                         .Where(h => h.Blockid == parentId)
+                        .OrderBy(h => h.Halqapanchayatname)
                         .Select(h => new { value = h.Halqapanchayatid, label = h.Halqapanchayatname })
                         .ToList();
                     break;
@@ -394,33 +426,17 @@ namespace SahayataNidhi.Controllers
                 case "Village":
                     data = dbcontext.Villages
                         .Where(v => v.Halqapanchayatid == parentId)
+                        .OrderBy(v => v.Villagename)
                         .Select(v => new { value = v.Villageid, label = v.Villagename })
                         .ToList();
                     break;
 
-                // The original "Tehsil" case (for dependent enclosures) remains separate
-                case "Tehsil": // from Officesdetails (for dependent fields)
-                    var query = dbcontext.Officesdetails
-                        .Where(t => t.Districtcode == parentId);
-
-                    if (officeTypeId.HasValue)
-                    {
-                        query = query.Where(t => t.Officetype == officeTypeId.Value);
-                    }
-
-                    data = query
-                        .Select(t => new { value = t.Areacode, label = t.Officename })
-                        .ToList();
-                    break;
-
                 default:
-                    return BadRequest("Invalid table name.");
+                    return BadRequest(new { error = "Invalid table name." });
             }
 
             return Json(new { data });
         }
-
-
         private static byte[] GenerateExcel(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
         {
             using (var workbook = new XLWorkbook())
@@ -430,7 +446,13 @@ namespace SahayataNidhi.Controllers
                 // Add headers
                 for (int i = 0; i < columns.Count; i++)
                 {
-                    worksheet.Cell(1, i + 1).Value = columns[i]["header"] ?? columns[i]["accessorKey"];
+                    string headerValue = "";
+                    if (columns[i].ContainsKey("header") && !string.IsNullOrEmpty(columns[i]["header"]))
+                        headerValue = columns[i]["header"];
+                    else if (columns[i].ContainsKey("accessorKey"))
+                        headerValue = columns[i]["accessorKey"];
+
+                    worksheet.Cell(1, i + 1).Value = headerValue;
                     worksheet.Cell(1, i + 1).Style.Font.Bold = true;
                 }
 
@@ -441,7 +463,26 @@ namespace SahayataNidhi.Controllers
                     for (int colIndex = 0; colIndex < columns.Count; colIndex++)
                     {
                         var key = columns[colIndex]["accessorKey"];
-                        worksheet.Cell(rowIndex + 2, colIndex + 1).Value = rowData.GetValueOrDefault(key)?.ToString() ?? "";
+                        var value = rowData.GetValueOrDefault(key);
+
+                        // Handle different data types
+                        if (value != null)
+                        {
+                            if (value is DateTime dateTime)
+                                worksheet.Cell(rowIndex + 2, colIndex + 1).Value = dateTime;
+                            else if (value is int intValue)
+                                worksheet.Cell(rowIndex + 2, colIndex + 1).Value = intValue;
+                            else if (value is decimal decimalValue)
+                                worksheet.Cell(rowIndex + 2, colIndex + 1).Value = decimalValue;
+                            else if (value is double doubleValue)
+                                worksheet.Cell(rowIndex + 2, colIndex + 1).Value = doubleValue;
+                            else
+                                worksheet.Cell(rowIndex + 2, colIndex + 1).Value = value.ToString();
+                        }
+                        else
+                        {
+                            worksheet.Cell(rowIndex + 2, colIndex + 1).Value = "";
+                        }
                     }
                 }
 
@@ -463,13 +504,19 @@ namespace SahayataNidhi.Controllers
         private static byte[] GenerateCsv(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
         {
             using (var stream = new MemoryStream())
-            using (var writer = new StreamWriter(stream))
+            using (var writer = new StreamWriter(stream, Encoding.UTF8))
             using (var csv = new CsvWriter(writer, CultureInfo.InvariantCulture))
             {
                 // Write headers
                 foreach (var column in columns)
                 {
-                    csv.WriteField(column["header"] ?? column["accessorKey"]);
+                    string headerValue = "";
+                    if (column.ContainsKey("header") && !string.IsNullOrEmpty(column["header"]))
+                        headerValue = column["header"];
+                    else if (column.ContainsKey("accessorKey"))
+                        headerValue = column["accessorKey"];
+
+                    csv.WriteField(headerValue);
                 }
                 csv.NextRecord();
 
@@ -478,7 +525,20 @@ namespace SahayataNidhi.Controllers
                 {
                     foreach (var column in columns)
                     {
-                        csv.WriteField(row.GetValueOrDefault(column["accessorKey"])?.ToString() ?? "");
+                        var key = column["accessorKey"];
+                        var value = row.GetValueOrDefault(key);
+
+                        if (value != null)
+                        {
+                            if (value is DateTime dateTime)
+                                csv.WriteField(dateTime.ToString("dd MMM yyyy HH:mm:ss"));
+                            else
+                                csv.WriteField(value.ToString());
+                        }
+                        else
+                        {
+                            csv.WriteField("");
+                        }
                     }
                     csv.NextRecord();
                 }
@@ -492,47 +552,277 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+
+
+
+        private static PageSize GetOptimalPageSize(int columnCount, out float fontSize, out float margin)
+        {
+            // Define thresholds for different paper sizes with appropriate font sizes
+            if (columnCount <= 10)
+            {
+                fontSize = 9;
+                margin = 10;
+                return PageSize.A4.Rotate();
+            }
+            else if (columnCount <= 15)
+            {
+                fontSize = 8;
+                margin = 8;
+                return PageSize.A4.Rotate();
+            }
+            else if (columnCount <= 20)
+            {
+                fontSize = 7;
+                margin = 6;
+                return PageSize.A3.Rotate(); // A3 is 2x A4 width (11.7 x 16.5 inches)
+            }
+            else if (columnCount <= 25)
+            {
+                fontSize = 6;
+                margin = 5;
+                return PageSize.A2.Rotate(); // A2 is even larger (16.5 x 23.4 inches)
+            }
+            else if (columnCount <= 35)
+            {
+                fontSize = 5;
+                margin = 4;
+                return PageSize.A1.Rotate(); // A1 is very large (23.4 x 33.1 inches)
+            }
+            else
+            {
+                fontSize = 4;
+                margin = 3;
+                return PageSize.A0.Rotate(); // A0 is massive (33.1 x 46.8 inches) - use with caution
+            }
+        }
+
+        private static List<string> SplitTextIntoLines(string text, int maxCharsPerLine)
+        {
+            var lines = new List<string>();
+
+            if (text.Length <= maxCharsPerLine)
+            {
+                lines.Add(text);
+                return lines;
+            }
+
+            // Try to split by spaces first
+            var words = text.Split(' ');
+            var currentLine = new StringBuilder();
+
+            foreach (var word in words)
+            {
+                if (currentLine.Length + word.Length + 1 <= maxCharsPerLine)
+                {
+                    if (currentLine.Length > 0)
+                        currentLine.Append(" ");
+                    currentLine.Append(word);
+                }
+                else
+                {
+                    if (currentLine.Length > 0)
+                    {
+                        lines.Add(currentLine.ToString());
+                        currentLine.Clear();
+                    }
+
+                    // If a single word is longer than maxCharsPerLine, force split it
+                    if (word.Length > maxCharsPerLine)
+                    {
+                        for (int i = 0; i < word.Length; i += maxCharsPerLine)
+                        {
+                            int length = Math.Min(maxCharsPerLine, word.Length - i);
+                            lines.Add(word.Substring(i, length));
+                        }
+                    }
+                    else
+                    {
+                        currentLine.Append(word);
+                    }
+                }
+            }
+
+            if (currentLine.Length > 0)
+                lines.Add(currentLine.ToString());
+
+            return lines;
+        }
+
         private static byte[] GeneratePdf(List<Dictionary<string, object>> data, List<Dictionary<string, string>> columns)
         {
             using (var stream = new MemoryStream())
             {
-                using (var pdf = new PdfWriter(stream))
-                using (var pdfDoc = new PdfDocument(pdf))
+                var writer = new PdfWriter(stream);
+                var pdf = new PdfDocument(writer);
+
+                // Get optimal page size based on column count
+                float fontSize;
+                float margin;
+                var pageSize = GetOptimalPageSize(columns.Count, out fontSize, out margin);
+
+                pdf.SetDefaultPageSize(pageSize);
+                var document = new Document(pdf);
+                document.SetMargins(margin, margin, margin, margin);
+
+                // Create table with flexible column widths
+                var table = new Table(columns.Count);
+                table.SetWidth(UnitValue.CreatePercentValue(100));
+
+                // Calculate available width per column for text wrapping decisions
+                float pageWidth = pageSize.GetWidth();
+                float marginWidth = margin * 2;
+                float availableWidth = pageWidth - marginWidth;
+                float baseColumnWidth = availableWidth / columns.Count;
+
+                // Get fonts - using standard fonts without FontConstants
+                PdfFont normalFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                PdfFont boldFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
+
+                // Add headers with optimized text handling
+                foreach (var column in columns)
                 {
-                    var document = new Document(pdfDoc);
+                    string headerValue = column.ContainsKey("header") && !string.IsNullOrEmpty(column["header"])
+                        ? column["header"]
+                        : column["accessorKey"];
 
-                    // Create table
-                    var table = new Table(columns.Count);
-                    table.SetWidth(UnitValue.CreatePercentValue(100));
+                    // Calculate if header needs to be truncated or wrapped
+                    float maxCharsPerLine = (float)(baseColumnWidth / (fontSize * 0.5));
+                    var headerCell = new Cell();
 
-                    // Add headers
+                    if (headerValue.Length > maxCharsPerLine && maxCharsPerLine > 10)
+                    {
+                        // Truncate very long headers
+                        string truncatedHeader = headerValue.Substring(0, (int)maxCharsPerLine - 3) + "...";
+                        headerCell.Add(new Paragraph(truncatedHeader)
+                            .SetFont(boldFont)
+                            .SetFontSize(fontSize));
+                    }
+                    else
+                    {
+                        headerCell.Add(new Paragraph(headerValue)
+                            .SetFont(boldFont)
+                            .SetFontSize(fontSize));
+                    }
+
+                    headerCell.SetBackgroundColor(ColorConstants.LIGHT_GRAY)
+                        .SetBold()
+                        .SetTextAlignment(TextAlignment.CENTER)
+                        .SetPadding(3);
+
+                    table.AddHeaderCell(headerCell);
+                }
+
+                // Add data rows with optimized text handling
+                int rowCount = 0;
+                int totalRows = data.Count;
+
+                foreach (var row in data)
+                {
                     foreach (var column in columns)
                     {
-                        table.AddHeaderCell(new Cell().Add(new Paragraph(column["header"] ?? column["accessorKey"]).SetBold()));
+                        var key = column["accessorKey"];
+                        var value = row.ContainsKey(key) ? row[key] : null;
+                        string cellValue = value?.ToString() ?? "";
+
+                        if (value is DateTime dt)
+                            cellValue = dt.ToString("dd MMM yyyy");
+                        else if (value is decimal dec)
+                            cellValue = dec.ToString("N2");
+                        else if (value is double dbl)
+                            cellValue = dbl.ToString("N2");
+                        else if (value is int intVal)
+                            cellValue = intVal.ToString("N0");
+
+                        // Calculate if value needs to be truncated
+                        float maxCharsPerLine = (float)(baseColumnWidth / (fontSize * 0.6));
+                        var cell = new Cell();
+
+                        if (cellValue.Length > maxCharsPerLine && maxCharsPerLine > 15)
+                        {
+                            // Truncate very long values
+                            string truncatedValue = cellValue.Substring(0, (int)maxCharsPerLine - 3) + "...";
+                            cell.Add(new Paragraph(truncatedValue)
+                                .SetFont(normalFont)
+                                .SetFontSize(fontSize));
+                        }
+                        else
+                        {
+                            cell.Add(new Paragraph(cellValue)
+                                .SetFont(normalFont)
+                                .SetFontSize(fontSize));
+                        }
+
+                        cell.SetPadding(2);
+                        table.AddCell(cell);
                     }
 
-                    // Add data
-                    foreach (var row in data)
+                    rowCount++;
+
+                    // Calculate rows per page based on font size and paper size
+                    float pageHeight = pageSize.GetHeight();
+                    float usableHeight = pageHeight - (margin * 2);
+                    float rowHeightEstimate = (float)(fontSize * 1.5); // Approximate row height in points
+                    int rowsPerPage = Math.Max(15, (int)(usableHeight / rowHeightEstimate) - 5); // Subtract 5 for header and footer
+
+                    // Add new page when reaching row limit
+                    if (rowCount % rowsPerPage == 0 && rowCount < totalRows)
                     {
+                        document.Add(table);
+                        table = new Table(columns.Count);
+                        table.SetWidth(UnitValue.CreatePercentValue(100));
+
+                        // Re-add headers on new page with same styling
                         foreach (var column in columns)
                         {
-                            table.AddCell(new Cell().Add(new Paragraph(row.GetValueOrDefault(column["accessorKey"])?.ToString() ?? "")));
+                            string headerValue = column.ContainsKey("header") && !string.IsNullOrEmpty(column["header"])
+                                ? column["header"]
+                                : column["accessorKey"];
+
+                            float maxCharsPerLine = (float)(baseColumnWidth / (fontSize * 0.5));
+                            var headerCell = new Cell();
+
+                            if (headerValue.Length > maxCharsPerLine && maxCharsPerLine > 10)
+                            {
+                                string truncatedHeader = headerValue.Substring(0, (int)maxCharsPerLine - 3) + "...";
+                                headerCell.Add(new Paragraph(truncatedHeader)
+                                    .SetFont(boldFont)
+                                    .SetFontSize(fontSize));
+                            }
+                            else
+                            {
+                                headerCell.Add(new Paragraph(headerValue)
+                                    .SetFont(boldFont)
+                                    .SetFontSize(fontSize));
+                            }
+
+                            headerCell.SetBackgroundColor(ColorConstants.LIGHT_GRAY)
+                                .SetBold()
+                                .SetTextAlignment(TextAlignment.CENTER)
+                                .SetPadding(3);
+
+                            table.AddHeaderCell(headerCell);
                         }
                     }
-
-                    // Add footer
-                    table.AddFooterCell(new Cell(1, columns.Count)
-                        .Add(new Paragraph($"Report generated on: {DateTime.Now:dd MMMM yyyy, HH:mm:ss}")
-                        .SetItalic()));
-
-                    document.Add(table);
-                    document.Close();
-
-                    return stream.ToArray();
                 }
+
+                // Add footer with page numbers
+                int totalPages = pdf.GetNumberOfPages();
+                var footerCell = new Cell(1, columns.Count)
+                    .Add(new Paragraph($"Report generated on: {DateTime.Now:dd MMMM yyyy, HH:mm:ss} | Page {totalPages} of {totalPages}")
+                        .SetFont(normalFont)
+                        .SetFontColor(ColorConstants.GRAY)
+                        .SetItalic()
+                        .SetFontSize(7))
+                    .SetTextAlignment(TextAlignment.CENTER)
+                    .SetPadding(2);
+                table.AddFooterCell(footerCell);
+
+                document.Add(table);
+                document.Close();
+
+                return stream.ToArray();
             }
         }
-
         [HttpGet]
         public async Task<IActionResult> GetBanks()
         {

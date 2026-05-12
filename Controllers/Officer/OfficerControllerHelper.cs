@@ -1209,12 +1209,12 @@ namespace SahayataNidhi.Controllers.Officer
                 string applicantName = GetFieldValue("ApplicantName", formDetailsObj);
                 string email = GetFieldValue("Email", formDetailsObj);
 
-                var expiringApplication = dbcontext.Applicationswithexpiringeligibility
+                var expiringApplication = dbcontext.ApplicationExpirations
                     .FirstOrDefault(ae => ae.Referencenumber == application.Referencenumber);
 
                 if (expiringApplication != null && !string.IsNullOrEmpty(email))
                 {
-                    DateTime expirationDate = DateTime.Parse(expiringApplication.ExpirationDate);
+                    DateTime expirationDate = DateTime.Parse(expiringApplication.ExpirationDate.ToString());
 
                     string htmlMessage = $@"
                     <div style='font-family: Arial, sans-serif;'>
@@ -1238,7 +1238,7 @@ namespace SahayataNidhi.Controllers.Officer
                         <p style='font-size: 12px; color: #888;'>Thank you,<br />Your Application Team</p>
                     </div>";
 
-                    expiringApplication.MailSent++;
+                    expiringApplication.MailSentCount++;
                     await dbcontext.SaveChangesAsync();
 
                     await emailSender.SendEmail(email, "Important: UDID Card Validity Expiring", htmlMessage);
@@ -1460,6 +1460,74 @@ namespace SahayataNidhi.Controllers.Officer
 
             _logger.LogWarning("Text '{TargetText}' not found on page {PageNumber}", targetText, pageNumber);
             return null!;
+        }
+
+        private async Task<StatusCountsSnapshot> GetOrCreateSnapshotForOfficer(
+    int serviceId, string accessLevel, int accessCode, int divisionCode,
+    string takenBy, string dataType)
+        {
+            var existing = await dbcontext.StatusCountsSnapshot
+                .FirstOrDefaultAsync(s =>
+                    s.PServiceId == serviceId &&
+                    s.PAccessLevel == accessLevel &&
+                    s.PAccessCode == accessCode &&
+                    s.PDivisionCode == divisionCode &&
+                    s.PTakenBy == takenBy &&
+                    s.PDataType == dataType);
+
+            if (existing != null) return existing;
+
+            var snap = new StatusCountsSnapshot
+            {
+                CapturedAt = DateTime.UtcNow,
+                PAccessLevel = accessLevel,
+                PAccessCode = accessCode,
+                PServiceId = serviceId,
+                PTakenBy = takenBy,
+                PDivisionCode = divisionCode,
+                PDataType = dataType,
+                // all counts default to 0
+            };
+            dbcontext.StatusCountsSnapshot.Add(snap);
+            return snap;
+        }
+
+        private int GetAccessCodeForLevel(string accessLevel, JObject formDetailsObj)
+        {
+            if (accessLevel == "Tehsil")
+            {
+                string? val = GetFormFieldValue(formDetailsObj, "Tehsil");
+                if (!string.IsNullOrEmpty(val) && int.TryParse(val, out int id)) return id;
+            }
+            else if (accessLevel == "District")
+            {
+                string? val = GetFormFieldValue(formDetailsObj, "District");
+                if (!string.IsNullOrEmpty(val) && int.TryParse(val, out int id)) return id;
+            }
+            return 0;
+        }
+
+        private int GetDivisionForLevelAndCode(string accessLevel, int accessCode)
+        {
+            if (accessLevel == "Tehsil")
+            {
+                var tehsil = dbcontext.Tehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
+                if (tehsil != null)
+                {
+                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == tehsil.Districtid);
+                    return district?.Division ?? 0;
+                }
+            }
+            else if (accessLevel == "District")
+            {
+                var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
+                return district?.Division ?? 0;
+            }
+            else if (accessLevel == "Division")
+            {
+                return accessCode;
+            }
+            return 0;
         }
 
         private class PdfTextLocator : LocationTextExtractionStrategy

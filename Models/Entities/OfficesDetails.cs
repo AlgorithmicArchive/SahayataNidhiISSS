@@ -5,6 +5,16 @@ namespace SahayataNidhi.Models.Entities;
 
 public partial class Officesdetails
 {
+    public string Areaname { get; set; } = null!;
+
+    public string Officename { get; set; } = null!;
+
+    public int Officeid { get; set; }
+
+    public int Officedetailid { get; set; }
+
+    public int? Parentofficedetailid { get; set; }
+
     public int Statecode { get; set; }
 
     public int Divisioncode { get; set; }
@@ -13,13 +23,9 @@ public partial class Officesdetails
 
     public int Areacode { get; set; }
 
-    public string Areaname { get; set; } = null!;
+    public virtual ICollection<Officesdetails> InverseParentofficedetail { get; set; } = new List<Officesdetails>();
 
-    public string Officename { get; set; } = null!;
+    public virtual Offices Office { get; set; } = null!;
 
-    public int Officetype { get; set; }
-
-    public int Officedetailid { get; set; }
-
-    public virtual Offices OfficetypeNavigation { get; set; } = null!;
+    public virtual Officesdetails? Parentofficedetail { get; set; }
 }

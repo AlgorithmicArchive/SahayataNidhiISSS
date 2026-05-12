@@ -497,12 +497,13 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       const districtField = formSections
         .flatMap(s => s.fields)
         .find(f => f.name === "District" && f.isOfficeField);
+      console.log("Found district field:", districtField);
 
       if (districtField && districtField.officeTypeId) {
         const parentId = 0; // or get from context if needed
         try {
           const response = await axiosInstance.get(
-            `/Base/GetAreaList?table=District&parentId=${parentId}&isOfficeField=true&officeTypeId=${districtField.officeTypeId}`
+            `/Base/GetAreaList?table=OfficeDetails&parentId=${parentId}&isOfficeField=true&officeTypeId=${districtField.officeTypeId}`
           );
           const districtOptions = response.data.data || [];
           const newOptions = [
@@ -1211,7 +1212,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   };
 
   const handleAreaChange = async (sectionIndex, field, value) => {
-    console.log(`handleAreaChange called for ${field.name} with value: ${value}`);
     try {
       let addressTypeKey = "";
       if (field.name.startsWith("Present")) {
@@ -1285,6 +1285,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         return;
       }
 
+
       let childFieldNames =
         typeof match.childname === "object"
           ? match.childname[AddressType]
@@ -1308,12 +1309,14 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
       for (let i = 0; i < childFieldNames.length; i++) {
         const childFieldName = childFieldNames[i];
-        const tableName = tableNames[i];
+        console.log(`Fetching options for ${childFieldName} based on ${field.name} (${value}) with table ${tableNames[i]}`);
+        let tableName = tableNames[i];
         const childFieldDef = findFieldInSection(formSections[sectionIndex], childFieldName);
-
+        console.log(`Child field definition for ${childFieldName}:`, childFieldDef);
         let officeTypeIdParam = '';
         if (childFieldDef?.isOfficeField && childFieldDef?.officeTypeId) {
-          officeTypeIdParam = `&officeTypeId=${childFieldDef.officeTypeId}`;
+          tableName = "OfficeDetails";
+          officeTypeIdParam = `&officeTypeId=${childFieldDef.officeTypeId}&isOfficeField=true`;
         }
         try {
           const response = await axiosInstance.get(

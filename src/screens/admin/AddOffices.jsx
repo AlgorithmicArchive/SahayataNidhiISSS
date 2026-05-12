@@ -30,7 +30,8 @@ export default function AddOffices() {
     formState: { errors },
   } = useForm({
     defaultValues: {
-      officeType: "",
+      officeName: "",
+      officeNameShort: "",
       accessLevel: "",
     },
   });
@@ -47,7 +48,6 @@ export default function AddOffices() {
   const [editingOffice, setEditingOffice] = useState(null);
   const [refreshTable, setRefreshTable] = useState(false);
 
-  // Check if user has permission to update/delete
   const canModifyOffices = useMemo(() => {
     return (
       officerAuthorities?.canDirectWithhold ||
@@ -56,31 +56,21 @@ export default function AddOffices() {
     );
   }, [userType, officerAuthorities]);
 
-  // Fetch current officer's details to get DepartmentId
   useEffect(() => {
     const fetchOfficerDetails = async () => {
       setIsLoading(true);
       try {
-        const response = await axiosInstance.get(
-          "/Admin/GetCurrentAdminDetails",
-        );
-
+        const response = await axiosInstance.get("/Admin/GetCurrentAdminDetails");
         if (!response.data || !response.data.additionalDetails) {
           throw new Error("Officer data is missing");
         }
-
         const details = JSON.parse(response.data.additionalDetails);
-
-        // Check if details exist and Department property exists (can be 0)
         if (!details) {
           throw new Error("Invalid officer details");
         }
-
-        // Department can be 0, so check if it's undefined or null instead of falsy
         if (details.Department === undefined || details.Department === null) {
           throw new Error("Department information not found in officer details");
         }
-
         setDepartmentId(details.Department);
       } catch (error) {
         setErrorMessage(`Error loading officer data: ${error.message}`);
@@ -88,23 +78,21 @@ export default function AddOffices() {
         setIsLoading(false);
       }
     };
-
     fetchOfficerDetails();
   }, []);
 
-  // Reset form when edit modal closes
   useEffect(() => {
     if (!editModalOpen) {
-      reset({ officeType: "", accessLevel: "" });
+      reset({ officeName: "", officeNameShort: "", accessLevel: "" });
       setEditingOffice(null);
     }
   }, [editModalOpen, reset]);
 
-  // Handle form submission for adding an office
   const onSubmit = async (data) => {
     try {
       const formData = new FormData();
-      formData.append("OfficeType", data.officeType);
+      formData.append("OfficeName", data.officeName);
+      formData.append("OfficeNameShort", data.officeNameShort);
       formData.append("AccessLevel", data.accessLevel);
       formData.append("DepartmentId", departmentId.toString());
 
@@ -122,7 +110,7 @@ export default function AddOffices() {
         setRefreshTable((prev) => !prev);
       } else {
         setErrorMessage(
-          `Failed to add office: ${response.data.message || "Unknown error"}`,
+          `Failed to add office: ${response.data.message || "Unknown error"}`
         );
       }
     } catch (error) {
@@ -130,21 +118,17 @@ export default function AddOffices() {
     }
   };
 
-  // Handle update office
   const handleUpdate = async (data) => {
     if (!editingOffice) return;
-
     try {
       const formData = new FormData();
       formData.append("OfficeId", editingOffice.officeId);
-      formData.append("OfficeType", data.officeType);
+      formData.append("OfficeName", data.officeName);
+      formData.append("OfficeNameShort", data.officeNameShort);
       formData.append("AccessLevel", data.accessLevel);
       formData.append("DepartmentId", departmentId.toString());
 
-      const response = await axiosInstance.post(
-        "/Admin/UpdateOffice",
-        formData,
-      );
+      const response = await axiosInstance.post("/Admin/UpdateOffice", formData);
 
       if (response.data.status) {
         setModalMessage({
@@ -157,8 +141,7 @@ export default function AddOffices() {
         setRefreshTable((prev) => !prev);
       } else {
         setErrorMessage(
-          `Failed to update office: ${response.data.message || "Unknown error"
-          }`,
+          `Failed to update office: ${response.data.message || "Unknown error"}`
         );
       }
     } catch (error) {
@@ -166,18 +149,12 @@ export default function AddOffices() {
     }
   };
 
-  // Handle delete office
   const handleDelete = async (officeId) => {
     if (!window.confirm("Are you sure you want to delete this office?")) return;
-
     try {
       const formData = new FormData();
       formData.append("OfficeId", officeId);
-
-      const response = await axiosInstance.post(
-        "/Admin/DeleteOffice",
-        formData,
-      );
+      const response = await axiosInstance.post("/Admin/DeleteOffice", formData);
 
       if (response.data.status) {
         setModalMessage({
@@ -189,8 +166,7 @@ export default function AddOffices() {
         setRefreshTable((prev) => !prev);
       } else {
         setErrorMessage(
-          `Failed to delete office: ${response.data.message || "Unknown error"
-          }`,
+          `Failed to delete office: ${response.data.message || "Unknown error"}`
         );
       }
     } catch (error) {
@@ -198,7 +174,6 @@ export default function AddOffices() {
     }
   };
 
-  // Action functions for ServerSideTable
   const actionFunctions = {
     UpdateOffice: (row) => {
       if (!canModifyOffices) {
@@ -207,7 +182,8 @@ export default function AddOffices() {
       }
       const userdata = row.original;
       setEditingOffice(userdata);
-      setValue("officeType", userdata.officeType);
+      setValue("officeName", userdata.officeName);
+      setValue("officeNameShort", userdata.officeNameShort);
       setValue("accessLevel", userdata.accessLevel);
       setEditModalOpen(true);
     },
@@ -220,10 +196,10 @@ export default function AddOffices() {
     },
   };
 
-  // Table columns
   const columns = [
     { field: "officeId", headerName: "ID", flex: 1 },
-    { field: "officeType", headerName: "Office Type", flex: 1 },
+    { field: "officeName", headerName: "Office Name", flex: 1 },
+    { field: "officeNameShort", headerName: "Short Name", flex: 1 },
     { field: "accessLevel", headerName: "Access Level", flex: 1 },
   ];
 
@@ -243,7 +219,6 @@ export default function AddOffices() {
     );
   }
 
-  // Show error if departmentId is not set (but don't block rendering if it's 0)
   if (errorMessage && departmentId === null) {
     return (
       <Container maxWidth="md" sx={{ py: 8 }}>
@@ -280,19 +255,36 @@ export default function AddOffices() {
           <Grid container spacing={3}>
             <Grid item xs={12} sm={6}>
               <Controller
-                name="officeType"
+                name="officeName"
                 control={control}
-                rules={{ required: "Office type is required" }}
+                rules={{ required: "Office name is required" }}
                 render={({ field }) => (
                   <TextField
                     {...field}
                     fullWidth
-                    label="Office Type"
+                    label="Office Name"
                     variant="outlined"
-                    error={!!errors.officeType}
-                    helperText={errors.officeType?.message}
+                    error={!!errors.officeName}
+                    helperText={errors.officeName?.message}
                     InputLabelProps={{ shrink: true }}
-                    aria-invalid={errors.officeType ? "true" : "false"}
+                  />
+                )}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Controller
+                name="officeNameShort"
+                control={control}
+                rules={{ required: "Short name is required" }}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    fullWidth
+                    label="Short Name"
+                    variant="outlined"
+                    error={!!errors.officeNameShort}
+                    helperText={errors.officeNameShort?.message}
+                    InputLabelProps={{ shrink: true }}
                   />
                 )}
               />
@@ -303,17 +295,9 @@ export default function AddOffices() {
                 control={control}
                 rules={{ required: "Access level is required" }}
                 render={({ field }) => (
-                  <FormControl
-                    fullWidth
-                    variant="outlined"
-                    error={!!errors.accessLevel}
-                  >
+                  <FormControl fullWidth variant="outlined" error={!!errors.accessLevel}>
                     <InputLabel shrink>Access Level</InputLabel>
-                    <Select
-                      {...field}
-                      label="Access Level"
-                      aria-label="Select Access Level"
-                    >
+                    <Select {...field} label="Access Level">
                       <MenuItem value="">Select Access Level</MenuItem>
                       <MenuItem value="State">State</MenuItem>
                       <MenuItem value="Division">Division</MenuItem>
@@ -338,7 +322,6 @@ export default function AddOffices() {
                 fullWidth
                 sx={{ mt: 3, py: 1.5, fontSize: "1.1rem" }}
                 disabled={!canModifyOffices || departmentId === null}
-                aria-label="Add Office"
               >
                 Add Office
               </Button>
@@ -395,19 +378,36 @@ export default function AddOffices() {
             <Grid container spacing={3}>
               <Grid item xs={12} sm={6}>
                 <Controller
-                  name="officeType"
+                  name="officeName"
                   control={control}
-                  rules={{ required: "Office type is required" }}
+                  rules={{ required: "Office name is required" }}
                   render={({ field }) => (
                     <TextField
                       {...field}
                       fullWidth
-                      label="Office Type"
+                      label="Office Name"
                       variant="outlined"
-                      error={!!errors.officeType}
-                      helperText={errors.officeType?.message}
+                      error={!!errors.officeName}
+                      helperText={errors.officeName?.message}
                       InputLabelProps={{ shrink: true }}
-                      aria-invalid={errors.officeType ? "true" : "false"}
+                    />
+                  )}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Controller
+                  name="officeNameShort"
+                  control={control}
+                  rules={{ required: "Short name is required" }}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Short Name"
+                      variant="outlined"
+                      error={!!errors.officeNameShort}
+                      helperText={errors.officeNameShort?.message}
+                      InputLabelProps={{ shrink: true }}
                     />
                   )}
                 />
@@ -418,17 +418,9 @@ export default function AddOffices() {
                   control={control}
                   rules={{ required: "Access level is required" }}
                   render={({ field }) => (
-                    <FormControl
-                      fullWidth
-                      variant="outlined"
-                      error={!!errors.accessLevel}
-                    >
+                    <FormControl fullWidth variant="outlined" error={!!errors.accessLevel}>
                       <InputLabel shrink>Access Level</InputLabel>
-                      <Select
-                        {...field}
-                        label="Access Level"
-                        aria-label="Select Access Level"
-                      >
+                      <Select {...field} label="Access Level">
                         <MenuItem value="">Select Access Level</MenuItem>
                         <MenuItem value="State">State</MenuItem>
                         <MenuItem value="Division">Division</MenuItem>
@@ -446,27 +438,11 @@ export default function AddOffices() {
                 />
               </Grid>
               <Grid item xs={12}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    gap: 2,
-                    mt: 3,
-                  }}
-                >
-                  <Button
-                    variant="outlined"
-                    onClick={() => setEditModalOpen(false)}
-                    aria-label="Cancel Edit"
-                  >
+                <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 2, mt: 3 }}>
+                  <Button variant="outlined" onClick={() => setEditModalOpen(false)}>
                     Cancel
                   </Button>
-                  <Button
-                    type="submit"
-                    variant="contained"
-                    color="primary"
-                    aria-label="Update Office"
-                  >
+                  <Button type="submit" variant="contained" color="primary">
                     Update
                   </Button>
                 </Box>

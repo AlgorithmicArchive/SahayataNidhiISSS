@@ -625,6 +625,7 @@ export default function Reports() {
           extraParams={reportParams}
           Title={getReportTitle()}
           searchableFields={getSearchableFields()}
+          showDownloadButtons={true}
           actionFunctions={{}}
         />
       )}

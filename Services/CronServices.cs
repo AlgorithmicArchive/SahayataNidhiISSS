@@ -23,7 +23,8 @@ public class CronServices
         _scheduler = scheduler;
     }
 
-    // === Task: Notify Expiring Eligibilities ===
+    // === Task: Notify Expiring Eligibilities ===    
+
     public async Task NotifyExpiringEligibilities(string? serviceId = "1", CancellationToken ct = default)
     {
         if (!int.TryParse(serviceId, out int svcId))
@@ -32,110 +33,157 @@ public class CronServices
             return;
         }
 
-        string accessLevel = "State";
-        int? accessCode = 0;
-        string takenBy = "";
-        int? divisionCode = null;
-        string resultType = "expiringeligibility";
-        int pageIndex = 0, pageSize = 10;
+        var today = DateOnly.FromDateTime(DateTime.Today);
 
-        var applications = await _dbcontext.CitizenApplications
-            .FromSqlRaw(
-                "SELECT * FROM get_disability_applications(@p_access_level, @p_access_code, @p_service_id, @p_taken_by, @p_division_code, @p_result_type, @p_page_number, @p_page_size)",
-                new NpgsqlParameter("@p_access_level", accessLevel),
-                new NpgsqlParameter("@p_access_code", accessCode ?? (object)DBNull.Value),
-                new NpgsqlParameter("@p_service_id", svcId),
-                new NpgsqlParameter("@p_taken_by", takenBy),
-                new NpgsqlParameter("@p_division_code", divisionCode ?? (object)DBNull.Value),
-                new NpgsqlParameter("@p_result_type", resultType),
-                new NpgsqlParameter("@p_page_number", pageIndex + 1),
-                new NpgsqlParameter("@p_page_size", pageSize))
+        // Fetch all active expirations with their associated expiration type
+        var expiringRecords = await _dbcontext.ApplicationExpirations
+            .Include(e => e.ExpirationType)
+            .Where(e => e.ServiceId == svcId)
+            .Where(e => e.IsActive == true)
+            .Where(e => e.Email != null)
+            .Where(e => e.MailSentCount == 0)   // only those not yet notified
+            .Where(e => e.ExpirationDate >= today) // not already expired (optional, maybe include grace period)
             .ToListAsync(ct);
 
         int mailSentCount = 0;
 
-        foreach (var application in applications)
+        foreach (var exp in expiringRecords)
         {
             if (ct.IsCancellationRequested) break;
 
-            // Try to parse FormDetails as JToken to get ApplicantName and Email
+            var expType = exp.ExpirationType;
+            if (expType == null) continue;
+
+            // Determine the notification start date based on reminder_before
+            DateOnly reminderStartDate = exp.ExpirationDate;
+            if (!string.IsNullOrEmpty(expType.ReminderBefore))
+            {
+                if (TryParseInterval(expType.ReminderBefore, out TimeSpan reminderBefore))
+                {
+                    reminderStartDate = exp.ExpirationDate.AddDays((int)-reminderBefore.TotalDays);
+                }
+            }
+
+            // Skip if today is before the reminder window
+            if (today < reminderStartDate)
+                continue;
+
+            // Fetch applicant name from citizen_applications
             string applicantName = "";
-            string email = "";
+            var application = await _dbcontext.CitizenApplications
+                .FirstOrDefaultAsync(a => a.Referencenumber == exp.Referencenumber, ct);
+            if (application != null)
+            {
+                applicantName = ExtractFieldFromJson(application.Formdetails, "ApplicantName");
+            }
+
+            // Prepare email content
+            string subject = $"{expType.ExpirationName} Expiry Notification";
+            var placeholders = new Dictionary<string, string>
+            {
+                { "ApplicantName", applicantName },
+                { "ReferenceNumber", exp.Referencenumber },
+                { "CertificateName", expType.ExpirationName },
+                { "ExpiryDate", exp.ExpirationDate.ToString("dd MMM yyyy") }
+            };
+
+            string messageBody = BuildEmailMessage(expType.MessageTemplate, placeholders);
 
             try
             {
-                var formDetailsObj = JToken.Parse(application.Formdetails ?? "{}");
+                await _emailSender.SendEmail(exp.Email!, subject, messageBody);
 
-                // Check if it's the new JSON structure with sections
-                if (formDetailsObj is JObject jObj && jObj.ContainsKey("Applicant Details"))
-                {
-                    var applicantDetails = jObj["Applicant Details"];
-                    if (applicantDetails is JArray applicantArray)
-                    {
-                        foreach (var field in applicantArray)
-                        {
-                            if (field["name"]?.ToString() == "ApplicantName")
-                                applicantName = field["value"]?.ToString() ?? "";
-                            if (field["name"]?.ToString() == "Email")
-                                email = field["value"]?.ToString() ?? "";
-                        }
-                    }
-                }
-                else
-                {
-                    // Fallback to direct property access (old structure)
-                    applicantName = formDetailsObj["ApplicantName"]?.ToString() ?? "";
-                    email = formDetailsObj["Email"]?.ToString() ?? "";
-                }
+                exp.MailSentCount++;
+                exp.LastNotifiedAt = DateTime.UtcNow;
+                await _dbcontext.SaveChangesAsync(ct);
+
+                mailSentCount++;
+                _logger.LogInformation("Sent {Type} expiry email to {Email} for RefNo {RefNo}",
+                    expType.ExpirationName, exp.Email, exp.Referencenumber);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to parse FormDetails for application {Referencenumber}", application.Referencenumber);
-                continue;
+                _logger.LogError(ex, "Failed to send expiry email for RefNo {RefNo}", exp.Referencenumber);
             }
-
-            if (string.IsNullOrEmpty(email)) continue;
-
-            var expiringApplication = await _dbcontext.Applicationswithexpiringeligibility
-                .FirstOrDefaultAsync(ae => ae.Referencenumber == application.Referencenumber, ct);
-
-            if (expiringApplication == null) continue;
-
-            if (expiringApplication.MailSent > 0)
-            {
-                _logger.LogInformation("Mail already sent for {Referencenumber}", application.Referencenumber);
-                continue;
-            }
-
-            if (!DateTime.TryParse(expiringApplication.ExpirationDate, out DateTime expirationDate))
-            {
-                _logger.LogWarning("Invalid expiration date format for {Referencenumber}: {Date}",
-                    application.Referencenumber, expiringApplication.ExpirationDate);
-                continue;
-            }
-
-            string htmlMessage = $@"
-                <div style='font-family: Arial, sans-serif;'>
-                    <h2 style='color: #2e6c80;'>UDID Card Validity Expiring</h2>
-                    <p><strong>{applicantName}</strong>,</p>
-                    <p>
-                        Your UDID Card linked to application <strong>{application.Referencenumber}</strong>
-                        is expiring on <strong>{expirationDate:dd MMM yyyy}</strong>.
-                    </p>
-                    <p>Please renew your UDID card to continue receiving financial assistance.</p>
-                </div>";
-
-            expiringApplication.MailSent++;
-            await _dbcontext.SaveChangesAsync(ct);
-            await _emailSender.SendEmail(email, "UDID Card Expiry Notification", htmlMessage);
-            mailSentCount++;
         }
 
-        _logger.LogInformation("Processed {Count} applications, sent {Mails} mails", applications.Count, mailSentCount);
+        _logger.LogInformation("Processed {Total} expiring records, sent {Sent} emails", expiringRecords.Count, mailSentCount);
+    }
+
+    // Helper: Parse interval string like "3 months" or "1 year" to TimeSpan (approx)
+    private bool TryParseInterval(string intervalStr, out TimeSpan interval)
+    {
+        interval = TimeSpan.Zero;
+        var parts = intervalStr.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 2) return false;
+        if (!int.TryParse(parts[0], out int value)) return false;
+
+        switch (parts[1].ToLower())
+        {
+            case "year":
+            case "years":
+                interval = TimeSpan.FromDays(value * 365);
+                return true;
+            case "month":
+            case "months":
+                interval = TimeSpan.FromDays(value * 30);
+                return true;
+            case "day":
+            case "days":
+                interval = TimeSpan.FromDays(value);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // Helper: Build email message from template or fallback
+    private string BuildEmailMessage(string? template, Dictionary<string, string> placeholders)
+    {
+        if (string.IsNullOrEmpty(template))
+        {
+            // Default fallback template
+            template = @"
+            <div style='font-family: Arial, sans-serif;'>
+                <h2 style='color: #2e6c80;'>{CertificateName} Expiring Soon</h2>
+                <p><strong>{ApplicantName}</strong>,</p>
+                <p>
+                    Your {CertificateName} linked to application <strong>{ReferenceNumber}</strong>
+                    is expiring on <strong>{ExpiryDate}</strong>.
+                </p>
+                <p>Please renew it to continue receiving benefits.</p>
+            </div>";
+        }
+
+        foreach (var kvp in placeholders)
+        {
+            template = template.Replace($"{{{kvp.Key}}}", kvp.Value);
+        }
+
+        return template;
+    }
+    // Helper: Extract a field value from the JSON formdetails (same as before)
+    private string ExtractFieldFromJson(string? formDetailsJson, string fieldName)
+    {
+        if (string.IsNullOrEmpty(formDetailsJson)) return "";
+        try
+        {
+            var json = JObject.Parse(formDetailsJson);
+            if (json.TryGetValue("Applicant Details", out var applicantToken) && applicantToken is JArray applicantArray)
+            {
+                foreach (var field in applicantArray)
+                {
+                    if (field["name"]?.ToString() == fieldName)
+                        return field["value"]?.ToString() ?? "";
+                }
+            }
+        }
+        catch { /* ignore */ }
+        return "";
     }
 
     // === Self-register all public async Task methods (excluding RegisterAllTasksAsync) ===
-    public async Task RegisterAllTasksAsync(string cronExpression = "0 9 * * *", CancellationToken ct = default)
+    public async Task RegisterAllTasksAsync(CancellationToken ct = default)
     {
         var methods = GetType()
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
@@ -146,55 +194,75 @@ public class CronServices
         {
             string actionType = method.Name;
 
-            var action = async (CancellationToken token) =>
+            // Fetch the job configuration from DB
+            var jobConfig = await _dbcontext.Scheduledjobs
+                .FirstOrDefaultAsync(j => j.Actiontype == actionType, ct);
+
+            string cronExpression = jobConfig?.Cronexpression ?? GetDefaultCronForTask(actionType);
+
+            var action = CreateActionDelegate(method);
+
+            if (jobConfig == null)
             {
-                try
+                // New task: insert into DB and schedule
+                _dbcontext.Scheduledjobs.Add(new Scheduledjobs
                 {
-                    var parameters = method.GetParameters();
-                    var args = new object?[parameters.Length];
-
-                    for (int i = 0; i < parameters.Length; i++)
-                    {
-                        var p = parameters[i];
-
-                        if (p.ParameterType == typeof(string) && p.HasDefaultValue)
-                            args[i] = p.DefaultValue;
-                        else if (p.ParameterType == typeof(string))
-                            args[i] = "1";
-                        else if (p.ParameterType == typeof(CancellationToken))
-                            args[i] = token;
-                        else
-                            args[i] = null;
-                    }
-
-                    await (Task)method.Invoke(this, args)!;
-                    _logger.LogDebug("Successfully executed scheduled task: {MethodName}", actionType);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error executing scheduled task: {MethodName}", actionType);
-                    throw;
-                }
-            };
-
-            // ✅ ADD THIS CHECK HERE
-            var existingTask = await _dbcontext.Scheduledjobs
-                .FirstOrDefaultAsync(t => t.Actiontype == actionType, ct);
-
-            if (existingTask == null)
-            {
+                    Id = Guid.NewGuid(),
+                    Actiontype = actionType,
+                    Cronexpression = cronExpression,
+                    Createdat = DateTime.UtcNow
+                });
+                await _dbcontext.SaveChangesAsync(ct);
                 await _scheduler.ScheduleTaskAsync(cronExpression, actionType, action);
                 _logger.LogInformation("Registered new task {MethodName} with CRON {Cron}", actionType, cronExpression);
             }
             else
             {
-                existingTask.Cronexpression = cronExpression;
-                await _dbcontext.SaveChangesAsync(ct);
-
-                _logger.LogInformation("Updated CRON for existing task {MethodName}", actionType);
+                // Existing task: schedule with DB cron (and update if needed)
+                await _scheduler.ScheduleTaskAsync(cronExpression, actionType, action);
+                _logger.LogInformation("Scheduled existing task {MethodName} with CRON {Cron}", actionType, cronExpression);
             }
         }
     }
 
+    private string GetDefaultCronForTask(string actionType)
+    {
+        // Define fallback crons per task (optional)
+        return actionType switch
+        {
+            nameof(NotifyExpiringEligibilities) => "0 9 * * *",  // 9 AM daily
+            _ => "0 0 * * *"  // midnight default
+        };
+    }
 
+    private Func<CancellationToken, Task> CreateActionDelegate(MethodInfo method)
+    {
+        return async (CancellationToken token) =>
+        {
+            try
+            {
+                var parameters = method.GetParameters();
+                var args = new object?[parameters.Length];
+
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    var p = parameters[i];
+                    if (p.ParameterType == typeof(string))
+                        args[i] = "1";  // default serviceId, could be improved
+                    else if (p.ParameterType == typeof(CancellationToken))
+                        args[i] = token;
+                    else
+                        args[i] = null;
+                }
+
+                await (Task)method.Invoke(this, args)!;
+                _logger.LogDebug("Executed scheduled task: {MethodName}", method.Name);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing scheduled task: {MethodName}", method.Name);
+                throw;
+            }
+        };
+    }
 }

@@ -12,26 +12,26 @@ namespace SahayataNidhi.Controllers.User
 {
     public partial class UserController
     {
-        public void ServiceSpecific(int Serviceid, JToken formDetails, string ReferenceNumber)
-        {
-            _logger.LogInformation($"--------- SERVICE ID: {Serviceid} ------------------------------");
-            if (Serviceid == 1)
-            {
-                var KindOfDisability = FindFieldRecursively(formDetails, "KindOfDisability");
-                if (KindOfDisability != null && (string)KindOfDisability!["value"]! == "TEMPORARY")
-                {
-                    string ExpirationDate = (string)FindFieldRecursively(formDetails, "IfTemporaryDisabilityUdidCardValidUpto")!["value"]!;
-                    var expiringEligibility = new Applicationswithexpiringeligibility
-                    {
-                        Serviceid = Serviceid,
-                        ExpirationDate = ExpirationDate,
-                        Referencenumber = ReferenceNumber,
-                    };
-                    dbcontext.Applicationswithexpiringeligibility.Add(expiringEligibility);
-                    dbcontext.SaveChanges();
-                }
-            }
-        }
+        // public void ServiceSpecific(int Serviceid, JToken formDetails, string ReferenceNumber)
+        // {
+        //     _logger.LogInformation($"--------- SERVICE ID: {Serviceid} ------------------------------");
+        //     if (Serviceid == 1)
+        //     {
+        //         var KindOfDisability = FindFieldRecursively(formDetails, "KindOfDisability");
+        //         if (KindOfDisability != null && (string)KindOfDisability!["value"]! == "TEMPORARY")
+        //         {
+        //             string ExpirationDate = (string)FindFieldRecursively(formDetails, "IfTemporaryDisabilityUdidCardValidUpto")!["value"]!;
+        //             var expiringEligibility = new Applicationswithexpiringeligibility
+        //             {
+        //                 Serviceid = Serviceid,
+        //                 ExpirationDate = ExpirationDate,
+        //                 Referencenumber = ReferenceNumber,
+        //             };
+        //             dbcontext.Applicationswithexpiringeligibility.Add(expiringEligibility);
+        //             dbcontext.SaveChanges();
+        //         }
+        //     }
+        // }
 
         // Helper method to validate email format
         private static bool IsValidEmail(string email)
@@ -92,31 +92,23 @@ namespace SahayataNidhi.Controllers.User
         [HttpPost]
         public async Task<IActionResult> InsertFormDetails([FromForm] IFormCollection form)
         {
-            // Retrieve userId from JWT token
             int userId = Convert.ToInt32(User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
             int serviceId = Convert.ToInt32(form["serviceId"].ToString());
             string formDetailsJson = form["formDetails"].ToString();
             string status = form["status"].ToString();
             string ReferenceNumber = form["referenceNumber"].ToString();
-            string OfficerRole = "";
-            string OfficerArea = "";
 
             var formDetailsObj = JObject.Parse(formDetailsJson);
             var formdetailsToken = JToken.Parse(formDetailsJson);
 
-            // Flatten all sections into a single collection of fields.
             var allFields = formDetailsObj.Properties()
                 .Where(prop => prop.Value is JArray)
                 .SelectMany(prop => (JArray)prop.Value)
                 .OfType<JObject>();
 
-            // Dictionary to store file hashes and their corresponding file paths
             var fileHashMap = new Dictionary<string, string>();
-
-            // Process each file.
             foreach (var file in form.Files)
             {
-                // Calculate SHA256 hash of the file content
                 string fileHash;
                 using (var stream = file.OpenReadStream())
                 using (var sha256 = SHA256.Create())
@@ -124,92 +116,95 @@ namespace SahayataNidhi.Controllers.User
                     byte[] hashBytes = await sha256.ComputeHashAsync(stream);
                     fileHash = Convert.ToBase64String(hashBytes);
                 }
-
-                // Check if the file hash already exists in the map
                 if (!fileHashMap.TryGetValue(fileHash, out string? filePath))
                 {
-                    // File is new, generate and store the file path
                     filePath = await helper.GetFilePath(file, null, null, "document");
                     fileHashMap[fileHash] = filePath;
                 }
-                else
-                {
-                    _logger.LogInformation($"Reusing existing file path for hash: {fileHash}");
-                }
-
-                // Assign the file path to all matching fields
                 foreach (var field in allFields.Where(f => f["name"]?.ToString() == file.Name))
-                {
                     field["File"] = filePath;
-                }
             }
 
-            // Here we look for any key that contains "District" (case-insensitive) and try to parse its value as an integer.
             int districtId = Convert.ToInt32(FindFieldRecursively(formdetailsToken, "District")!["value"]);
+            var districtTask = dbcontext.District.FirstOrDefaultAsync(s => s.Districtid == districtId);
+            var serviceTask = dbcontext.Services.FirstOrDefaultAsync(s => s.Serviceid == serviceId);
+            await Task.WhenAll(districtTask, serviceTask);
+            var districtDetails = districtTask.Result;
+            var service = serviceTask.Result;
+            if (districtDetails == null || service == null)
+                return Json(new { status = false, message = "District or service not found." });
+
+            int divisionCode = 0;
+            int locationValue;
+            string locationLevel;
+
+            string? tehsilValue = FindFieldRecursively(formdetailsToken, "Tehsil")?["value"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(tehsilValue))
+            {
+                locationLevel = "Tehsil";
+                locationValue = Convert.ToInt32(tehsilValue);
+            }
+            else
+            {
+                locationLevel = "District";
+                locationValue = districtId;
+            }
+
+            if (locationLevel == "Tehsil")
+            {
+                var tehsil = await dbcontext.Tehsil.FirstOrDefaultAsync(t => t.Tehsilid == locationValue);
+                if (tehsil != null)
+                {
+                    var district = await dbcontext.District.FirstOrDefaultAsync(d => d.Districtid == tehsil.Districtid);
+                    divisionCode = district?.Division ?? 0;
+                }
+            }
+            else
+            {
+                divisionCode = districtDetails.Division;
+            }
+
+            string workFlow = string.Empty;
+            string officerRole = string.Empty;
+            string officerArea = districtDetails.Districtname!;
 
             if (string.IsNullOrEmpty(ReferenceNumber))
             {
                 int count = GetCountPerDistrict(districtId, serviceId);
-                var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
-                var districtDetails = dbcontext.District.FirstOrDefault(s => s.Districtid == districtId);
-                string districtShort = districtDetails!.Districtshort!;
-                OfficerArea = districtDetails.Districtname!;
-                var officerEditableField = service!.Officereditablefield;
-
-                if (string.IsNullOrEmpty(officerEditableField))
-                {
+                string districtShort = districtDetails.Districtshort!;
+                if (string.IsNullOrEmpty(service.Officereditablefield))
                     return Json(new { status = false });
-                }
 
-                // Parse the Officereditablefield JSON
-                var players = JArray.Parse(officerEditableField);
+                var players = JArray.Parse(service.Officereditablefield);
                 if (players.Count == 0)
-                {
                     return Json(new { status = false });
-                }
 
-                // Create a new JArray to store filtered workflow
-                var filteredWorkflow = new JArray();
-
-                foreach (var player in players)
-                {
-                    _logger.LogInformation($"Original Player: {player}  string : {player.ToString()}");
-                    // Create a new JObject with only the required fields
-                    var filteredPlayer = new JObject
+                var filteredWorkflow = new JArray(
+                    players.Select(p => new JObject
                     {
-                        ["designation"] = player["designation"],
-                        ["accessLevel"] = player["accessLevel"]?.ToString() ?? string.Empty,
-                        ["status"] = player["status"],
-                        ["completedAt"] = player["completedAt"]?.ToString() ?? string.Empty,
-                        ["remarks"] = player["remarks"],
+                        ["designation"] = p["designation"],
+                        ["accessLevel"] = p["accessLevel"]?.ToString() ?? string.Empty,
+                        ["status"] = p["status"],
+                        ["completedAt"] = p["completedAt"]?.ToString() ?? string.Empty,
+                        ["remarks"] = p["remarks"],
                         ["additionalFields"] = "",
-                        ["playerId"] = player["playerId"],
-                        ["prevPlayerId"] = player["prevPlayerId"],
-                        ["nextPlayerId"] = player["nextPlayerId"],
-                        ["canPull"] = player["canPull"]
-                    };
+                        ["playerId"] = p["playerId"],
+                        ["prevPlayerId"] = p["prevPlayerId"],
+                        ["nextPlayerId"] = p["nextPlayerId"],
+                        ["canPull"] = p["canPull"]
+                    })
+                );
 
-                    filteredWorkflow.Add(filteredPlayer);
-                }
+                filteredWorkflow[0]["status"] = "pending";
+                officerRole = filteredWorkflow[0]["designation"]?.ToString() ?? string.Empty;
+                workFlow = filteredWorkflow.ToString(Formatting.None);
 
-                // Set the status of the first player to "pending"
-                if (filteredWorkflow.Count > 0)
-                {
-                    filteredWorkflow[0]["status"] = "pending";
-                    OfficerRole = filteredWorkflow[0]["designation"]?.ToString() ?? string.Empty;
-                }
-
-                var workFlow = filteredWorkflow.ToString(Formatting.None);
                 var finYear = helper.GetCurrentFinancialYear();
                 var ReferenceNumberAlphaNumber = "JK-" + service.Nameshort + "-" + districtShort + "/" + finYear + "/" + count;
                 var random = new Random();
                 ReferenceNumber = "01" + service.Serviceid.ToString("D2") + districtDetails.Districtid.ToString("D2") + finYear.Split("-")[1] + random.Next(100, 1000) + count;
 
                 var createdAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
-
-                _logger.LogInformation("$ ------ Form Details with File Paths: ------" + formDetailsObj.ToString());
-
-                // Store the updated JSON (with file paths) in the database.
                 var newFormDetails = new CitizenApplications
                 {
                     Referencenumber = ReferenceNumber,
@@ -219,55 +214,122 @@ namespace SahayataNidhi.Controllers.User
                     Districtuidforbank = null,
                     Formdetails = formDetailsObj.ToString(),
                     Currentplayer = 0,
-                    Workflow = workFlow!,
+                    Workflow = workFlow,
                     Status = status,
                     Datatype = "new",
                     CreatedAt = createdAt
                 };
-
                 dbcontext.CitizenApplications.Add(newFormDetails);
             }
             else
             {
-                var application = dbcontext.CitizenApplications.FirstOrDefault(a => a.Referencenumber == ReferenceNumber);
-                application!.Formdetails = formDetailsObj.ToString();
-
+                var application = await dbcontext.CitizenApplications
+                    .FirstOrDefaultAsync(a => a.Referencenumber == ReferenceNumber);
+                if (application == null)
+                    return Json(new { status = false, message = "Application not found." });
+                application.Formdetails = formDetailsObj.ToString();
                 if (application.Status != status)
-                {
                     application.Status = status;
-                }
                 application.CreatedAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture);
             }
 
-            dbcontext.SaveChanges();
+            await dbcontext.SaveChangesAsync();
+
+            // ========== Entity Framework Upsert for status_counts_snapshot ==========
+            if (!string.IsNullOrEmpty(workFlow))
+            {
+                string takenBy = "";
+                try
+                {
+                    var workflowArray = JArray.Parse(workFlow);
+                    if (workflowArray.Count > 0)
+                        takenBy = workflowArray[0]["designation"]?.ToString() ?? "";
+                }
+                catch { }
+
+                using var transaction = await dbcontext.Database
+                    .BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+                try
+                {
+                    var snapshotKey = new
+                    {
+                        p_service_id = serviceId,
+                        p_access_level = locationLevel,
+                        p_access_code = locationValue,
+                        p_division_code = divisionCode,
+                        p_taken_by = takenBy,
+                        p_data_type = "new"
+                    };
+
+                    var existing = await dbcontext.StatusCountsSnapshot
+                        .FirstOrDefaultAsync(s =>
+                            s.PServiceId == snapshotKey.p_service_id &&
+                            s.PAccessLevel == snapshotKey.p_access_level &&
+                            s.PAccessCode == snapshotKey.p_access_code &&
+                            s.PDivisionCode == snapshotKey.p_division_code &&
+                            s.PTakenBy == snapshotKey.p_taken_by &&
+                            s.PDataType == snapshotKey.p_data_type);
+
+                    if (existing != null)
+                    {
+                        existing.Pendingcount++;
+                        existing.Totalapplications++;
+                        existing.CapturedAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        var snapshot = new StatusCountsSnapshot
+                        {
+                            CapturedAt = DateTime.UtcNow,
+                            PAccessLevel = snapshotKey.p_access_level,
+                            PAccessCode = snapshotKey.p_access_code,
+                            PServiceId = snapshotKey.p_service_id,
+                            PTakenBy = snapshotKey.p_taken_by,
+                            PDivisionCode = snapshotKey.p_division_code,
+                            PDataType = snapshotKey.p_data_type,
+                            Pendingcount = 1,
+                            Totalapplications = 1
+                        };
+                        dbcontext.StatusCountsSnapshot.Add(snapshot);
+                    }
+
+                    await dbcontext.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            }
+
+            // ========== End of snapshot upsert ==========
 
             if (status == "Initiated")
             {
+                // Background API call (same as before)
                 try
                 {
-                    var getServices = dbcontext.Webservice.FirstOrDefault(ws => ws.Serviceid == serviceId && ws.Isactive);
-                    if (getServices != null)
+                    var webService = await dbcontext.Webservice
+                        .FirstOrDefaultAsync(ws => ws.Serviceid == serviceId && ws.Isactive);
+                    if (webService != null)
                     {
-                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
+                        var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction);
                         if (onAction != null && onAction.Contains("Submission"))
                         {
-                            // Instead of calling SendApiRequestAsync directly, push to background
                             _taskQueue.QueueBackgroundWorkItem(async token =>
                             {
                                 using var scope = _serviceScopeFactory.CreateScope();
-                                var dbcontext = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
-
+                                var db = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
                                 try
                                 {
-                                    var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
+                                    var fieldMapObj = JObject.Parse(webService.Fieldmappings);
                                     var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
-
-                                    await SendApiRequestAsync(getServices.Apiendpoint, fieldMap);
-                                    _logger.LogInformation($"API request sent in background for Reference: {ReferenceNumber}");
+                                    await SendApiRequestAsync(webService.Apiendpoint, fieldMap);
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogError(ex, $"Background API request failed for Reference: {ReferenceNumber}");
+                                    _logger.LogError(ex, $"Background API failed for {ReferenceNumber}");
                                 }
                             });
                         }
@@ -275,101 +337,60 @@ namespace SahayataNidhi.Controllers.User
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Failed while scheduling API request for Reference: {ReferenceNumber}");
+                    _logger.LogError(ex, $"Failed scheduling API for {ReferenceNumber}");
                 }
 
                 string fullPath = await FetchAcknowledgementDetails(ReferenceNumber);
                 string? fullName = GetFormFieldValue(formDetailsObj, "ApplicantName");
-                string? ServiceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId)!.Servicename;
-
-                // Get email from form - check multiple possible field names
+                string? serviceName = service.Servicename;
                 string? email = GetFormFieldValue(formDetailsObj, "Email")
                               ?? GetFormFieldValue(formDetailsObj, "email")
-                              ?? GetFormFieldValue(formDetailsObj, "EmailAddress")
-                              ?? GetFormFieldValue(formDetailsObj, "emailaddress");
-
-                // Check if email is valid before attempting to send
+                              ?? GetFormFieldValue(formDetailsObj, "EmailAddress");
                 if (!string.IsNullOrWhiteSpace(email) && IsValidEmail(email))
                 {
-                    var emailtemplate = JObject.Parse(dbcontext.Emailsettings.FirstOrDefault()!.Templates!);
-                    string template = emailtemplate["Submission"]!.ToString();
-
-                    var placeholders = new Dictionary<string, string>
+                    var emailTemplateObj = await dbcontext.Emailsettings.FirstOrDefaultAsync();
+                    if (emailTemplateObj != null)
                     {
-                        { "ApplicantName", GetFormFieldValue(formDetailsObj, "ApplicantName") ?? "" },
-                        { "ServiceName", ServiceName!},
-                        { "ReferenceNumber", ReferenceNumber },
-                        { "OfficerRole", OfficerRole },
-                        { "OfficerArea", OfficerArea }
-                    };
-
-                    foreach (var pair in placeholders)
-                    {
-                        template = template.Replace($"{{{pair.Key}}}", pair.Value);
-                    }
-
-                    string htmlMessage = template;
-
-                    // Retrieve the file from the database
-                    var fileResult = await DisplayFile(fullPath.Split('=')[1]);
-
-                    // Check if the file exists and is valid
-                    if (fileResult is FileContentResult fileContentResult)
-                    {
-                        // Get the file data from FileContentResult
-                        byte[] fileData = fileContentResult.FileContents;
-                        string fileName = ReferenceNumber.Replace("/", "_") + "Acknowledgement.pdf";
-                        // Write temp file
-                        string tempDir = Path.Combine(_webHostEnvironment.WebRootPath, "Temp");
-                        Directory.CreateDirectory(tempDir);
-                        string tempFilePath = Path.Combine(tempDir, fileName);
-
-                        _taskQueue.QueueBackgroundWorkItem(async token =>
-                        {
-                            try
-                            {
-                                await emailSender.SendEmailWithAttachments(
-                                    email!,
-                                    "Form Submission",
-                                    htmlMessage,
-                                    fileData, // byte[] directly
-                                    ReferenceNumber.Replace("/", "_") + "_Acknowledgement.pdf"
-                                );
-
-                                _logger.LogInformation(
-                                    $"Email sent in background to {email} for Reference: {ReferenceNumber}"
-                                );
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(
-                                    ex,
-                                    $"Background email sending failed for Reference: {ReferenceNumber}, Email: {email}"
-                                );
-                            }
-                        });
-
-                    }
-                    else
-                    {
-                        _logger.LogWarning($"File not found or invalid for Reference: {ReferenceNumber}, Email: {email}");
-                    }
-                }
-                else
+                        var templateJson = JObject.Parse(emailTemplateObj.Templates!);
+                        string template = templateJson["Submission"]!.ToString();
+                        var placeholders = new Dictionary<string, string>
                 {
-                    _logger.LogInformation($"No valid email address found for Reference: {ReferenceNumber}. Email not sent.");
+                    { "ApplicantName", fullName ?? "" },
+                    { "ServiceName", serviceName! },
+                    { "ReferenceNumber", ReferenceNumber },
+                    { "OfficerRole", officerRole },
+                    { "OfficerArea", officerArea }
+                };
+                        foreach (var pair in placeholders)
+                            template = template.Replace($"{{{pair.Key}}}", pair.Value);
+                        string htmlMessage = template;
+
+                        var fileResult = await DisplayFile(fullPath.Split('=')[1]);
+                        if (fileResult is FileContentResult fileContent)
+                        {
+                            _taskQueue.QueueBackgroundWorkItem(async token =>
+                            {
+                                try
+                                {
+                                    await emailSender.SendEmailWithAttachments(
+                                        email!,
+                                        "Form Submission",
+                                        htmlMessage,
+                                        fileContent.FileContents,
+                                        ReferenceNumber.Replace("/", "_") + "_Acknowledgement.pdf"
+                                    );
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, $"Email failed for {ReferenceNumber}");
+                                }
+                            });
+                        }
+                    }
                 }
 
-                string field = GetFormFieldValue(formDetailsObj, "Tehsil") != null ? "Tehsil" : "District";
-                string? value = GetFormFieldValue(formDetailsObj, field);
-
-                string? locationLevel = field;
-                int locationValue = Convert.ToInt32(value);
-
-                ServiceSpecific(serviceId, formdetailsToken, ReferenceNumber);
-
-                helper.InsertHistory(ReferenceNumber, "Application Submission", "Citizen", "Submitted", locationLevel, locationValue);
-
+                helper.InsertHistory(ReferenceNumber, "Application Submission", "Citizen", "Submitted",
+                                     locationLevel, locationValue);
                 return Json(new { status = true, ReferenceNumber, type = "Submit" });
             }
             else
@@ -377,8 +398,6 @@ namespace SahayataNidhi.Controllers.User
                 return Json(new { status = true, ReferenceNumber, type = "Save" });
             }
         }
-
-
         [HttpPost]
         public async Task<IActionResult> UpdateApplicationDetails([FromForm] IFormCollection form)
         {

@@ -17,14 +17,20 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Checkbox,
-  ListItemText,
 } from "@mui/material";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import axiosInstance from "../../axiosConfig";
 import MessageModal from "../../components/MessageModal";
 import ServerSideTable from "../../components/ServerSideTable";
 import { UserContext } from "../../UserContext";
+
+// Helper to safely extract array from API responses
+const extractArray = (data) => {
+  if (Array.isArray(data)) return data;
+  if (data?.data) return extractArray(data.data);
+  if (data?.$values) return data.$values;
+  return [];
+};
 
 export default function AddOfficeDetails() {
   const { userType, officerAuthorities } = useContext(UserContext);
@@ -33,56 +39,39 @@ export default function AddOfficeDetails() {
     handleSubmit,
     reset,
     setValue,
-    getValues,
     formState: { errors },
   } = useForm({
     defaultValues: {
-      officeName: "",
-      officeType: "",
+      officeTypeId: "",
       divisionCode: 0,
       districtCode: 0,
-      areaCode: [], // always an array (for multi-select consistency)
-      areaName: "",
+      areaNames: "",
     },
   });
 
+  const officeTypeId = useWatch({ control, name: "officeTypeId" });
   const divisionCode = useWatch({ control, name: "divisionCode" });
-  const districtCode = useWatch({ control, name: "districtCode" });
-  const areaCode = useWatch({ control, name: "areaCode" });
-  const officeType = useWatch({ control, name: "officeType" });
 
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [showMessageModal, setShowMessageModal] = useState(false);
-  const [modalMessage, setModalMessage] = useState({
-    title: "",
-    message: "",
-    type: "success",
-  });
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingOfficeDetail, setEditingOfficeDetail] = useState(null);
-  const [refreshTable, setRefreshTable] = useState(false);
-  const [accessLevel, setAccessLevel] = useState("");
-  const [selectedOffice, setSelectedOffice] = useState(null);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
-
-  // Fetched data
   const [offices, setOffices] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [districts, setDistricts] = useState([]);
-  const [areas, setAreas] = useState([]); // Combined areas (tehsils and blocks) with prefixed IDs
-  const [existingOfficeDetails, setExistingOfficeDetails] = useState([]); // for duplicate prevention
+  const [dpoList, setDpoList] = useState([]);
+  const [selectedDpo, setSelectedDpo] = useState(null);
+  const [accessLevel, setAccessLevel] = useState("");
 
-  // Loading states for dynamic fetches
+  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(true);
   const [loadingDistricts, setLoadingDistricts] = useState(false);
-  const [loadingAreas, setLoadingAreas] = useState(false);
+  const [loadingDpo, setLoadingDpo] = useState(false);
+  const [showMsg, setShowMsg] = useState(false);
+  const [msg, setMsg] = useState({ title: "", message: "", type: "success" });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [refresh, setRefresh] = useState(false);
+  const [delOpen, setDelOpen] = useState(false);
+  const [delId, setDelId] = useState(null);
 
-  // Set of used combinations (officeType + areaCode) to hide duplicates
-  const [usedCombinations, setUsedCombinations] = useState(new Set());
-
-  // Permission check
-  const canModifyOfficeDetails = useMemo(() => {
+  const canModify = useMemo(() => {
     return (
       officerAuthorities?.canDirectWithhold ||
       userType === "SeniorOfficer" ||
@@ -90,610 +79,288 @@ export default function AddOfficeDetails() {
     );
   }, [userType, officerAuthorities]);
 
-  // Fetch offices, divisions, and existing office details on mount
+  // FIX: Use short name to identify CDPO
+  const isCDPO = useMemo(() => {
+    const office = offices.find((o) => o.officeid === officeTypeId);
+    return office?.officenameshort === "CDPO";
+  }, [officeTypeId, offices]);
+
+  // Fetch offices and divisions
   useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
+    (async () => {
       try {
-        const [officesRes, divisionsRes, existingRes] = await Promise.all([
+        const [offRes, divRes] = await Promise.all([
           axiosInstance.get("/Admin/GetOfficesType"),
           axiosInstance.get("/Admin/GetDivisions"),
-          axiosInstance.get("/Admin/GetOfficeDetails"),
         ]);
-
-        setOffices(officesRes.data.officesType || []);
-
-        const divs = divisionsRes.data.divisions || [];
+        setOffices(extractArray(offRes.data.officesType));
+        const divs = extractArray(divRes.data.divisions);
         setDivisions(
           divs.map((d) => ({
             divisionId: Number(d.value),
             divisionName: d.label,
           }))
         );
-
-        setExistingOfficeDetails(existingRes.data.data || []);
-      } catch (error) {
-        setErrorMessage(`Error loading data: ${error.message}`);
+      } catch (e) {
+        setErrorMsg("Failed to load data.");
       } finally {
-        setIsLoading(false);
+        setLoading(false);
       }
-    };
-
-    fetchData();
+    })();
   }, []);
 
-  // Update used combinations whenever existing details or officeType change
+  // Set access level when office type changes
   useEffect(() => {
-    if (!officeType) {
-      setUsedCombinations(new Set());
-      return;
-    }
-    const keys = new Set(
-      existingOfficeDetails
-        .filter(d => d.officeType === officeType)
-        .map(d => `${d.officeType}_${d.areaCode}`)
-    );
-    setUsedCombinations(keys);
-  }, [existingOfficeDetails, officeType]);
-
-  // Fetch districts when division changes
-  useEffect(() => {
-    const fetchDistricts = async () => {
-      if (!divisionCode || divisionCode === 0) {
-        setDistricts([]);
-        return;
-      }
-      setLoadingDistricts(true);
-      try {
-        const response = await axiosInstance.get(
-          `/Admin/GetDistricts`, {
-          params: {
-            divisionId: divisionCode,
-            officeType: officeType || null
-          }
-        }
-        );
-        setDistricts(response.data || []);
-      } catch (error) {
-        setErrorMessage(`Error loading districts: ${error.message}`);
-      } finally {
-        setLoadingDistricts(false);
-      }
-    };
-
-    fetchDistricts();
-  }, [divisionCode, officeType]);
-
-  // Fetch areas (tehsils and blocks) when district changes and access level requires it
-  useEffect(() => {
-    const fetchAreas = async () => {
-      if (!districtCode || districtCode === 0 || !accessLevel || !["Tehsil", "Block"].includes(accessLevel)) {
-        setAreas([]);
-        return;
-      }
-
-      setLoadingAreas(true);
-      try {
-        const response = await axiosInstance.get(
-          `/Admin/GetTehsils?districtId=${districtCode}`
-        );
-        // Response now contains items with Id (prefixed), OriginalId, Name, and Type
-        setAreas(response.data || []);
-      } catch (error) {
-        setErrorMessage(`Error loading areas: ${error.message}`);
-      } finally {
-        setLoadingAreas(false);
-      }
-    };
-
-    fetchAreas();
-  }, [districtCode, accessLevel]);
-
-  // When office type changes (new entry) – set access level and reset locations
-  useEffect(() => {
-    if (officeType && !editingOfficeDetail) {
-      const office = offices.find((o) => o.officeid === officeType);
-      if (office) {
-        setSelectedOffice(office);
-        setAccessLevel(office.accesslevel);
-        resetLocationsBasedOnAccessLevel(office.accesslevel);
-      }
-    }
-  }, [officeType, editingOfficeDetail, offices]);
-
-  // Reset location fields based on access level
-  const resetLocationsBasedOnAccessLevel = (level) => {
-    setValue("divisionCode", 0);
+    const office = offices.find((o) => o.officeid === officeTypeId);
+    setAccessLevel(office?.accesslevel || "");
     setValue("districtCode", 0);
-    setValue("areaCode", []);
-    setValue("areaName", "");
-    setValue("officeName", "");
-  };
+    setValue("areaNames", "");
+    setSelectedDpo(null);
+  }, [officeTypeId, offices, setValue]);
 
-  // Cascading resets
+  // Clear selected DPO when division changes
   useEffect(() => {
-    if (divisionCode && divisionCode !== 0) {
-      setValue("districtCode", 0);
-      setValue("areaCode", []);
-      setValue("areaName", "");
-      setValue("officeName", "");
-    }
+    setSelectedDpo(null);
+    setValue("districtCode", 0);
   }, [divisionCode, setValue]);
 
+  // Fetch districts when division changes (only if not CDPO and level ≠ District)
   useEffect(() => {
-    if (districtCode && districtCode !== 0) {
-      setValue("areaCode", []);
-      setValue("areaName", "");
-      setValue("officeName", "");
+    if (
+      !divisionCode ||
+      divisionCode === 0 ||
+      accessLevel === "District" ||
+      isCDPO
+    ) {
+      setDistricts([]);
+      return;
     }
-  }, [districtCode, setValue]);
+    setLoadingDistricts(true);
+    axiosInstance
+      .get(`/Admin/GetDistricts`, {
+        params: { divisionId: divisionCode, officeType: officeTypeId },
+      })
+      .then((res) => setDistricts(extractArray(res.data)))
+      .catch(() => setErrorMsg("Failed to load districts."))
+      .finally(() => setLoadingDistricts(false));
+  }, [divisionCode, officeTypeId, accessLevel, isCDPO]);
 
-  // Reset form when edit modal closes
+  // Fetch DPOs for CDPO
   useEffect(() => {
-    if (!editModalOpen) {
+    if (!isCDPO || !officeTypeId) {
+      setDpoList([]);
+      return;
+    }
+    setLoadingDpo(true);
+    axiosInstance.get(`/Admin/GetDPO`, {
+      params: {
+        officeType: officeTypeId,
+        divisionId: divisionCode   // 👈 add this
+      }
+    })
+      .then(res => setDpoList(extractArray(res.data)))
+      .catch(() => setErrorMsg("Failed to load DPOs."))
+      .finally(() => setLoadingDpo(false));
+  }, [isCDPO, officeTypeId, divisionCode]);  // 👈 add divisionCode to dependency array
+
+  // Reset form on edit close
+  useEffect(() => {
+    if (!editOpen) {
       reset({
-        officeName: "",
-        officeType: "",
+        officeTypeId: "",
         divisionCode: 0,
         districtCode: 0,
-        areaCode: [],
-        areaName: "",
+        areaNames: "",
       });
-      setEditingOfficeDetail(null);
+      setEditing(null);
       setAccessLevel("");
-      setSelectedOffice(null);
-      setDistricts([]);
-      setAreas([]);
     }
-  }, [editModalOpen, reset]);
+  }, [editOpen, reset]);
 
-  // AUTO‑SET OFFICE NAME with office type prefix (for display only)
-  useEffect(() => {
-    if (!accessLevel) return;
-
-    const officeTypeObj = offices.find((o) => o.officeid === officeType);
-    const typePrefix = officeTypeObj ? officeTypeObj.officetype : "";
-
-    let geoName = "";
-    if (accessLevel === "Division" && divisionCode && divisionCode !== 0) {
-      const division = divisions.find((d) => d.divisionId === divisionCode);
-      geoName = division ? division.divisionName : "";
-    } else if (accessLevel === "District" && districtCode && districtCode !== 0) {
-      const district = districts.find((d) => d.districtId === districtCode);
-      geoName = district ? district.districtName : "";
-    } else if ((accessLevel === "Tehsil" || accessLevel === "Block") && areaCode && areaCode.length > 0) {
-      geoName = areaCode.length === 1 ?
-        (areas.find(a => a.id === areaCode[0])?.name || "") : "Multiple";
-    }
-
-    const finalName = geoName
-      ? typePrefix
-        ? `${typePrefix} – ${geoName}`
-        : geoName
-      : "";
-    setValue("officeName", finalName);
-  }, [
-    accessLevel,
-    divisionCode,
-    districtCode,
-    areaCode,
-    officeType,
-    offices,
-    divisions,
-    districts,
-    areas,
-    setValue,
-  ]);
-
-  // SET AREA NAME AND AREA CODE consistently for all access levels
-  useEffect(() => {
-    if (!accessLevel) return;
-
-    if (accessLevel === "Division" && divisionCode && divisionCode !== 0) {
-      const division = divisions.find((d) => d.divisionId === divisionCode);
-      if (division) {
-        setValue("areaCode", [division.divisionId.toString()]);
-        setValue("areaName", division.divisionName);
-      } else {
-        setValue("areaCode", []);
-        setValue("areaName", "");
-      }
-    } else if (accessLevel === "District" && districtCode && districtCode !== 0) {
-      setValue("areaCode", []);
-      setValue("areaName", "");
-    } else if ((accessLevel === "Tehsil" || accessLevel === "Block") && areaCode && areaCode.length > 0) {
-      // areaName will be used for display but not needed for submission
-    } else {
-      setValue("areaCode", []);
-      setValue("areaName", "");
-    }
-  }, [
-    accessLevel,
-    divisionCode,
-    districtCode,
-    divisions,
-    districts,
-    setValue,
-  ]);
-
-  // Determine if the selected office type is DSWO (for multi-select at district level)
-  const isDSWO = useMemo(() => {
-    const office = offices.find(o => o.officeid === officeType);
-    return office?.officetype === "DSWO";
-  }, [officeType, offices]);
-
-  // Filtered lists
-  const filteredDistricts = districts;
-
-  // Filter out already used districts (for duplicate prevention)
-  const filteredDistrictsUnused = useMemo(() => {
-    if (!officeType || !filteredDistricts) return filteredDistricts || [];
-    return filteredDistricts.filter(district => {
-      const key = `${officeType}_${district.districtId}`;
-      return !usedCombinations.has(key);
-    });
-  }, [filteredDistricts, officeType, usedCombinations]);
-
-  // Filter areas by the current access level (Tehsil or Block)
-  const filteredAreasByType = useMemo(() => {
-    if (!areas || !accessLevel) return [];
-    return areas.filter(area => area.type === accessLevel);
-  }, [areas, accessLevel]);
-
-  // Filter out already used areas (duplicate prevention) for Tehsil/Block
-  const filteredAreasUnused = useMemo(() => {
-    if (!officeType || !filteredAreasByType.length) return filteredAreasByType;
-    return filteredAreasByType.filter(area => {
-      // Extract original ID from prefixed ID for duplicate check
-      const originalId = area.originalId;
-      const key = `${officeType}_${originalId}`;
-      return !usedCombinations.has(key);
-    });
-  }, [filteredAreasByType, officeType, usedCombinations]);
-
-  // ========== FORM SUBMISSION (MULTIPLE) ==========
+  // SUBMIT ADD
   const onSubmit = async (data) => {
-    // Determine what level we are submitting (District for DSWO, else Tehsil/Block)
-    const level = isDSWO ? "District" : accessLevel;
-
-    let itemsToSubmit = [];
-    if (level === "District") {
-      if (!data.districtCode || data.districtCode.length === 0) {
-        setErrorMessage("Please select at least one district.");
-        return;
-      }
-      itemsToSubmit = data.districtCode; // array of district IDs (original numeric IDs)
-    } else {
-      if (!data.areaCode || data.areaCode.length === 0) {
-        setErrorMessage("Please select at least one area.");
-        return;
-      }
-      // Extract original IDs from prefixed IDs
-      const originalAreaIds = data.areaCode.map(prefixedId => {
-        const area = areas.find(a => a.id === prefixedId);
-        return area ? area.originalId : prefixedId;
-      });
-      itemsToSubmit = originalAreaIds;
+    if (!data.areaNames.trim()) {
+      setErrorMsg("Area name(s) required.");
+      return;
     }
-
     try {
-      const results = await Promise.allSettled(
-        itemsToSubmit.map(async (id) => {
-          const formData = new FormData();
-          formData.append("StateCode", "0");
-          formData.append("Divisioncode", data.divisionCode.toString());
-
-          let currentDistrictCode;
-          let areaIdToSend;
-          let areaName;
-
-          if (level === "District") {
-            // DSWO: each submission uses one district, and area code is also the district ID
-            currentDistrictCode = id;
-            areaIdToSend = id;
-            const districtObj = districts.find(d => d.districtId === id);
-            areaName = districtObj ? districtObj.districtName : "";
-          } else {
-            // Tehsil/Block: use the parent district (single value)
-            currentDistrictCode = data.districtCode;
-            areaIdToSend = id;
-            const areaObj = filteredAreasByType.find(a => a.originalId === id);
-            areaName = areaObj ? areaObj.name : "";
-          }
-
-          formData.append("DistrictCode", currentDistrictCode.toString());
-          formData.append("AreaCode", areaIdToSend.toString());
-          formData.append("AreaName", areaName);
-
-          // Build office name: type prefix + area name (or district name)
-          const officeTypeObj = offices.find((o) => o.officeid === data.officeType);
-          const typePrefix = officeTypeObj ? officeTypeObj.officetype : "";
-          const officeName = typePrefix ? `${typePrefix} – ${areaName}` : areaName;
-          formData.append("OfficeName", officeName);
-          formData.append("OfficeType", data.officeType.toString());
-
-          return axiosInstance.post("/Admin/AddOfficeDetail", formData);
-        })
-      );
-
-      const succeeded = results.filter(
-        r => r.status === "fulfilled" && r.value.data.status
-      );
-      const failed = results.filter(
-        r => r.status === "rejected" || !r.value?.data?.status
-      );
-
-      if (succeeded.length > 0) {
-        setModalMessage({
-          title: "Add Office Details",
-          message: `${succeeded.length} office detail(s) added successfully.` +
-            (failed.length > 0 ? ` ${failed.length} failed.` : ""),
-          type: succeeded.length > 0 ? "success" : "error",
-        });
-        setShowMessageModal(true);
-
-        // Clear the multi-select field that was used
-        if (level === "District") {
-          setValue("districtCode", []);
-        } else {
-          setValue("areaCode", []);
-        }
-        setValue("areaName", "");
-
-        setErrorMessage("");
-        setRefreshTable((prev) => !prev);
-
-        // Refresh existing office details to update used combinations
-        const response = await axiosInstance.get("/Admin/GetOfficeDetails");
-        setExistingOfficeDetails(response.data.data || []);
+      const fd = new FormData();
+      fd.append("OfficeTypeId", data.officeTypeId);
+      fd.append("DivisionCode", data.divisionCode);
+      if (accessLevel !== "District") {
+        fd.append("DistrictCode", data.districtCode);
       } else {
-        setErrorMessage("All submissions failed.");
+        fd.append("DistrictCode", 0);
       }
-    } catch (error) {
-      setErrorMessage(`Error: ${error.message}`);
+      fd.append("AreaNames", data.areaNames);
+
+      const res = await axiosInstance.post("/Admin/AddOfficeDetail", fd);
+      if (res.data.status) {
+        setMsg({ title: "Success", message: res.data.message, type: "success" });
+        setShowMsg(true);
+        // Only clear area names, keep selections
+        setValue("areaNames", "");
+        setRefresh((p) => !p);
+      } else {
+        setErrorMsg(res.data.message);
+      }
+    } catch (e) {
+      setErrorMsg(e.message);
     }
   };
 
-  // ========== UPDATE (SINGLE) ==========
+  // SUBMIT UPDATE
   const handleUpdate = async (data) => {
-    if (!editingOfficeDetail) return;
-
+    if (!editing) return;
     try {
-      const formData = new FormData();
-      formData.append(
-        "OfficeDetailId",
-        editingOfficeDetail.officeDetailId.toString()
-      );
-      formData.append("StateCode", "0");
-      formData.append("Divisioncode", data.divisionCode.toString());
-      formData.append("DistrictCode", data.districtCode.toString());
-
-      // areaCode is an array in the form, but for update we assume single
-      let singleAreaCode = 0;
-      let areaName = data.areaName;
-
-      if (accessLevel === "District") {
-        // For district level, areaCode should be district ID
-        singleAreaCode = data.districtCode;
-        const districtObj = districts.find(d => d.districtId === data.districtCode);
-        areaName = districtObj ? districtObj.districtName : "";
-      } else if (accessLevel === "Tehsil" || accessLevel === "Block") {
-        // Get the selected area and extract original ID
-        const selectedPrefixedId = data.areaCode[0];
-        const selectedArea = filteredAreasByType.find(a => a.id === selectedPrefixedId);
-        singleAreaCode = selectedArea ? selectedArea.originalId : 0;
-        areaName = selectedArea ? selectedArea.name : "";
-      }
-
-      formData.append("AreaCode", singleAreaCode.toString());
-      formData.append("AreaName", areaName);
-      formData.append("OfficeName", data.officeName);
-      formData.append("OfficeType", data.officeType.toString());
-
-      const response = await axiosInstance.post(
-        "/Admin/UpdateOfficeDetail",
-        formData
-      );
-
-      if (response.data.status) {
-        setModalMessage({
-          title: "Update Office Detail",
-          message: "Updated Successfully.",
-          type: "success",
-        });
-        setShowMessageModal(true);
-        setEditModalOpen(false);
-        setRefreshTable((prev) => !prev);
-        // Refresh existing details
-        const res = await axiosInstance.get("/Admin/GetOfficeDetails");
-        setExistingOfficeDetails(res.data.data || []);
+      const fd = new FormData();
+      fd.append("OfficeDetailId", editing.officeDetailId);
+      fd.append("AreaName", data.areaNames); // single name
+      fd.append("DivisionCode", data.divisionCode);
+      if (accessLevel !== "District") {
+        fd.append("DistrictCode", data.districtCode);
       } else {
-        setErrorMessage(
-          `Update failed: ${response.data.message || "Unknown error"}`
-        );
+        fd.append("DistrictCode", 0);
       }
-    } catch (error) {
-      setErrorMessage(`Error: ${error.message}`);
+
+      const res = await axiosInstance.post("/Admin/UpdateOfficeDetail", fd);
+      if (res.data.status) {
+        setMsg({ title: "Updated", message: "Saved.", type: "success" });
+        setShowMsg(true);
+        setEditOpen(false);
+        setRefresh((p) => !p);
+      } else {
+        setErrorMsg(res.data.message);
+      }
+    } catch (e) {
+      setErrorMsg(e.message);
     }
   };
 
-  // ========== DELETE ==========
-  const handleDelete = async (officeDetailId) => {
+  // DELETE
+  const handleDelete = async (id) => {
     try {
-      const formData = new FormData();
-      formData.append("OfficeDetailId", officeDetailId.toString());
-
-      const response = await axiosInstance.post(
-        "/Admin/DeleteOfficeDetail",
-        formData
-      );
-
-      if (response.data.status) {
-        setModalMessage({
-          title: "Delete Office Detail",
-          message: "Deleted Successfully.",
-          type: "success",
-        });
-        setShowMessageModal(true);
-        setRefreshTable((prev) => !prev);
-        // Refresh existing details
-        const res = await axiosInstance.get("/Admin/GetOfficeDetails");
-        setExistingOfficeDetails(res.data.data || []);
+      const fd = new FormData();
+      fd.append("OfficeDetailId", id);
+      const res = await axiosInstance.post("/Admin/DeleteOfficeDetail", fd);
+      if (res.data.status) {
+        setMsg({ title: "Deleted", message: "Done.", type: "success" });
+        setShowMsg(true);
+        setRefresh((p) => !p);
       } else {
-        setErrorMessage(
-          `Delete failed: ${response.data.message || "Unknown error"}`
-        );
+        setErrorMsg(res.data.message);
       }
-    } catch (error) {
-      setErrorMessage(`Error: ${error.message}`);
+    } catch (e) {
+      setErrorMsg(e.message);
     }
   };
 
-  // Action functions for ServerSideTable
-  const actionFunctions = {
-    UpdateOfficeDetail: (row) => {
-      if (!canModifyOfficeDetails) {
-        setErrorMessage("No permission to update.");
-        return;
-      }
-      const userdata = row.original;
+  // Columns
+  const columns = useMemo(
+    () => [
+      { field: "officeDetailId", headerName: "ID", flex: 1 },
+      { field: "officeName", headerName: "Office Name", flex: 1 },
+      { field: "officeTypeName", headerName: "Office Type", flex: 1 },
+      { field: "divisionCode", headerName: "Division Code", flex: 0.5 },
+      { field: "districtCode", headerName: "District Code", flex: 0.5 },
+      { field: "areacode", headerName: "Area Code (auto)", flex: 0.5 },
+      { field: "areaName", headerName: "Area Name", flex: 1 },
+    ],
+    []
+  );
 
-      // First set officeType and look up accessLevel
-      setValue("officeType", userdata.officeType);
-      const office = offices.find((o) => o.officeid === userdata.officeType);
-      if (office) {
-        setAccessLevel(office.accesslevel);
-        setSelectedOffice(office);
-      }
+  // Action functions
+  const actionFns = useMemo(
+    () => ({
+      UpdateOfficeDetail: (row) => {
+        if (!canModify) {
+          setErrorMsg("No permission.");
+          return;
+        }
+        const rec = row.original;
+        setEditing(rec);
+        // FIX: Use officeTypeId directly from the row data
+        setValue("officeTypeId", rec.officeTypeId);
+        setValue("divisionCode", rec.divisionCode);
+        setValue("districtCode", rec.districtCode);
+        setValue("areaNames", rec.areaName);
 
-      // Then set the rest – cascading fetches will happen
-      setValue("divisionCode", userdata.divisionCode);
-      setValue("districtCode", userdata.districtCode);
+        // Set DPO if it's a CDPO office (for edit modal)
+        if (rec.officeTypeName === "CDPO") {
+          setSelectedDpo(rec.districtCode);
+        }
+        setEditOpen(true);
+      },
+      DeleteOfficeDetail: (row) => {
+        if (!canModify) {
+          setErrorMsg("No permission.");
+          return;
+        }
+        setDelId(row.original.officeDetailId);
+        setDelOpen(true);
+      },
+    }),
+    [canModify, setValue]
+  );
 
-      // For areaCode, we need to find the prefixed ID from the area name
-      const area = areas.find(a => a.originalId === userdata.areaCode);
-      if (area) {
-        setValue("areaCode", [area.id]);
-      } else {
-        setValue("areaCode", [userdata.areaCode]);
-      }
-      setValue("areaName", userdata.areaName);
-      setValue("officeName", userdata.officeName);
-
-      setEditingOfficeDetail(userdata);
-      setEditModalOpen(true);
-    },
-
-    DeleteOfficeDetail: (row) => {
-      if (!canModifyOfficeDetails) {
-        setErrorMessage("No permission to delete.");
-        return;
-      }
-      setDeleteId(row.original.officeDetailId);
-      setDeleteConfirmOpen(true);
-    },
-  };
-
-  // Confirmed delete
-  const handleConfirmDelete = async () => {
-    if (!deleteId) return;
-    setDeleteConfirmOpen(false);
-    await handleDelete(deleteId);
-    setDeleteId(null);
-  };
-
-  // Table columns
-  const columns = [
-    { field: "officeDetailId", headerName: "ID", flex: 1 },
-    { field: "officeName", headerName: "Office Name", flex: 1 },
-    { field: "officeType", headerName: "Office Type", flex: 1 },
-    { field: "divisionCode", headerName: "Division Code", flex: 0.5 },
-    { field: "districtCode", headerName: "District Code", flex: 0.5 },
-    { field: "areaCode", headerName: "Area Code", flex: 0.5 },
-    { field: "areaName", headerName: "Area Name", flex: 1 },
-  ];
-
-  if (isLoading) {
+  if (loading) {
     return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh",
-        }}
-      >
-        <CircularProgress size={60} />
+      <Box display="flex" justifyContent="center" mt={10}>
+        <CircularProgress />
       </Box>
     );
   }
 
-  // Visibility rules
-  const shouldShowDivision = accessLevel !== "State";
-  const shouldShowDistrict = ["District", "Tehsil", "Block"].includes(accessLevel);
-  const shouldShowArea = ["Tehsil", "Block"].includes(accessLevel);
+  const shouldShowDivision = true;
+  const shouldShowDistrict = accessLevel !== "District" && !isCDPO && officeTypeId;
+  const shouldShowDPO = isCDPO;
 
   return (
     <Container maxWidth="lg" sx={{ py: 8 }}>
-      <Typography variant="h4" fontWeight="bold" align="center" gutterBottom>
-        Add New Office Details
+      <Typography variant="h4" align="center" gutterBottom>
+        Add / Edit Office Details
       </Typography>
-      {errorMessage && (
+      {errorMsg && (
         <Alert severity="error" sx={{ mb: 4 }}>
-          {errorMessage}
+          {errorMsg}
         </Alert>
       )}
 
-      {/* Add Form */}
-      <Box
-        sx={{ bgcolor: "white", p: 4, borderRadius: 2, boxShadow: 3, mb: 6 }}
-      >
+      {/* ADD FORM */}
+      <Box sx={{ bgcolor: "white", p: 4, borderRadius: 2, boxShadow: 3, mb: 6 }}>
         <form onSubmit={handleSubmit(onSubmit)}>
           <Grid container spacing={3}>
             {/* Office Type */}
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <Controller
-                name="officeType"
+                name="officeTypeId"
                 control={control}
-                rules={{ required: "Office type is required" }}
+                rules={{ required: "Required" }}
                 render={({ field }) => (
-                  <FormControl
-                    fullWidth
-                    variant="outlined"
-                    error={!!errors.officeType}
-                  >
+                  <FormControl fullWidth error={!!errors.officeTypeId}>
                     <InputLabel shrink>Office Type</InputLabel>
                     <Select {...field} label="Office Type">
-                      <MenuItem value="">Select Office Type</MenuItem>
-                      {offices.map((office) => (
-                        <MenuItem key={office.officeid} value={office.officeid}>
-                          {office.officetype}
+                      <MenuItem value="">Select</MenuItem>
+                      {offices.map((o) => (
+                        <MenuItem key={o.officeid} value={o.officeid}>
+                          {o.officename}
                         </MenuItem>
                       ))}
                     </Select>
-                    {errors.officeType && (
-                      <Typography color="error" variant="caption">
-                        {errors.officeType.message}
-                      </Typography>
-                    )}
                   </FormControl>
                 )}
               />
             </Grid>
 
-            {/* Division dropdown */}
+            {/* Division */}
             {shouldShowDivision && (
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12} sm={4}>
                 <Controller
                   name="divisionCode"
                   control={control}
-                  rules={{ required: "Division is required" }}
+                  rules={{ required: "Division required" }}
                   render={({ field }) => (
-                    <FormControl
-                      fullWidth
-                      variant="outlined"
-                      error={!!errors.divisionCode}
-                    >
+                    <FormControl fullWidth error={!!errors.divisionCode}>
                       <InputLabel shrink>Division</InputLabel>
                       <Select
                         {...field}
@@ -701,9 +368,9 @@ export default function AddOfficeDetails() {
                         onChange={(e) => field.onChange(Number(e.target.value))}
                       >
                         <MenuItem value={0}>Select Division</MenuItem>
-                        {divisions.map((div) => (
-                          <MenuItem key={div.divisionId} value={div.divisionId}>
-                            {div.divisionName}
+                        {divisions.map((d) => (
+                          <MenuItem key={d.divisionId} value={d.divisionId}>
+                            {d.divisionName}
                           </MenuItem>
                         ))}
                       </Select>
@@ -713,137 +380,88 @@ export default function AddOfficeDetails() {
               </Grid>
             )}
 
-            {/* District dropdown – multi-select for DSWO, single otherwise */}
-            {shouldShowDistrict && (
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="districtCode"
-                  control={control}
-                  rules={{ required: "District is required" }}
-                  render={({ field }) => (
-                    <FormControl
-                      fullWidth
-                      variant="outlined"
-                      error={!!errors.districtCode}
-                      disabled={loadingDistricts}
-                    >
-                      <InputLabel shrink>District</InputLabel>
-                      {isDSWO ? (
-                        // Multi-select for DSWO
-                        <Select
-                          {...field}
-                          multiple
-                          value={Array.isArray(field.value) ? field.value : []}
-                          onChange={(e) => field.onChange(e.target.value)}
-                          renderValue={(selected) => {
-                            if (selected.length === 0) return "Select Districts";
-                            const names = selected.map(id => {
-                              const district = districts.find(d => d.districtId === id);
-                              return district ? district.districtName : id;
-                            });
-                            return names.join(", ");
-                          }}
-                        >
-                          {filteredDistrictsUnused.length === 0 ? (
-                            <MenuItem disabled>All districts already added</MenuItem>
-                          ) : (
-                            filteredDistrictsUnused.map((district) => (
-                              <MenuItem key={district.districtId} value={district.districtId}>
-                                <Checkbox
-                                  checked={
-                                    (Array.isArray(field.value) ? field.value : []).includes(district.districtId)
-                                  }
-                                />
-                                <ListItemText primary={district.districtName} />
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                      ) : (
-                        // Single select for other office types
+            {/* District / DPO */}
+            {shouldShowDPO ? (
+              <Grid item xs={12} sm={4}>
+                <FormControl fullWidth disabled={loadingDpo}>
+                  <InputLabel shrink>DPO</InputLabel>
+                  <Select
+                    value={selectedDpo || ""}
+                    onChange={(e) => {
+                      const dpoId = e.target.value;
+                      setSelectedDpo(dpoId);
+                      const selected = dpoList.find(
+                        (d) => d.officerId === dpoId
+                      );
+                      if (selected) setValue("districtCode", selected.officerId);
+                    }}
+                    label="DPO"
+                  >
+                    <MenuItem value="">Select DPO</MenuItem>
+                    {dpoList.map((dpo) => (
+                      <MenuItem key={dpo.officerId} value={dpo.officerId}>
+                        {dpo.officerName}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            ) : (
+              shouldShowDistrict && (
+                <Grid item xs={12} sm={4}>
+                  <Controller
+                    name="districtCode"
+                    control={control}
+                    rules={{ required: "District required" }}
+                    render={({ field }) => (
+                      <FormControl
+                        fullWidth
+                        error={!!errors.districtCode}
+                        disabled={loadingDistricts}
+                      >
+                        <InputLabel shrink>District</InputLabel>
                         <Select
                           {...field}
                           value={field.value || 0}
                           onChange={(e) => field.onChange(Number(e.target.value))}
                         >
                           <MenuItem value={0}>Select District</MenuItem>
-                          {loadingDistricts ? (
-                            <MenuItem disabled>Loading districts...</MenuItem>
-                          ) : (
-                            filteredDistrictsUnused.map((dist) => (
-                              <MenuItem key={dist.districtId} value={dist.districtId}>
-                                {dist.districtName}
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                      )}
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-            )}
-
-            {/* Area multi-select (Tehsil/Block) with duplicate prevention */}
-            {shouldShowArea && (
-              <Grid item xs={12} sm={6}>
-                <Controller
-                  name="areaCode"
-                  control={control}
-                  rules={{ required: "At least one area is required" }}
-                  render={({ field }) => (
-                    <FormControl
-                      fullWidth
-                      variant="outlined"
-                      error={!!errors.areaCode}
-                      disabled={loadingAreas}
-                    >
-                      <InputLabel shrink>{accessLevel}</InputLabel>
-                      <Select
-                        {...field}
-                        multiple
-                        value={field.value || []}
-                        onChange={(e) => field.onChange(e.target.value)}
-                        renderValue={(selected) => {
-                          if (selected.length === 0) return `Select ${accessLevel}(s)`;
-                          const names = selected.map(prefixedId => {
-                            const area = filteredAreasUnused.find(a => a.id === prefixedId);
-                            return area ? area.name : prefixedId;
-                          });
-                          return names.join(", ");
-                        }}
-                      >
-                        {loadingAreas ? (
-                          <MenuItem disabled>Loading {accessLevel}s...</MenuItem>
-                        ) : filteredAreasUnused.length === 0 ? (
-                          <MenuItem disabled>All {accessLevel}s already added</MenuItem>
-                        ) : (
-                          filteredAreasUnused.map((area) => (
-                            <MenuItem key={area.id} value={area.id}>
-                              <Checkbox checked={field.value?.includes(area.id)} />
-                              <ListItemText primary={area.name} />
+                          {districts.map((d) => (
+                            <MenuItem key={d.districtId} value={d.districtId}>
+                              {d.districtName}
                             </MenuItem>
-                          ))
-                        )}
-                      </Select>
-                    </FormControl>
-                  )}
-                />
-              </Grid>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    )}
+                  />
+                </Grid>
+              )
             )}
 
-            {/* Office Name (read-only, auto-filled with prefix) */}
-            <Grid item xs={12} sm={6}>
+            {/* Area Names (manual) */}
+            <Grid item xs={12} sm={4}>
               <Controller
-                name="officeName"
+                name="areaNames"
                 control={control}
+                rules={{ required: "Required" }}
                 render={({ field }) => (
                   <TextField
                     {...field}
                     fullWidth
-                    label="Office Name (auto-filled)"
+                    label={
+                      accessLevel === "District"
+                        ? "District Names (comma separated)"
+                        : "Area Names (comma separated)"
+                    }
                     variant="outlined"
-                    InputProps={{ readOnly: true }}
+                    placeholder={
+                      accessLevel === "District"
+                        ? "e.g. Delhi, Mumbai"
+                        : "e.g. Tehsil A, Block B"
+                    }
+                    error={!!errors.areaNames}
+                    helperText={errors.areaNames?.message}
                     InputLabelProps={{ shrink: true }}
                   />
                 )}
@@ -854,10 +472,8 @@ export default function AddOfficeDetails() {
               <Button
                 type="submit"
                 variant="contained"
-                color="primary"
                 fullWidth
-                sx={{ mt: 3, py: 1.5 }}
-                disabled={!canModifyOfficeDetails}
+                disabled={!canModify}
               >
                 Add Office Details
               </Button>
@@ -866,7 +482,7 @@ export default function AddOfficeDetails() {
         </form>
       </Box>
 
-      {/* Table */}
+      {/* TABLE */}
       <ServerSideTable
         url="/Admin/GetOfficeDetails"
         Title="Existing Office Details"
@@ -874,39 +490,43 @@ export default function AddOfficeDetails() {
         canSanction={false}
         canHavePool={false}
         pendingApplications={false}
-        actionFunctions={actionFunctions}
+        actionFunctions={actionFns}
         columns={columns}
-        refresh={refreshTable}
-        onAction={(actionFunction, row) => actionFunctions[actionFunction](row)}
+        refresh={refresh}
+        onAction={(fn, row) => actionFns[fn](row)}
       />
 
-      {/* Message Modal */}
       <MessageModal
-        open={showMessageModal}
-        onClose={() => setShowMessageModal(false)}
-        title={modalMessage.title}
-        message={modalMessage.message}
-        type={modalMessage.type}
+        open={showMsg}
+        onClose={() => setShowMsg(false)}
+        title={msg.title}
+        message={msg.message}
+        type={msg.type}
       />
 
-      {/* Delete Confirmation Modal */}
-      <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
+      {/* Delete Confirm */}
+      <Dialog open={delOpen} onClose={() => setDelOpen(false)}>
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
-          <Typography>Are you sure you want to delete this office detail?</Typography>
+          <Typography>Delete this office detail?</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)} color="primary">
-            Cancel
-          </Button>
-          <Button onClick={handleConfirmDelete} color="error" variant="contained">
+          <Button onClick={() => setDelOpen(false)}>Cancel</Button>
+          <Button
+            onClick={async () => {
+              setDelOpen(false);
+              await handleDelete(delId);
+            }}
+            color="error"
+            variant="contained"
+          >
             Delete
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Edit Modal (single selection) */}
-      <Modal open={editModalOpen} onClose={() => setEditModalOpen(false)}>
+      {/* EDIT MODAL */}
+      <Modal open={editOpen} onClose={() => setEditOpen(false)}>
         <Box
           sx={{
             bgcolor: "white",
@@ -916,52 +536,31 @@ export default function AddOfficeDetails() {
             mx: "auto",
             mt: "5%",
             boxShadow: 24,
-            maxHeight: "80vh",
-            overflowY: "auto",
           }}
         >
-          <Typography variant="h5" fontWeight="bold" gutterBottom>
+          <Typography variant="h5" gutterBottom>
             Edit Office Detail
           </Typography>
-          {errorMessage && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {errorMessage}
-            </Alert>
-          )}
-
           <form onSubmit={handleSubmit(handleUpdate)}>
             <Grid container spacing={3}>
-              {/* Office Type */}
-              <Grid item xs={12} sm={6}>
+              {/* Division (always editable) */}
+              <Grid item xs={12}>
                 <Controller
-                  name="officeType"
+                  name="divisionCode"
                   control={control}
-                  rules={{ required: "Required" }}
+                  rules={{ required: "Division required" }}
                   render={({ field }) => (
-                    <FormControl
-                      fullWidth
-                      variant="outlined"
-                      error={!!errors.officeType}
-                    >
-                      <InputLabel shrink>Office Type</InputLabel>
+                    <FormControl fullWidth>
+                      <InputLabel shrink>Division</InputLabel>
                       <Select
                         {...field}
-                        label="Office Type"
-                        onChange={(e) => {
-                          field.onChange(e.target.value);
-                          const office = offices.find(
-                            (o) => o.officeid === e.target.value
-                          );
-                          if (office) {
-                            setAccessLevel(office.accesslevel);
-                            setSelectedOffice(office);
-                          }
-                        }}
+                        label="Division"
+                        onChange={(e) => field.onChange(Number(e.target.value))}
                       >
-                        <MenuItem value="">Select</MenuItem>
-                        {offices.map((office) => (
-                          <MenuItem key={office.officeid} value={office.officeid}>
-                            {office.officetype}
+                        <MenuItem value={0}>Select Division</MenuItem>
+                        {divisions.map((d) => (
+                          <MenuItem key={d.divisionId} value={d.divisionId}>
+                            {d.divisionName}
                           </MenuItem>
                         ))}
                       </Select>
@@ -970,34 +569,25 @@ export default function AddOfficeDetails() {
                 />
               </Grid>
 
-              {/* Division dropdown */}
-              {shouldShowDivision && (
-                <Grid item xs={12} sm={6}>
+              {/* District if not CDPO and not District level */}
+              {accessLevel !== "District" && !isCDPO && (
+                <Grid item xs={12}>
                   <Controller
-                    name="divisionCode"
+                    name="districtCode"
                     control={control}
-                    rules={{ required: "Required" }}
+                    rules={{ required: "District required" }}
                     render={({ field }) => (
-                      <FormControl
-                        fullWidth
-                        variant="outlined"
-                        error={!!errors.divisionCode}
-                      >
-                        <InputLabel shrink>Division</InputLabel>
+                      <FormControl fullWidth>
+                        <InputLabel shrink>District</InputLabel>
                         <Select
                           {...field}
-                          label="Division"
-                          onChange={(e) =>
-                            field.onChange(Number(e.target.value))
-                          }
+                          value={field.value || 0}
+                          onChange={(e) => field.onChange(Number(e.target.value))}
                         >
-                          <MenuItem value={0}>Select</MenuItem>
-                          {divisions.map((div) => (
-                            <MenuItem
-                              key={div.divisionId}
-                              value={div.divisionId}
-                            >
-                              {div.divisionName}
+                          <MenuItem value={0}>Select District</MenuItem>
+                          {districts.map((d) => (
+                            <MenuItem key={d.districtId} value={d.districtId}>
+                              {d.districtName}
                             </MenuItem>
                           ))}
                         </Select>
@@ -1007,121 +597,31 @@ export default function AddOfficeDetails() {
                 </Grid>
               )}
 
-              {/* District dropdown (single select in edit mode) */}
-              {shouldShowDistrict && (
-                <Grid item xs={12} sm={6}>
-                  <Controller
-                    name="districtCode"
-                    control={control}
-                    rules={{ required: "Required" }}
-                    render={({ field }) => (
-                      <FormControl
-                        fullWidth
-                        variant="outlined"
-                        error={!!errors.districtCode}
-                        disabled={loadingDistricts}
-                      >
-                        <InputLabel shrink>District</InputLabel>
-                        <Select
-                          {...field}
-                          value={field.value || 0}
-                          onChange={(e) =>
-                            field.onChange(Number(e.target.value))
-                          }
-                        >
-                          <MenuItem value={0}>Select</MenuItem>
-                          {loadingDistricts ? (
-                            <MenuItem disabled>Loading districts...</MenuItem>
-                          ) : (
-                            districts.map((dist) => (
-                              <MenuItem
-                                key={dist.districtId}
-                                value={dist.districtId}
-                              >
-                                {dist.districtName}
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
-              )}
-
-              {/* Area dropdown (single in edit mode) */}
-              {shouldShowArea && (
-                <Grid item xs={12} sm={6}>
-                  <Controller
-                    name="areaCode"
-                    control={control}
-                    rules={{ required: "Required" }}
-                    render={({ field }) => (
-                      <FormControl
-                        fullWidth
-                        variant="outlined"
-                        error={!!errors.areaCode}
-                        disabled={loadingAreas}
-                      >
-                        <InputLabel shrink>{accessLevel}</InputLabel>
-                        <Select
-                          {...field}
-                          value={field.value?.[0] || 0}
-                          onChange={(e) =>
-                            field.onChange([e.target.value])
-                          }
-                        >
-                          <MenuItem value={0}>Select {accessLevel}</MenuItem>
-                          {loadingAreas ? (
-                            <MenuItem disabled>Loading {accessLevel}s...</MenuItem>
-                          ) : (
-                            filteredAreasByType.map((area) => (
-                              <MenuItem key={area.id} value={area.id}>
-                                {area.name}
-                              </MenuItem>
-                            ))
-                          )}
-                        </Select>
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
-              )}
-
-              {/* Office Name (read-only, auto-filled with prefix) */}
-              <Grid item xs={12} sm={6}>
+              {/* Area Name */}
+              <Grid item xs={12}>
                 <Controller
-                  name="officeName"
+                  name="areaNames"
                   control={control}
+                  rules={{ required: "Required" }}
                   render={({ field }) => (
                     <TextField
                       {...field}
                       fullWidth
-                      label="Office Name (auto-filled)"
+                      label={
+                        accessLevel === "District"
+                          ? "District Name"
+                          : "Area Name"
+                      }
                       variant="outlined"
-                      InputProps={{ readOnly: true }}
-                      InputLabelProps={{ shrink: true }}
                     />
                   )}
                 />
               </Grid>
 
               <Grid item xs={12}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    gap: 2,
-                    mt: 3,
-                  }}
-                >
-                  <Button
-                    variant="outlined"
-                    onClick={() => setEditModalOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" variant="contained" color="primary">
+                <Box display="flex" justifyContent="flex-end" gap={2}>
+                  <Button onClick={() => setEditOpen(false)}>Cancel</Button>
+                  <Button type="submit" variant="contained">
                     Update
                   </Button>
                 </Box>

@@ -641,12 +641,12 @@ namespace SahayataNidhi.Controllers.Officer
 
                     if (!string.IsNullOrWhiteSpace(newValue))
                     {
-                        var expiring = dbcontext.Applicationswithexpiringeligibility
+                        var expiring = dbcontext.ApplicationExpirations
                             .FirstOrDefault(ae => ae.Referencenumber == referenceNumber);
 
                         if (expiring != null)
                         {
-                            expiring.ExpirationDate = newValue;
+                            expiring.ExpirationDate = DateOnly.Parse(newValue);
                             dbcontext.SaveChanges();
                         }
                         else
@@ -838,6 +838,7 @@ namespace SahayataNidhi.Controllers.Officer
                 return StatusCode(500, new { status = false, response = $"An error occurred while updating the {form["type"]} PDF: {ex.Message}" });
             }
         }
+
 
         [HttpPost]
         public async Task<IActionResult> SendExpirationEmail([FromForm] IFormCollection form)

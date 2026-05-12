@@ -707,7 +707,6 @@ namespace SahayataNidhi.Controllers.Admin
                 });
             }
         }
-
         [HttpGet]
         public async Task<IActionResult> GetOffices(int pageIndex = 0, int pageSize = 10)
         {
@@ -715,23 +714,20 @@ namespace SahayataNidhi.Controllers.Admin
             {
                 var officer = GetOfficerDetails();
                 if (officer == null)
-                {
                     return BadRequest(new { error = "Officer details not found" });
-                }
 
                 var departmentId = officer.Department;
                 if (departmentId <= 0)
-                {
                     return BadRequest(new { error = "User department not found." });
-                }
 
                 var officesQuery = dbcontext.Offices
                     .Where(o => o.Departmentid == departmentId)
                     .Select(o => new
                     {
-                        OfficeId = o.Officeid,
-                        OfficeType = o.Officetype,
-                        AccessLevel = o.Accesslevel
+                        o.Officeid,
+                        o.Officename,
+                        o.Officenameshort,
+                        o.Accesslevel
                     });
 
                 var totalRecords = await officesQuery.CountAsync();
@@ -741,47 +737,62 @@ namespace SahayataNidhi.Controllers.Admin
                     .ToListAsync();
 
                 var columns = new List<object>
-                {
-                    new { accessorKey = "officeId", header = "ID" },
-                    new { accessorKey = "officeType", header = "Office Type" },
-                    new { accessorKey = "accessLevel", header = "Access Level" }
-                };
+        {
+            new { accessorKey = "officeId", header = "ID" },
+            new { accessorKey = "officeName", header = "Office Name" },
+            new { accessorKey = "officeNameShort", header = "Short Name" },
+            new { accessorKey = "accessLevel", header = "Access Level" }
+        };
 
                 var data = pagedData.Select(o => new
                 {
-                    officeId = o.OfficeId,
-                    officeType = o.OfficeType,
-                    accessLevel = o.AccessLevel,
+                    officeId = o.Officeid,
+                    officeName = o.Officename,
+                    officeNameShort = o.Officenameshort,
+                    accessLevel = o.Accesslevel,
                     customActions = new List<object>
-                    {
-                        new { tooltip = "Update", color = "#F0C38E", actionFunction = "UpdateOffice" },
-                        new { tooltip = "Delete", color = "#F0C38E", actionFunction = "DeleteOffice" }
-                    }
+            {
+                new { tooltip = "Update", color = "#F0C38E", actionFunction = "UpdateOffice" },
+                new { tooltip = "Delete", color = "#F0C38E", actionFunction = "DeleteOffice" }
+            }
                 }).ToList();
 
-                return Json(new
-                {
-                    data,
-                    columns,
-                    totalRecords
-                });
+                return Json(new { data, columns, totalRecords });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching offices");
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while fetching offices",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "An error occurred while fetching offices", details = ex.Message });
             }
         }
 
         [HttpGet]
         public IActionResult GetOfficesType()
         {
-            var officesType = dbcontext.Offices.ToList();
-            return Json(new { officesType });
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return Json(new { officesType = new List<object>() });
+
+                var offices = dbcontext.Offices
+                    .Where(o => o.Departmentid == officer.Department)
+                    .Select(o => new
+                    {
+                        o.Officeid,
+                        o.Officename,           // e.g., "DSWO"
+                        o.Officenameshort,      // optional
+                        o.Accesslevel           // "State", "Division", "District", "Tehsil", "Block"
+                    })
+                    .ToList();
+
+                return Json(new { officesType = offices });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading office types");
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
 
         [HttpGet]
@@ -810,18 +821,17 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { error = "User department not found." });
 
                 var query = from od in dbcontext.Officesdetails
-                            join o in dbcontext.Offices on od.Officetype equals o.Officeid
+                            join o in dbcontext.Offices on od.Officeid equals o.Officeid
                             where o.Departmentid == departmentId
                             select new
                             {
-                                OfficeDetailId = od.Officedetailid,
+                                od.Officedetailid,
                                 od.Officename,
-                                OfficeType = o.Officetype,
+                                OfficeTypeName = o.Officename,
                                 od.Divisioncode,
                                 od.Districtcode,
                                 od.Areacode,
-                                od.Areaname,
-                                AccessLevel = o.Accesslevel
+                                od.Areaname
                             };
 
                 var totalRecords = await query.CountAsync();
@@ -831,31 +841,24 @@ namespace SahayataNidhi.Controllers.Admin
                     .ToListAsync();
 
                 var columns = new List<object>
-                {
-                    new { accessorKey = "officeDetailId", header = "ID" },
-                    new { accessorKey = "officeName", header = "Office Name" },
-                    new { accessorKey = "officeType", header = "Office Type" },
-                    new { accessorKey = "divisionCode", header = "Division Code" },
-                    new { accessorKey = "districtCode", header = "District Code" },
-                    new { accessorKey = "areaCode", header = "Area Code" },
-                    new { accessorKey = "areaName", header = "Area Name" }
-                };
+        {
+            new { accessorKey = "officeDetailId", header = "ID" },
+            new { accessorKey = "officeName", header = "Office Name" },
+            new { accessorKey = "officeTypeName", header = "Office Type" },
+            new { accessorKey = "areaName", header = "Area Name" }
+        };
 
                 var data = pagedData.Select(x => new
                 {
-                    officeDetailId = x.OfficeDetailId,
+                    officeDetailId = x.Officedetailid,
                     officeName = x.Officename,
-                    officeType = x.OfficeType,
-                    divisionCode = x.Divisioncode,
-                    districtCode = x.Districtcode,
-                    areaCode = x.Areacode,
+                    officeTypeName = x.OfficeTypeName,
                     areaName = x.Areaname,
-                    accessLevel = x.AccessLevel,
                     customActions = new List<object>
-                    {
-                        new { tooltip = "Update", color = "#F0C38E", actionFunction = "UpdateOfficeDetail" },
-                        new { tooltip = "Delete", color = "#F0C38E", actionFunction = "DeleteOfficeDetail" }
-                    }
+            {
+                new { tooltip = "Update", color = "#F0C38E", actionFunction = "UpdateOfficeDetail" },
+                new { tooltip = "Delete", color = "#F0C38E", actionFunction = "DeleteOfficeDetail" }
+            }
                 }).ToList();
 
                 return Json(new { data, columns, totalRecords });
@@ -866,6 +869,56 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { error = "Error fetching office details", details = ex.Message });
             }
         }
+
+        private readonly Dictionary<string, string> ParentAccessLevelMap = new()
+        {
+            { "Division", "State" },
+            { "District", "Division" },
+            { "Tehsil",   "District" },
+            { "Block",    "District" }
+        };
+
+        [HttpGet]
+        public async Task<IActionResult> GetParentOfficeDetails(int officeTypeId)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return BadRequest(new { error = "Invalid officer" });
+
+                // Get the office type's access level
+                var office = await dbcontext.Offices
+                    .FirstOrDefaultAsync(o => o.Officeid == officeTypeId && o.Departmentid == officer.Department);
+                if (office == null)
+                    return BadRequest(new { error = "Office type not found" });
+
+                var level = office.Accesslevel; // "State", "Division", etc.
+
+                if (!ParentAccessLevelMap.TryGetValue(level, out var parentLevel))
+                    return Json(new List<object>()); // no parent needed (e.g., State level)
+
+                // Fetch office details whose office type has that parent level
+                var parents = await dbcontext.Officesdetails
+                    .Include(od => od.Office)
+                    .Where(od => od.Office.Departmentid == officer.Department
+                                && od.Office.Accesslevel == parentLevel)
+                    .Select(od => new
+                    {
+                        od.Officedetailid,
+                        od.Officename
+                    })
+                    .ToListAsync();
+
+                return Json(parents);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching parent office details");
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetDistricts(int? divisionId = null, int? officeType = null)
         {
@@ -876,19 +929,14 @@ namespace SahayataNidhi.Controllers.Admin
                 if (divisionId.HasValue && divisionId.Value > 0)
                     query = query.Where(d => d.Division == divisionId.Value);
 
-                // If officeType is 1 (DSWO), exclude districts already used in OfficeDetails
-                if (officeType.HasValue && officeType.Value == 1)
+                if (officeType.HasValue && officeType.Value == 1) // DSWO exclusion (if needed)
                 {
                     query = query.Where(d => !dbcontext.Officesdetails.Any(o =>
-                        o.Areacode == d.Districtid && o.Officetype == officeType.Value));
+                        o.Districtcode == d.Districtid && o.Officeid == officeType.Value));
                 }
 
                 var districts = await query
-                    .Select(x => new
-                    {
-                        districtId = x.Districtid,
-                        districtName = x.Districtname
-                    })
+                    .Select(x => new { districtId = x.Districtid, districtName = x.Districtname })
                     .OrderBy(d => d.districtName)
                     .ToListAsync();
 
@@ -897,89 +945,130 @@ namespace SahayataNidhi.Controllers.Admin
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching districts");
-                return StatusCode(500, new { error = "Error fetching districts", details = ex.Message });
+                return StatusCode(500, new { error = ex.Message });
             }
         }
 
+        // [HttpGet]
+        // public async Task<IActionResult> GetTehsilsAndBlocks(int? districtId = null, int? officeType = null)
+        // {
+        //     try
+        //     {
+        //         // Tehsils – exclude only those already assigned to the given officeType
+        //         var tehsils = await dbcontext.Tehsil
+        //             .Where(t => !districtId.HasValue || t.Districtid == districtId.Value)
+        //             .Where(t => !officeType.HasValue ||
+        //                         !dbcontext.Officesdetails.Any(o => o.Areacode == t.Tehsilid && o.Officetype == officeType.Value))
+        //             .Select(t => new
+        //             {
+        //                 Id = t.Tehsilid,
+        //                 Name = $"{t.Tehsilname ?? ""} (Tehsil)",
+        //                 Type = "Tehsil"
+        //             })
+        //             .ToListAsync();
+
+        //         // Blocks – same logic
+        //         var blocks = await dbcontext.Blocks
+        //             .Where(b => !districtId.HasValue || b.Districtid == districtId.Value)
+        //             .Where(b => !officeType.HasValue ||
+        //                         !dbcontext.Officesdetails.Any(o => o.Areacode == b.Blockid && o.Officetype == officeType.Value))
+        //             .Select(b => new
+        //             {
+        //                 Id = b.Blockid,
+        //                 Name = $"{b.Blockname ?? ""} (Block)",
+        //                 Type = "Block"
+        //             })
+        //             .ToListAsync();
+
+        //         var areas = new List<object>();
+        //         areas.AddRange(tehsils);
+        //         areas.AddRange(blocks);
+
+        //         areas = areas.OrderBy(a => ((dynamic)a).Name ?? "").ToList();
+
+        //         return Json(areas);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         _logger.LogError(ex, "Error fetching areas");
+        //         return StatusCode(500, new { error = "Error fetching areas", details = ex.Message });
+        //     }
+        // }
+
         [HttpGet]
-        public async Task<IActionResult> GetTehsils(int? districtId = null)
+        public IActionResult GetDPO(int officeType, int? divisionId = null)
         {
             try
             {
-                // Build and execute tehsil query
-                var tehsils = await dbcontext.Tehsil
-                    .Where(t => !districtId.HasValue || t.Districtid == districtId.Value)
-                    .Where(t => !dbcontext.Officesdetails.Any(o => o.Areacode == t.Tehsilid))
-                    .Select(t => new
+                var officer = GetOfficerDetails();
+                if (officer == null || officer.Department <= 0)
+                    return Json(new List<object>());   // empty list if no valid officer
+
+                // 1. Find the DPO office type in this department (assume short name "DPO")
+                var dpoOffice = dbcontext.Offices
+                    .FirstOrDefault(o => o.Departmentid == officer.Department
+                                         && o.Officenameshort == "DPO");
+                if (dpoOffice == null)
+                    return Json(new List<object>());
+
+                // 2. Build query for office details of this type
+                var query = dbcontext.Officesdetails
+                    .Where(od => od.Officeid == dpoOffice.Officeid
+                                 && od.Office.Departmentid == officer.Department);
+
+                // 3. Optional division filter
+                if (divisionId.HasValue && divisionId.Value > 0)
+                    query = query.Where(od => od.Divisioncode == divisionId.Value);
+
+                // 4. Project as before
+                var dpoList = query
+                    .Select(od => new
                     {
-                        Id = t.Tehsilid,
-                        Name = $"{t.Tehsilname ?? ""} (Tehsil)",  // Add (Tehsil) after name
-                        Type = "Tehsil"
+                        OfficerId = od.Districtcode,      // used to set the CDPO's DistrictCode
+                        OfficerName = od.Officename
                     })
-                    .ToListAsync();
+                    .OrderBy(d => d.OfficerName)
+                    .ToList();
 
-                // Build and execute block query
-                var blocks = await dbcontext.Blocks
-                    .Where(b => !districtId.HasValue || b.Districtid == districtId.Value)
-                    .Where(b => !dbcontext.Officesdetails.Any(o => o.Areacode == b.Blockid && o.Areaname == b.Blockname))
-                    .Select(b => new
-                    {
-                        Id = b.Blockid,
-                        Name = $"{b.Blockname ?? ""} (Block)",  // Add (Block) after name
-                        Type = "Block"
-                    })
-                    .ToListAsync();
-
-                // Create a new list and add items from both collections
-                var areas = new List<object>();
-                areas.AddRange(tehsils);
-                areas.AddRange(blocks);
-
-                // Order by Name
-                areas = areas.OrderBy(a =>
-                    ((dynamic)a).Name ?? ""  // Using dynamic to access the Name property
-                ).ToList();
-
-                return Json(areas);
+                return Json(dpoList);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching areas");
-                return StatusCode(500, new { error = "Error fetching areas", details = ex.Message });
+                _logger.LogError(ex, "Error fetching DPO list");
+                return StatusCode(500, new { error = ex.Message });
             }
         }
-     
-     
-        [HttpGet]
-        public async Task<IActionResult> GetBlocks(int? districtId = null)
-        {
-            try
-            {
-                var query = dbcontext.Blocks.AsQueryable();
 
-                if (districtId.HasValue && districtId.Value > 0)
-                    query = query.Where(b => b.Districtid == districtId.Value);
+        // [HttpGet]
+        // public async Task<IActionResult> GetBlocks(int? districtId = null)
+        // {
+        //     try
+        //     {
+        //         var query = dbcontext.Blocks.AsQueryable();
 
-                // Exclude blocks already used in any OfficeDetails record
-                query = query.Where(b => !dbcontext.Officesdetails.Any(o => o.Areacode == b.Blockid));
+        //         if (districtId.HasValue && districtId.Value > 0)
+        //             query = query.Where(b => b.Districtid == districtId.Value);
 
-                var blocks = await query
-                    .Select(x => new
-                    {
-                        blockId = x.Blockid,
-                        blockName = x.Blockname
-                    })
-                    .OrderBy(b => b.blockName)
-                    .ToListAsync();
+        //         // Exclude blocks already used in any OfficeDetails record
+        //         // query = query.Where(b => !dbcontext.Officesdetails.Any(o => o.Areacode == b.Blockid));
 
-                return Json(blocks);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching blocks");
-                return StatusCode(500, new { error = "Error fetching blocks", details = ex.Message });
-            }
-        }
+        //         var blocks = await query
+        //             .Select(x => new
+        //             {
+        //                 blockId = x.Blockid,
+        //                 blockName = x.Blockname
+        //             })
+        //             .OrderBy(b => b.blockName)
+        //             .ToListAsync();
+
+        //         return Json(blocks);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         _logger.LogError(ex, "Error fetching blocks");
+        //         return StatusCode(500, new { error = "Error fetching blocks", details = ex.Message });
+        //     }
+        // }
 
 
     }

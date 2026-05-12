@@ -9,9 +9,11 @@ public partial class Offices
 
     public int Departmentid { get; set; }
 
-    public string Officetype { get; set; } = null!;
-
     public string Accesslevel { get; set; } = null!;
+
+    public string Officename { get; set; } = null!;
+
+    public string Officenameshort { get; set; } = null!;
 
     public virtual ICollection<Officesdetails> Officesdetails { get; set; } = new List<Officesdetails>();
 }

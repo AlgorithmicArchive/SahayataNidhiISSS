@@ -219,7 +219,7 @@ const TokenTimer = () => {
     setProfile(null);
     setDesignation(null);
     setTokenExpiry(null);
-    window.location.href = "/login";
+    window.location.href = "/swdjk/login";
   };
 
   if (!timeLeft) return null;
@@ -248,7 +248,7 @@ const TokenTimer = () => {
         Session expires in: {timeLeft}
       </Box>
 
-      <Modal open={isPopupOpen} onClose={() => {}}>
+      <Modal open={isPopupOpen} onClose={() => { }}>
         <Box
           sx={{
             position: "absolute",
