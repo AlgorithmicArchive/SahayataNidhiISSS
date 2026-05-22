@@ -25,10 +25,11 @@ using SendEmails;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 using UAParser;
 using System.Dynamic;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace SahayataNidhi.Controllers
 {
-    public class HomeController(ILogger<HomeController> logger, SwdjkContext dbContext, OtpStore otpStore, EmailSender emailSender, UserHelperFunctions helper, PdfService pdfService, IConfiguration configuration, IAuditLogService auditService, SessionRepository sessionRepo, IHttpClientFactory httpClientFactory) : Controller
+    public class HomeController(ILogger<HomeController> logger, SwdjkContext dbContext, OtpStore otpStore, EmailSender emailSender, UserHelperFunctions helper, PdfService pdfService, IConfiguration configuration, IAuditLogService auditService, SessionRepository sessionRepo, IHttpClientFactory httpClientFactory, IMemoryCache memoryCache) : Controller
     {
         private readonly ILogger<HomeController> _logger = logger;
         private readonly SwdjkContext _dbContext = dbContext;
@@ -40,6 +41,7 @@ namespace SahayataNidhi.Controllers
         private readonly IAuditLogService _auditService = auditService;
         private readonly SessionRepository _sessionRepo = sessionRepo;
         private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
+        private readonly IMemoryCache _memoryCache = memoryCache;
 
         public override void OnActionExecuted(ActionExecutedContext context)
         {
@@ -80,22 +82,22 @@ namespace SahayataNidhi.Controllers
         {
             try
             {
-                var clientSessionId = HttpContext.Session.Id;
+                var clientSessionId = Guid.NewGuid().ToString("N");
                 var sid = _configuration["JanParichay:ServiceId"]!;
                 var tid = DateTimeOffset.Now.ToUnixTimeMilliseconds();
                 var baseUrl = _configuration["JanParichay:JanParichayBaseUrl"]!.TrimEnd('/');
-                // 1. Encrypt the Client Session Id
+
                 var encryptedClientSessionId = await _helper.EncryptStringAsync(clientSessionId);
-                // 2. Build HMAC input string (EXACTLY as per doc)
                 var loginUrl = $"{baseUrl}/v1/api/login";
                 var hmacInput = $"JanParichay{tid}{loginUrl}{sid}";
                 var clientSignature = await _helper.GetHmacSignatureAsync(hmacInput);
-                // 3. Build redirect URL
+
                 var redirectUrl = $"{baseUrl}/v1/api/login?" +
                                   $"sid={sid}" +
                                   $"&tid={tid}" +
                                   $"&cs={clientSignature}" +
                                   $"&string={encryptedClientSessionId}";
+
                 _logger.LogInformation("Redirecting to JanParichay: {Url}", redirectUrl);
                 return Json(new { redirectUrl });
             }
@@ -105,7 +107,6 @@ namespace SahayataNidhi.Controllers
                 return StatusCode(500, new { error = "SSO initiation failed", details = ex.Message });
             }
         }
-
         public async Task<IActionResult> SSOCallback([FromQuery] string @string)
         {
             var fullUrl = Request.GetDisplayUrl();
@@ -198,8 +199,9 @@ namespace SahayataNidhi.Controllers
                 Response.Cookies.Append("BrowserId", janUser.BrowserId!, cookieOptions);
                 Response.Cookies.Append("PostLoginSessionId", janUser.SessionId!, cookieOptions);
 
-                HttpContext.Session.SetString("IdentityProviderIP", janUser?.Ip ?? "");
-                HttpContext.Session.SetString("ClientIP", HttpContext.Connection.RemoteIpAddress?.ToString() ?? "");
+                // Store extra data in cookies instead of session
+                Response.Cookies.Append("IdentityProviderIP", janUser?.Ip ?? "", cookieOptions);
+                Response.Cookies.Append("ClientIP", HttpContext.Connection.RemoteIpAddress?.ToString() ?? "", cookieOptions);
 
                 var userAgent = HttpContext.Request.Headers.UserAgent.ToString();
                 var parser = Parser.GetDefault();
@@ -209,11 +211,10 @@ namespace SahayataNidhi.Controllers
                 var os = clientInfo.OS.ToString();
                 var device = clientInfo.Device.Family;
 
-                HttpContext.Session.SetString("Browser", browser);
-                HttpContext.Session.SetString("OS", os);
-                HttpContext.Session.SetString("Device", string.IsNullOrEmpty(device) ? "Unknown" : device);
+                Response.Cookies.Append("Browser", browser, cookieOptions);
+                Response.Cookies.Append("OS", os, cookieOptions);
+                Response.Cookies.Append("Device", string.IsNullOrEmpty(device) ? "Unknown" : device, cookieOptions);
 
-                _logger.LogInformation("COOKIES SET — User: {Email}", janUser?.Email);
 
                 dynamic ssoResponse = new ExpandoObject();
                 ssoResponse.status = true;
@@ -290,6 +291,26 @@ namespace SahayataNidhi.Controllers
             }
 
             return otp;
+        }
+
+        private bool IsStrongPassword(string password, IConfiguration config)
+        {
+            if (string.IsNullOrEmpty(password)) return false;
+
+            var policy = config.GetSection("PasswordPolicy");
+            int minLen = policy.GetValue<int>("MinLength", 8);
+            bool requireUpper = policy.GetValue<bool>("RequireUppercase", true);
+            bool requireLower = policy.GetValue<bool>("RequireLowercase", true);
+            bool requireDigit = policy.GetValue<bool>("RequireDigit", true);
+            bool requireSpecial = policy.GetValue<bool>("RequireSpecialChar", true);
+
+            if (password.Length < minLen) return false;
+            if (requireUpper && !password.Any(char.IsUpper)) return false;
+            if (requireLower && !password.Any(char.IsLower)) return false;
+            if (requireDigit && !password.Any(char.IsDigit)) return false;
+            if (requireSpecial && !password.Any(ch => !char.IsLetterOrDigit(ch))) return false;
+
+            return true;
         }
 
         public IActionResult Index()
@@ -560,7 +581,10 @@ namespace SahayataNidhi.Controllers
             string userId = form["userId"].ToString();
             string otp = form["otp"].ToString();
             string newPassword = form["newPassword"].ToString();
-            _logger.LogInformation($"------------------ Email: {email} Userid: {userId} OTP: {otp} PASSWORD: {newPassword} -------------------------------");
+            if (!IsStrongPassword(newPassword, _configuration))
+            {
+                return Json(new { status = false, response = "Password does not meet security requirements. It must be at least 8 characters, include uppercase, lowercase, digit, and special character." });
+            }
 
             if (string.IsNullOrEmpty(email) || !Regex.IsMatch(email, @"^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$"))
             {
@@ -668,9 +692,20 @@ namespace SahayataNidhi.Controllers
         [HttpPost]
         public async Task<IActionResult> Login([FromForm] IFormCollection form)
         {
-            var usernameParam = new NpgsqlParameter("p_username", form["username"].ToString());
-            var passwordParam = !string.IsNullOrEmpty(form["password"].ToString())
-                ? new NpgsqlParameter("p_password", form["password"].ToString())
+            var username = form["username"].ToString();
+            var password = form["password"].ToString();
+
+            // 1. Check lockout from cache
+            string lockoutKey = $"Lockout_{username}";
+            if (_memoryCache.TryGetValue(lockoutKey, out DateTime lockoutEnd))
+            {
+                var remainingMinutes = (lockoutEnd - DateTime.Now).Minutes;
+                return Json(new { status = false, response = $"Account locked. Try again after {remainingMinutes} minutes." });
+            }
+
+            var usernameParam = new NpgsqlParameter("p_username", username);
+            var passwordParam = !string.IsNullOrEmpty(password)
+                ? new NpgsqlParameter("p_password", password)
                 : new NpgsqlParameter("p_password", DBNull.Value);
 
             var user = await _dbContext.Users
@@ -679,10 +714,33 @@ namespace SahayataNidhi.Controllers
                 .FirstOrDefaultAsync();
 
             if (user == null)
-                return Json(new { status = false, response = "Invalid Username or Password." });
+            {
+                string failKey = $"FailCount_{username}";
+                int failCount = _memoryCache.TryGetValue(failKey, out int count) ? count : 0;
+                failCount++;
+
+                if (failCount >= 5)
+                {
+                    _memoryCache.Set(lockoutKey, DateTime.Now.AddMinutes(15), TimeSpan.FromMinutes(15));
+                    _memoryCache.Remove(failKey);
+                    return Json(new { status = false, response = "Too many failed attempts. Account locked for 15 minutes." });
+                }
+                else
+                {
+                    _memoryCache.Set(failKey, failCount, TimeSpan.FromMinutes(15));
+                    return Json(new { status = false, response = "Invalid Username or Password." });
+                }
+            }
+
+            _memoryCache.Remove($"FailCount_{username}");
+            _memoryCache.Remove(lockoutKey);
 
             if (!user.Isemailvalid)
                 return Json(new { status = false, response = "Email Not Verified.", isEmailVerified = false, email = user.Email });
+
+            // 🔐 CONCURRENT LOGIN FIX: Delete all previous sessions for this user
+            // This allows re‑login after browser close and prevents concurrent sessions.
+            await _sessionRepo.DeleteSessionsByUser(user.Userid);
 
             _logger.LogInformation($"User {user.Username} ({user.Userid}) is attempting to log in.");
 
@@ -691,7 +749,6 @@ namespace SahayataNidhi.Controllers
 
             string designation = "";
             string department = "";
-            _logger.LogInformation($"---------- User {user.Username} is of type {user.Usertype}. Checking Additionaldetails for validation status. ---------");
 
             if (user.Usertype == "Officer" || user.Usertype == "Admin")
             {
@@ -727,6 +784,7 @@ namespace SahayataNidhi.Controllers
                 }
             }
 
+            // Prepare claims
             var claims = new List<Claim>
             {
                 new(ClaimTypes.NameIdentifier, user.Userid.ToString()),
@@ -738,6 +796,13 @@ namespace SahayataNidhi.Controllers
             if (!string.IsNullOrEmpty(designation))
                 claims.Add(new Claim("Designation", designation));
 
+            // Generate a new session ID
+            var sessionId = Guid.NewGuid();
+            claims.Add(new Claim("SessionId", sessionId.ToString()));
+
+            _logger.LogInformation("Added SessionId claim to JWT: {SessionId}", sessionId);
+
+            // Create JWT token
             var key = Encoding.ASCII.GetBytes(_configuration["JWT:Secret"]!);
             var tokenDescriptor = new SecurityTokenDescriptor
             {
@@ -750,9 +815,10 @@ namespace SahayataNidhi.Controllers
             var token = new JwtSecurityTokenHandler().CreateToken(tokenDescriptor);
             var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
 
+            // Create new session record in database
             var newSession = new Usersessions
             {
-                Sessionid = Guid.NewGuid(),
+                Sessionid = sessionId,
                 Userid = user.Userid,
                 Jwttoken = tokenString,
                 Logintime = DateTime.Now,
@@ -775,7 +841,6 @@ namespace SahayataNidhi.Controllers
                 department
             });
         }
-
         [HttpGet]
         [Authorize]
         public IActionResult RefreshToken()
@@ -874,13 +939,19 @@ namespace SahayataNidhi.Controllers
         [HttpPost]
         public async Task<IActionResult> Register(IFormCollection form)
         {
+            var Password = form["Password"].ToString();
             var fullName = new NpgsqlParameter("p_name", form["fullName"].ToString());
             var username = new NpgsqlParameter("p_username", form["Username"].ToString());
-            var password = new NpgsqlParameter("p_password", form["Password"].ToString());
+            var password = new NpgsqlParameter("p_password", Password);
             var email = new NpgsqlParameter("p_email", form["Email"].ToString());
             var mobileNumber = new NpgsqlParameter("p_mobilenumber", form["MobileNumber"].ToString());
             int district = string.IsNullOrEmpty(form["District"].ToString()) ? 0 : Convert.ToInt32(form["District"]);
             int tehsil = string.IsNullOrEmpty(form["Tehsil"].ToString()) ? 0 : Convert.ToInt32(form["Tehsil"]);
+
+            if (!IsStrongPassword(Password, _configuration))
+            {
+                return Json(new { status = false, response = "Password does not meet security requirements. It must be at least 8 characters, include uppercase, lowercase, digit, and special character." });
+            }
 
             var additionalDetails = new
             {
@@ -922,6 +993,8 @@ namespace SahayataNidhi.Controllers
         [HttpPost]
         public async Task<IActionResult> OfficerRegistration([FromForm] IFormCollection form)
         {
+            var Password = form["Password"].ToString();
+
             var email = form["email"].ToString().Trim();
             var mobileNumber = form["mobileNumber"].ToString().Trim();
             var fullName = form["fullName"].ToString().Trim();
@@ -929,6 +1002,10 @@ namespace SahayataNidhi.Controllers
             var departmentId = form["department"].ToString();
             var accessLevel = form["accessLevel"].ToString();
             var accessCodeStr = form["accessCode"].ToString();
+            if (!IsStrongPassword(Password, _configuration))
+            {
+                return Json(new { status = false, response = "Password does not meet security requirements. It must be at least 8 characters, include uppercase, lowercase, digit, and special character." });
+            }
 
             var username = email;
 
@@ -1173,29 +1250,50 @@ namespace SahayataNidhi.Controllers
 
         [HttpPost]
         [Authorize]
-        public IActionResult Logout()
+        public async Task<IActionResult> Logout()
         {
             try
             {
+                // Get current user ID from JWT claims
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                int? userId = null;
+                if (!string.IsNullOrEmpty(userIdClaim))
+                    userId = Convert.ToInt32(userIdClaim);
+
+                // Get SessionId from JWT claim and delete that session
+                var sessionIdClaim = User.FindFirst("SessionId")?.Value;
+                if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out Guid sessionIdFromClaim))
+                {
+                    await _sessionRepo.DeleteSessionById(sessionIdFromClaim);
+                }
+                else if (userId.HasValue)
+                {
+                    // Fallback: if no SessionId claim, delete all sessions for this user
+                    await _sessionRepo.DeleteSessionsByUser(userId.Value);
+                }
+
+                // Get JanParichay tokens from cookies
                 var clientToken = Request.Cookies["ClientToken"];
-                var sessionId = Request.Cookies["SessionId"] ?? Request.Cookies["PostLoginSessionId"];
+                var cookieSessionId = Request.Cookies["SessionId"] ?? Request.Cookies["PostLoginSessionId"];
                 var browserId = Request.Cookies["BrowserId"];
                 var sid = _configuration["JanParichay:ServiceId"]!;
                 var userAgent = Request.Headers["User-Agent"].ToString();
                 var tid = DateTimeOffset.Now.ToUnixTimeMilliseconds().ToString();
 
+                // Delete cookies
                 Response.Cookies.Delete("ClientToken");
                 Response.Cookies.Delete("SessionId");
                 Response.Cookies.Delete("BrowserId");
                 Response.Cookies.Delete("PostLoginSessionId");
 
+                // Handle SSO logout if needed
                 if (!string.IsNullOrEmpty(clientToken)
-                    && !string.IsNullOrEmpty(sessionId)
+                    && !string.IsNullOrEmpty(cookieSessionId)
                     && !string.IsNullOrEmpty(browserId))
                 {
                     var logoutUrl = _helper.GetJanParichayLogoutUrl(
                         clientToken,
-                        sessionId,
+                        cookieSessionId,
                         browserId,
                         sid,
                         userAgent,
@@ -1206,7 +1304,7 @@ namespace SahayataNidhi.Controllers
                         HttpContext,
                         "Logout",
                         "User logged out via JanParichay.",
-                        null,
+                        userId,
                         "Success"
                     );
 
@@ -1217,19 +1315,18 @@ namespace SahayataNidhi.Controllers
                     HttpContext,
                     "Logout",
                     "User logged out (non-SSO).",
-                    null,
+                    userId,
                     "Success"
                 );
 
-                return Redirect("/login");
+                return Redirect("/swdjk/login");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Logout failed");
-                return Redirect("/login");
+                return Redirect("/swdjk/login");
             }
         }
-
 
         [HttpGet]
         public IActionResult GetDistricts()

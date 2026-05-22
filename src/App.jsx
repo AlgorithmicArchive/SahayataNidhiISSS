@@ -179,7 +179,7 @@ const MainContent = () => {
     localStorage.removeItem("user");
     sessionStorage.clear();
     toast.error("Session expired. Please log in again.");
-    navigate("/login");
+    navigate("/swdjk/login");
   };
 
   const redirectByUserType = () => {

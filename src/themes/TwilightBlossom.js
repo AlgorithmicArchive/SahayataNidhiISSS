@@ -57,5 +57,11 @@ export const GovSoftTheme = createTheme({
         },
       },
     },
+    // ✅ NEW: Global autoComplete="off" for all TextField components
+    MuiTextField: {
+      defaultProps: {
+        autoComplete: "off",
+      },
+    },
   },
 });

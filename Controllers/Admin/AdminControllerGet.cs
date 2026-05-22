@@ -879,46 +879,33 @@ namespace SahayataNidhi.Controllers.Admin
         };
 
         [HttpGet]
-        public async Task<IActionResult> GetParentOfficeDetails(int officeTypeId)
+        public async Task<IActionResult> GetParentOfficeDetails(int officeTypeId, int divisionCode, int districtCode)
         {
-            try
-            {
-                var officer = GetOfficerDetails();
-                if (officer == null || officer.Department <= 0)
-                    return BadRequest(new { error = "Invalid officer" });
+            var officer = GetOfficerDetails();
+            if (officer == null || officer.Department <= 0)
+                return BadRequest(new { status = false, message = "Invalid officer." });
 
-                // Get the office type's access level
-                var office = await dbcontext.Offices
-                    .FirstOrDefaultAsync(o => o.Officeid == officeTypeId && o.Departmentid == officer.Department);
-                if (office == null)
-                    return BadRequest(new { error = "Office type not found" });
+            var query = dbcontext.Officesdetails
+                .Include(d => d.Office)
+                .Where(d => d.Office.Departmentid == officer.Department
+                            && d.Officeid == officeTypeId
+                            && d.Divisioncode == divisionCode);
 
-                var level = office.Accesslevel; // "State", "Division", etc.
+            if (districtCode > 0)
+                query = query.Where(d => d.Districtcode == districtCode);
 
-                if (!ParentAccessLevelMap.TryGetValue(level, out var parentLevel))
-                    return Json(new List<object>()); // no parent needed (e.g., State level)
+            var results = await query
+                .Select(d => new
+                {
+                    d.Officedetailid,
+                    OfficeName = d.Officename,
+                    d.Areaname
+                })
+                .ToListAsync();
 
-                // Fetch office details whose office type has that parent level
-                var parents = await dbcontext.Officesdetails
-                    .Include(od => od.Office)
-                    .Where(od => od.Office.Departmentid == officer.Department
-                                && od.Office.Accesslevel == parentLevel)
-                    .Select(od => new
-                    {
-                        od.Officedetailid,
-                        od.Officename
-                    })
-                    .ToListAsync();
-
-                return Json(parents);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching parent office details");
-                return StatusCode(500, new { error = ex.Message });
-            }
+            return Ok(results);
         }
-
+        
         [HttpGet]
         public async Task<IActionResult> GetDistricts(int? divisionId = null, int? officeType = null)
         {

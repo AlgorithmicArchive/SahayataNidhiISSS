@@ -13,6 +13,7 @@ import {
   InputAdornment,
   FormControl,
   FormHelperText,
+  Alert,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Visibility from "@mui/icons-material/Visibility";
@@ -52,7 +53,7 @@ const schema = yup.object().shape({
 });
 
 export default function LoginScreen() {
-  const API_BASE = window.__CONFIG__?.API_URL || ""; // fallback to empty string
+  const API_BASE = window.__CONFIG__?.API_URL || "";
 
   const [captcha, setCaptcha] = useState(generateCaptcha());
   const [showPassword, setShowPassword] = useState(false);
@@ -61,11 +62,14 @@ export default function LoginScreen() {
   const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
+  const [loginError, setLoginError] = useState(""); // new state for error message
 
   const {
     handleSubmit,
     control,
     formState: { errors },
+    watch,
+    setValue,
   } = useForm({
     resolver: yupResolver(schema),
     context: { captcha },
@@ -88,8 +92,16 @@ export default function LoginScreen() {
     setCaptcha(generateCaptcha());
   }, []);
 
+  // Clear login error when user types or refreshes CAPTCHA
+  useEffect(() => {
+    const subscription = watch(() => setLoginError(""));
+    return () => subscription.unsubscribe();
+  }, [watch]);
+
   const handleRefreshCaptcha = () => {
     setCaptcha(generateCaptcha());
+    setLoginError("");
+    setValue("captcha", "");
   };
 
   const handleClickShowPassword = () => {
@@ -107,6 +119,7 @@ export default function LoginScreen() {
 
     setButtonLoading(true);
     setLoading(true);
+    setLoginError(""); // clear previous error
 
     try {
       const response = await fetch(`${API_BASE}/Home/Login`, {
@@ -146,13 +159,18 @@ export default function LoginScreen() {
           toast.success("OTP sent to your email.");
         } else {
           toast.error(resJson.message || "Failed to send OTP.");
+          setLoginError(resJson.message || "Failed to send OTP.");
         }
       } else {
-        toast.error(result.response || "Invalid credentials.");
+        const errorMsg = result.response || "Invalid credentials.";
+        toast.error(errorMsg);
+        setLoginError(errorMsg);
       }
     } catch (err) {
       console.error("Login Error:", err);
-      toast.error("An error occurred. Please try again.");
+      const errorMsg = "An error occurred. Please try again.";
+      toast.error(errorMsg);
+      setLoginError(errorMsg);
     } finally {
       setLoading(false);
       setButtonLoading(false);
@@ -185,9 +203,11 @@ export default function LoginScreen() {
         toast.success("Email verified. Please login again.");
       } else {
         toast.error(result.message || "OTP verification failed.");
+        setLoginError(result.message || "OTP verification failed.");
       }
     } catch (err) {
       toast.error("Error verifying OTP.");
+      setLoginError("Error verifying OTP.");
     } finally {
       setButtonLoading(false);
     }
@@ -209,9 +229,11 @@ export default function LoginScreen() {
         toast.success("OTP resent to your email.");
       } else {
         toast.error(result.message || "Failed to resend OTP.");
+        setLoginError(result.message || "Failed to resend OTP.");
       }
     } catch (err) {
       toast.error("Error resending OTP.");
+      setLoginError("Error resending OTP.");
     }
   };
 
@@ -480,6 +502,13 @@ export default function LoginScreen() {
               Forgot Password/Username?
             </Link>
           </Box>
+
+          {/* Error Message Below Login Button */}
+          {loginError && (
+            <Alert severity="error" sx={{ mt: 1, borderRadius: 2 }}>
+              {loginError}
+            </Alert>
+          )}
 
           {/* LOGIN BUTTON */}
           <Box

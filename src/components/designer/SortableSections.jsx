@@ -7,6 +7,8 @@ import {
   Paper,
   Tooltip,
   Typography,
+  FormControlLabel,
+  Checkbox,
 } from "@mui/material";
 import { Row } from "react-bootstrap";
 import { useSortable } from "@dnd-kit/sortable";
@@ -34,6 +36,7 @@ const SortableSection = ({
   section,
   onAddField,
   onEditSectionName,
+  onToggleFullRow,          // NEW
   onEditField,
   onAdditonalModal,
   onUpdateSectionFields,
@@ -155,6 +158,19 @@ const SortableSection = ({
           </Box>
         )}
       </Box>
+
+      {/* NEW: Full Row Toggle */}
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={section.fullRow || false}
+            onChange={() => onToggleFullRow(section.id)}
+            size="small"
+          />
+        }
+        label="Full width row (instead of half)"
+        sx={{ mb: 2 }}
+      />
 
       <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
         <Button

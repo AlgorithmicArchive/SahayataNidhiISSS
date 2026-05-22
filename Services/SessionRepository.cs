@@ -42,4 +42,32 @@ public class SessionRepository
         session.Lastactivitytime = DateTime.Now;
         await _dbContext.SaveChangesAsync();
     }
+
+    public async Task DeleteSessionsByUser(int userId)
+    {
+        var sessions = _dbContext.Usersessions.Where(s => s.Userid == userId);
+        _dbContext.Usersessions.RemoveRange(sessions);
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task<bool> SessionExists(Guid sessionId)
+    {
+        return await _dbContext.Usersessions.AnyAsync(s => s.Sessionid == sessionId);
+    }
+
+    // Optional: if you need to delete a single session by ID (for logout)
+    public async Task DeleteSessionById(Guid sessionId)
+    {
+        var session = await _dbContext.Usersessions.FirstOrDefaultAsync(s => s.Sessionid == sessionId);
+        if (session != null)
+        {
+            _dbContext.Usersessions.Remove(session);
+            await _dbContext.SaveChangesAsync();
+        }
+    }
+
+    public async Task<bool> HasActiveSession(int userId)
+    {
+        return await _dbContext.Usersessions.AnyAsync(s => s.Userid == userId);
+    }
 }

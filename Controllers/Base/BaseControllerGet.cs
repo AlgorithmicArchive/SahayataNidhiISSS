@@ -319,11 +319,11 @@ namespace SahayataNidhi.Controllers
                     if (officeTypeId.HasValue)
                         odQuery = odQuery.Where(od => od.Officeid == officeTypeId.Value);
                     if (parentId > 0)
-                        odQuery = odQuery.Where(od => od.Districtcode == parentId);
+                        odQuery = odQuery.Where(od => od.Parentofficedetailid == parentId);
 
                     data = odQuery
                         .OrderBy(od => od.Officename)
-                        .Select(od => new { value = od.Officedetailid, label = od.Officename })
+                        .Select(od => new { value = od.Areacode, label = od.Officename })
                         .ToList();
                     break;
 

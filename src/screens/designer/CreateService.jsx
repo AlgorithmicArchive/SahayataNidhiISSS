@@ -31,7 +31,7 @@ import axiosInstance from "../../axiosConfig";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-// Function to normalize a field object to include all required properties
+// Function to normalize a field object
 const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
   id: field.id || `field-${timestamp}-${Math.random().toString(36).substring(2, 9)}`,
   type: field.type || "text",
@@ -68,6 +68,7 @@ const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
   value: field.value || undefined,
   dependentOn: field.dependentOn || undefined,
   dependentOptions: field.dependentOptions || undefined,
+  dependentTable: field.dependentTable || "",
   isDependentEnclosure: field.isDependentEnclosure || false,
   dependentField: field.dependentField || undefined,
   dependentValues: Array.isArray(field.dependentValues)
@@ -78,43 +79,42 @@ const normalizeField = (field, timestamp = Date.now(), banks = []) => ({
   declaration: field.declaration || "",
   sectionId: field.sectionId || undefined,
   optionsType: field.optionsType || "independent",
-  // IMPORTANT: preserve existing values, only use defaults if missing
   isOfficeField: field.isOfficeField !== undefined ? field.isOfficeField : false,
   officeTypeId: field.officeTypeId !== undefined ? field.officeTypeId : null,
-
-  // ADDED: Conditional visibility fields
   enableConditionalVisibility: field.enableConditionalVisibility || false,
   conditionalField: field.conditionalField || "",
   conditionalValues: field.conditionalValues || [],
+  enableValueDependency: field.enableValueDependency || false,
+  valueDependentOn: field.valueDependentOn || "",
+  dateGreaterThanConfig: field.dateGreaterThanConfig || null,
 });
 
-// Function to recursively normalize additionalFields
 const normalizeAdditionalFields = (additionalFields, timestamp, banks) => {
   const normalized = {};
   Object.keys(additionalFields).forEach((option) => {
     normalized[option] = (additionalFields[option] || []).map((field) =>
-      normalizeField(field, timestamp, banks),
+      normalizeField(field, timestamp, banks)
     );
   });
   return normalized;
 };
 
-// Function to normalize sections and their fields
 const normalizeSections = (sections, banks = []) => {
   return sections.map((section) => ({
     ...section,
     id: section.id || `section-${Date.now()}`,
     section: section.section || `Section ${sections.length + 1}`,
     fields: (section.fields || []).map((field) =>
-      normalizeField({ ...field, sectionId: section.id }, Date.now(), banks),
+      normalizeField({ ...field, sectionId: section.id }, Date.now(), banks)
     ),
     editable: section.editable !== undefined ? section.editable : true,
+    fullRow: section.fullRow || false,   // NEW
   }));
 };
 
 export default function CreateService() {
   const [sections, setSections] = useState(
-    normalizeSections(defaultFormConfig),
+    normalizeSections(defaultFormConfig)
   );
   const [services, setServices] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -145,7 +145,6 @@ export default function CreateService() {
           departmentsResponse.data.status &&
           departmentsResponse.data.departments
         ) {
-          console.log("Departments:", departmentsResponse.data.departments);
           setDepartments(departmentsResponse.data.departments);
         } else {
           toast.error("Failed to fetch departments");
@@ -176,11 +175,9 @@ export default function CreateService() {
       setServiceNameShort(service.nameShort || "");
       setDepartmentId(service.departmentId || "");
 
-      // Fetch banks after service selection
       let banksResponse;
       try {
         banksResponse = await axiosInstance.get("/Base/GetBanks");
-        console.log("Fetched Banks:", banksResponse.data);
         if (banksResponse.data.status && banksResponse.data.data) {
           setBanks(banksResponse.data.data);
         } else {
@@ -197,21 +194,18 @@ export default function CreateService() {
         try {
           const config = JSON.parse(service.formElement);
           setSections(
-            normalizeSections(config, banksResponse?.data.data || []),
+            normalizeSections(config, banksResponse?.data.data || [])
           );
         } catch (err) {
           console.error("Error parsing formElements:", err);
           toast.error("Invalid form data format.");
           setSections(
-            normalizeSections(
-              defaultFormConfig,
-              banksResponse?.data.data || [],
-            ),
+            normalizeSections(defaultFormConfig, banksResponse?.data.data || [])
           );
         }
       } else {
         setSections(
-          normalizeSections(defaultFormConfig, banksResponse?.data.data || []),
+          normalizeSections(defaultFormConfig, banksResponse?.data.data || [])
         );
       }
     }
@@ -223,6 +217,7 @@ export default function CreateService() {
       section: `Section ${sections.length + 1}`,
       fields: [],
       editable: true,
+      fullRow: false,
     };
     setSections((prev) => [...prev, newSection]);
   };
@@ -236,6 +231,7 @@ export default function CreateService() {
       section: `Section ${sections.length + 1}`,
       fields: [],
       editable: true,
+      fullRow: false,
     };
 
     const newSections = [
@@ -248,13 +244,14 @@ export default function CreateService() {
 
   const handleDuplicateSection = (sectionId) => {
     const sectionToDuplicate = sections.find(
-      (section) => section.id === sectionId,
+      (section) => section.id === sectionId
     );
     if (sectionToDuplicate) {
       const newSection = {
         ...sectionToDuplicate,
         id: `section-${sections.length + 1}`,
         section: `${sectionToDuplicate.section} Copy`,
+        fullRow: sectionToDuplicate.fullRow,
         fields: sectionToDuplicate.fields.map((field) =>
           normalizeField(
             {
@@ -264,7 +261,7 @@ export default function CreateService() {
                 .substring(2, 9)}`,
             },
             Date.now(),
-            banks,
+            banks
           ),
         ),
       };
@@ -274,6 +271,14 @@ export default function CreateService() {
 
   const handleRemoveSection = (sectionId) => {
     setSections((prev) => prev.filter((section) => section.id !== sectionId));
+  };
+
+  const handleToggleFullRow = (sectionId) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId ? { ...section, fullRow: !section.fullRow } : section
+      )
+    );
   };
 
   const handleAddField = (sectionId) => {
@@ -294,6 +299,7 @@ export default function CreateService() {
       value: undefined,
       dependentOn: undefined,
       dependentOptions: undefined,
+      dependentTable: "",
       isDependentEnclosure: false,
       dependentField: undefined,
       dependentValues: [],
@@ -304,35 +310,35 @@ export default function CreateService() {
       optionsType: "independent",
       isOfficeField: false,
       officeTypeId: null,
-
-      // ADDED: Conditional visibility defaults
       enableConditionalVisibility: false,
       conditionalField: "",
       conditionalValues: [],
+      enableValueDependency: false,
+      valueDependentOn: "",
     };
 
     setSections((prev) =>
       prev.map((section) =>
         section.id === sectionId
           ? { ...section, fields: [...section.fields, newField] }
-          : section,
-      ),
+          : section
+      )
     );
   };
 
   const handleSectionNameChange = (sectionId, newName) => {
     setSections((prev) =>
       prev.map((section) =>
-        section.id === sectionId ? { ...section, section: newName } : section,
-      ),
+        section.id === sectionId ? { ...section, section: newName } : section
+      )
     );
   };
 
   const handleUpdateSectionFields = (sectionId, newFields) => {
     setSections((prev) =>
       prev.map((section) =>
-        section.id === sectionId ? { ...section, fields: newFields } : section,
-      ),
+        section.id === sectionId ? { ...section, fields: newFields } : section
+      )
     );
   };
 
@@ -340,7 +346,7 @@ export default function CreateService() {
     const formdata = new FormData();
     if (!serviceName || !serviceNameShort || !departmentId) {
       toast.error(
-        "Please provide Service Name, Service Name Short, and select a Department.",
+        "Please provide Service Name, Service Name Short, and select a Department."
       );
       return;
     }
@@ -354,14 +360,14 @@ export default function CreateService() {
     try {
       const response = await axiosInstance.post(
         "/Designer/FormElement",
-        formdata,
+        formdata
       );
       const result = response.data;
       if (result.status) {
         toast.success(
           selectedServiceId
             ? "Service updated successfully!"
-            : "New service created successfully!",
+            : "New service created successfully!"
         );
         if (!selectedServiceId) {
           setServiceName("");
@@ -385,7 +391,6 @@ export default function CreateService() {
   };
 
   const updateField = (updatedField) => {
-    console.log("UPDATED Field", updatedField);
     setSections((prev) => {
       if (updatedField.sectionId) {
         return prev.map((section) =>
@@ -395,10 +400,10 @@ export default function CreateService() {
               fields: section.fields.map((field) =>
                 field.id === updatedField.id
                   ? normalizeField(updatedField, Date.now(), banks)
-                  : field,
+                  : field
               ),
             }
-            : section,
+            : section
         );
       } else {
         return prev.map((section) =>
@@ -408,10 +413,10 @@ export default function CreateService() {
               fields: section.fields.map((field) =>
                 field.id === updatedField.id
                   ? normalizeField(updatedField, Date.now(), banks)
-                  : field,
+                  : field
               ),
             }
-            : section,
+            : section
         );
       }
     });
@@ -425,8 +430,8 @@ export default function CreateService() {
             ...section,
             fields: section.fields.filter((field) => field.id !== fieldId),
           }
-          : section,
-      ),
+          : section
+      )
     );
   };
 
@@ -437,17 +442,16 @@ export default function CreateService() {
           ? {
             ...section,
             fields: section.fields.map((field) =>
-              field.id === fieldId ? { ...field, value: newValue } : field,
+              field.id === fieldId ? { ...field, value: newValue } : field
             ),
           }
-          : section,
-      ),
+          : section
+      )
     );
-    console.log("Updated field value:", { sectionId, fieldId, newValue });
   };
 
   const sectionSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
   const handleSectionDragEnd = (event) => {
@@ -462,7 +466,7 @@ export default function CreateService() {
     setSelectedField({
       ...field,
       sectionId: sections.find((section) =>
-        section.fields.some((f) => f.id === field.id),
+        section.fields.some((f) => f.id === field.id)
       )?.id,
     });
     setIsModalOpen(true);
@@ -677,6 +681,7 @@ export default function CreateService() {
                           banks={banks}
                           onAddField={handleAddField}
                           onEditSectionName={handleSectionNameChange}
+                          onToggleFullRow={handleToggleFullRow}
                           onEditField={handleEditField}
                           onAdditonalModal={handleAdditionalModal}
                           onUpdateSectionFields={handleUpdateSectionFields}

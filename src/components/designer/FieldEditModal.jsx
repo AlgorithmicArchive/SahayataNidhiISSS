@@ -20,6 +20,7 @@ import {
   Grid,
   Radio,
   RadioGroup,
+  FormHelperText,
 } from "@mui/material";
 import {
   validationFunctionsList,
@@ -29,7 +30,7 @@ import axiosInstance from "../../axiosConfig";
 import { toast } from "react-toastify";
 import SearchIcon from "@mui/icons-material/Search";
 
-// ---------- Helper Functions (unchanged) ----------
+// ---------- Helper Functions ----------
 const fetchDistricts = async () => {
   try {
     const response = await axiosInstance.get("/Base/GetDistricts");
@@ -72,7 +73,7 @@ const getSelectableFields = (sections = [], actionForm = []) => {
   };
   if (sections?.length > 0) sections.forEach((s) => processFields(s.fields || []));
   if (actionForm?.length > 0) processFields(actionForm);
-  return selectableFields.filter((f) => !f.id.includes("District"));
+  return selectableFields;
 };
 
 const fetchFormFieldsFromAPI = async (serviceId) => {
@@ -163,7 +164,7 @@ const DECLARATION_TEMPLATES = [
   },
 ];
 
-// ---------- DeclarationConfiguration (unchanged) ----------
+// ---------- DeclarationConfiguration ----------
 const DeclarationConfiguration = ({
   formData,
   setFormData,
@@ -529,6 +530,7 @@ const FieldEditModal = ({
   availableFormFields = [],
 }) => {
   const [dependentOn, setDependentOn] = useState(selectedField?.dependentOn || "");
+
   const [formData, setFormData] = useState({
     id: selectedField?.id || `field-${Date.now()}`,
     type: selectedField?.type || "text",
@@ -552,6 +554,7 @@ const FieldEditModal = ({
       (selectedField?.type === "select" ? "independent" : ""),
     dependentOn: selectedField?.dependentOn || "",
     dependentOptions: selectedField?.dependentOptions || {},
+    dependentTable: selectedField?.dependentTable || "",
     isDependentEnclosure: selectedField?.isDependentEnclosure || false,
     dependentField: selectedField?.dependentField || "",
     dependentValues: selectedField?.dependentValues || [],
@@ -568,17 +571,18 @@ const FieldEditModal = ({
       : [],
     isOfficeField: selectedField?.isOfficeField !== undefined ? selectedField.isOfficeField : false,
     officeTypeId: selectedField?.officeTypeId !== undefined ? selectedField.officeTypeId : "",
-    // Universal dependency (same logic as enclosure)
     enableConditionalVisibility: selectedField?.enableConditionalVisibility || false,
     conditionalField: selectedField?.conditionalField || "",
     conditionalValues: selectedField?.conditionalValues || [],
+    enableValueDependency: selectedField?.enableValueDependency || false,
+    valueDependentOn: selectedField?.valueDependentOn || "",
+    dateGreaterThanConfig: selectedField?.dateGreaterThanConfig || null,
   });
 
   const [optionInputText, setOptionInputText] = useState(
     formData.options.map((opt) => opt.label).join(";")
   );
 
-  // ---------- Dependency Flags ----------
   const initialIsDependentMinLength =
     typeof selectedField?.minLength === "object" &&
     selectedField?.minLength?.dependentOn;
@@ -610,11 +614,42 @@ const FieldEditModal = ({
   const [officeTypes, setOfficeTypes] = useState([]);
   const [loadingOfficeTypes, setLoadingOfficeTypes] = useState(false);
 
+  const [availableTables, setAvailableTables] = useState([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+
   const isWorkflowContext = sections.length === 0 && actionForm.length > 0;
   const selectableFields = getSelectableFields(sections, actionForm);
   const filteredSelectableFields = selectableFields.filter(
     (field) => field.id !== selectedField?.name
   );
+
+  const [enableValueDependency, setEnableValueDependency] = useState(
+    selectedField?.enableValueDependency || false
+  );
+  const [valueDependentOn, setValueDependentOn] = useState(
+    selectedField?.valueDependentOn || ""
+  );
+
+  useEffect(() => {
+    const fetchTables = async () => {
+      setLoadingTables(true);
+      try {
+        const response = await axiosInstance.get("/Designer/GetTables");
+        if (response.data && Array.isArray(response.data)) {
+          setAvailableTables(response.data);
+        } else {
+          setAvailableTables([]);
+        }
+      } catch (error) {
+        console.error("Error fetching tables:", error);
+        toast.error("Failed to load database tables");
+        setAvailableTables([]);
+      } finally {
+        setLoadingTables(false);
+      }
+    };
+    fetchTables();
+  }, []);
 
   useEffect(() => {
     async function fetchFields() {
@@ -702,6 +737,7 @@ const FieldEditModal = ({
       optionsType: formData.isConsentCheckbox ? "" : formData.optionsType,
       dependentOn: formData.isConsentCheckbox ? "" : formData.dependentOn,
       dependentOptions: formData.isConsentCheckbox ? {} : formData.dependentOptions,
+      dependentTable: enableValueDependency ? formData.dependentTable : "",
       isCheckboxDependent: formData.type === "checkbox" ? formData.isCheckboxDependent : false,
       checkboxDependentOn:
         formData.type === "checkbox" && formData.isCheckboxDependent
@@ -713,10 +749,11 @@ const FieldEditModal = ({
           : "",
       isOfficeField: formData.isOfficeField,
       officeTypeId: formData.isOfficeField ? formData.officeTypeId : undefined,
-      // Universal dependency (same as enclosure)
       enableConditionalVisibility: formData.enableConditionalVisibility,
       conditionalField: formData.enableConditionalVisibility ? formData.conditionalField : "",
       conditionalValues: formData.enableConditionalVisibility ? formData.conditionalValues : [],
+      enableValueDependency: enableValueDependency,
+      valueDependentOn: enableValueDependency ? valueDependentOn : "",
     };
 
     if (formData.type === "checkbox" && formData.isConsentCheckbox) {
@@ -742,7 +779,6 @@ const FieldEditModal = ({
     onClose();
   };
 
-  // ---------- Shared Helper: Render Primary Option Configuration Panel ----------
   const renderPrimaryConfigPanel = (
     lengthObject,
     setLengthObject,
@@ -942,7 +978,12 @@ const FieldEditModal = ({
                 checkboxDependentValue: newType === "checkbox" ? prev.checkboxDependentValue : "",
                 isOfficeField: prev.isOfficeField,
                 officeTypeId: prev.officeTypeId,
+                enableValueDependency: false,
+                valueDependentOn: "",
+                dependentTable: "",
               }));
+              setEnableValueDependency(false);
+              setValueDependentOn("");
             }}
           >
             <MenuItem value="text">Text</MenuItem>
@@ -1019,7 +1060,6 @@ const FieldEditModal = ({
         <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderRadius: 1, p: 2 }}>
           <Typography variant="h6">Length Constraints</Typography>
 
-          {/* ---------- MINIMUM LENGTH SECTION ---------- */}
           <Box sx={{ mt: 1 }}>
             <Typography variant="body2" fontWeight="bold">
               Minimum Length
@@ -1196,7 +1236,6 @@ const FieldEditModal = ({
             )}
           </Box>
 
-          {/* ---------- MAXIMUM LENGTH SECTION ---------- */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" fontWeight="bold">
               Maximum Length
@@ -1374,9 +1413,9 @@ const FieldEditModal = ({
           </Box>
         </Box>
 
-        {/* Universal Field Dependency (same as enclosure logic) */}
+        {/* Field Dependency (Conditional Visibility) */}
         <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderRadius: 1, p: 2 }}>
-          <Typography variant="h6">Field Dependency</Typography>
+          <Typography variant="h6">Field Dependency (Conditional Visibility)</Typography>
           <FormControlLabel
             control={
               <Checkbox
@@ -1475,7 +1514,93 @@ const FieldEditModal = ({
           )}
         </Box>
 
-        {/* Validation & Transformation Functions */}
+        {/* Value Dependency (with Table Dropdown) */}
+        <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderRadius: 1, p: 2 }}>
+          <Typography variant="h6">Value Dependency</Typography>
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={enableValueDependency}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setEnableValueDependency(checked);
+                  setFormData(prev => ({
+                    ...prev,
+                    enableValueDependency: checked,
+                    valueDependentOn: checked ? prev.valueDependentOn : "",
+                    dependentTable: checked ? prev.dependentTable : "",
+                  }));
+                  if (!checked) setValueDependentOn("");
+                }}
+              />
+            }
+            label="This field's value depends on another field"
+          />
+
+          {enableValueDependency && (
+            <>
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Copy value from field</InputLabel>
+                <Select
+                  value={valueDependentOn}
+                  label="Copy value from field"
+                  onChange={(e) => {
+                    const newSource = e.target.value;
+                    setValueDependentOn(newSource);
+                    setFormData(prev => ({
+                      ...prev,
+                      valueDependentOn: newSource
+                    }));
+                  }}
+                >
+                  <MenuItem value="">
+                    <em>Select a field</em>
+                  </MenuItem>
+                  {filteredSelectableFields
+                    .filter(f => f.id !== selectedField?.name)
+                    .map(field => (
+                      <MenuItem key={field.id} value={field.id}>
+                        {field.label} ({field.type})
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth margin="dense">
+                <InputLabel id="value-dep-table-label">Source Table (for options)</InputLabel>
+                <Select
+                  labelId="value-dep-table-label"
+                  value={formData.dependentTable || ""}
+                  label="Source Table (for options)"
+                  onChange={(e) => setFormData(prev => ({ ...prev, dependentTable: e.target.value }))}
+                  disabled={loadingTables}
+                >
+                  <MenuItem value="">
+                    <em>Select a table</em>
+                  </MenuItem>
+                  {loadingTables ? (
+                    <MenuItem disabled>Loading tables...</MenuItem>
+                  ) : (
+                    availableTables.map((table) => (
+                      <MenuItem key={table} value={table}>
+                        {table}
+                      </MenuItem>
+                    ))
+                  )}
+                </Select>
+                <FormHelperText>
+                  Choose the database table that provides options for the source field (if needed).
+                </FormHelperText>
+              </FormControl>
+
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+                The value of this field will be automatically synchronised with the selected field's value.
+              </Typography>
+            </>
+          )}
+        </Box>
+
+        {/* Validation Functions */}
         <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
           Validation Functions
         </Typography>
@@ -1500,6 +1625,88 @@ const FieldEditModal = ({
           ))}
         </Grid>
 
+
+        {/* NEW: Configuration for "Date > Reference Date" validation */}
+        {formData.validationFunctions.includes("isDateGreaterThan") && (
+          <Box sx={{ mt: 2, p: 2, bgcolor: "#F3F4F6", borderRadius: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+            </Typography>
+            <FormControl fullWidth margin="dense">
+              <InputLabel>Reference Type</InputLabel>
+              <Select
+                value={formData.dateGreaterThanConfig?.type || "field"}
+                label="Reference Type"
+                onChange={(e) => {
+                  const newType = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    dateGreaterThanConfig: {
+                      type: newType,
+                      fieldName: newType === "field" ? (prev.dateGreaterThanConfig?.fieldName || "") : undefined,
+                      staticDate: newType === "static" ? (prev.dateGreaterThanConfig?.staticDate || "") : undefined,
+                    },
+                  }));
+                }}
+              >
+                <MenuItem value="field">From another field</MenuItem>
+                <MenuItem value="static">Static date</MenuItem>
+              </Select>
+            </FormControl>
+
+            {formData.dateGreaterThanConfig?.type === "field" && (
+              <FormControl fullWidth margin="dense">
+                <InputLabel>Reference Date Field</InputLabel>
+                <Select
+                  value={formData.dateGreaterThanConfig?.fieldName || ""}
+                  label="Reference Date Field"
+                  onChange={(e) => {
+                    const fieldName = e.target.value;
+                    setFormData((prev) => ({
+                      ...prev,
+                      dateGreaterThanConfig: {
+                        ...prev.dateGreaterThanConfig,
+                        fieldName,
+                      },
+                    }));
+                  }}
+                >
+                  <MenuItem value="">Select a date field</MenuItem>
+                  {filteredSelectableFields
+                    .filter(f => f.type === "date")
+                    .map(f => (
+                      <MenuItem key={f.id} value={f.id}>
+                        {f.label} ({f.id})
+                      </MenuItem>
+                    ))}
+                </Select>
+                <FormHelperText>Choose the field whose date will be used as the lower bound.</FormHelperText>
+              </FormControl>
+            )}
+
+            {formData.dateGreaterThanConfig?.type === "static" && (
+              <TextField
+                fullWidth
+                label="Static Reference Date (DD/MM/YYYY)"
+                value={formData.dateGreaterThanConfig?.staticDate || ""}
+                onChange={(e) => {
+                  const dateStr = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    dateGreaterThanConfig: {
+                      ...prev.dateGreaterThanConfig,
+                      staticDate: dateStr,
+                    },
+                  }));
+                }}
+                margin="dense"
+                placeholder="e.g., 01/01/2023"
+                helperText="Enter a fixed date in DD/MM/YYYY format."
+              />
+            )}
+          </Box>
+        )}
+
+        {/* Transformation Functions */}
         <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
           Transformation Functions
         </Typography>
@@ -1524,7 +1731,7 @@ const FieldEditModal = ({
           ))}
         </Grid>
 
-        {/* Checkbox Options Group */}
+        {/* Checkbox Options */}
         {formData.type === "checkbox" && (
           <>
             <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
@@ -1674,7 +1881,7 @@ const FieldEditModal = ({
           </>
         )}
 
-        {/* Select Options Group */}
+        {/* Select Options (no dependentTable here) */}
         {formData.type === "select" && (
           <>
             <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
@@ -1754,6 +1961,7 @@ const FieldEditModal = ({
                     ))}
                   </Select>
                 </FormControl>
+
                 {dependentOn && (
                   <>
                     {(() => {
@@ -1858,7 +2066,7 @@ const FieldEditModal = ({
           </>
         )}
 
-        {/* Enclosure / File specifics */}
+        {/* Enclosure */}
         {formData.type === "enclosure" && (
           <>
             <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
@@ -1998,6 +2206,8 @@ const FieldEditModal = ({
             />
           </>
         )}
+
+        {/* File */}
         {formData.type === "file" && (
           <TextField
             fullWidth
@@ -2009,7 +2219,6 @@ const FieldEditModal = ({
           />
         )}
 
-        {/* Save Button */}
         <Button
           fullWidth
           variant="contained"

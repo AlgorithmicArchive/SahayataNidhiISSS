@@ -126,10 +126,11 @@ namespace SahayataNidhi.Controllers.Profile
         }
 
         [HttpGet]
+        [Authorize] // Ensure the user is authenticated (add if missing)
         public IActionResult Settings()
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            string? userType = HttpContext.Session.GetString("UserType");
+            var userType = User.FindFirst(ClaimTypes.Role)?.Value; // Get from JWT claim
 
             if (userId != null && !string.IsNullOrEmpty(userType))
             {

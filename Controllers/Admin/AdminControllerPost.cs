@@ -469,7 +469,7 @@ namespace SahayataNidhi.Controllers.Admin
         }
 
         [HttpPost]
-        public async Task<IActionResult> AddOfficeDetail([FromForm] int OfficeTypeId, [FromForm] int DivisionCode, [FromForm] int DistrictCode, [FromForm] string AreaNames)
+        public async Task<IActionResult> AddOfficeDetail([FromForm] int OfficeTypeId, [FromForm] int DivisionCode, [FromForm] int DistrictCode, [FromForm] string AreaNames, [FromForm] int? ParentOfficeDetailId = null)   // NEW
         {
             try
             {
@@ -492,10 +492,22 @@ namespace SahayataNidhi.Controllers.Admin
                                      .Distinct()
                                      .ToList();
 
+                // If parent is provided, validate it belongs to the same department and correct office type
+                if (ParentOfficeDetailId.HasValue)
+                {
+                    var parent = await dbcontext.Officesdetails
+                        .Include(p => p.Office)
+                        .FirstOrDefaultAsync(p => p.Officedetailid == ParentOfficeDetailId.Value);
+                    if (parent == null)
+                        return BadRequest(new { status = false, message = "Invalid parent office detail." });
+                    if (parent.Office.Departmentid != officer.Department)
+                        return BadRequest(new { status = false, message = "Parent office not in same department." });
+                    // Optional: check hierarchy level (e.g., parent must be DPO if child is CDPO)
+                }
+
                 if (office.Accesslevel.Equals("District", StringComparison.OrdinalIgnoreCase))
                 {
-                    // For District‑level offices, area names are district names.
-                    // Look up each district name in the selected division.
+                    // For District-level offices, area names are district names.
                     var districtCodes = new Dictionary<string, int>();
                     foreach (var area in areas)
                     {
@@ -520,14 +532,15 @@ namespace SahayataNidhi.Controllers.Admin
                             Divisioncode = DivisionCode,
                             Districtcode = districtCodes[area],
                             Areaname = area,
-                            Officename = $"{office.Officename} – {area}"
+                            Officename = $"{office.Officename} – {area}",
+                            Parentofficedetailid = ParentOfficeDetailId   // set parent
                         };
                         dbcontext.Officesdetails.Add(detail);
                     }
                 }
                 else
                 {
-                    // For Tehsil / Block / other levels, use the selected DistrictCode
+                    // For Tehsil / Block / other levels
                     foreach (var area in areas)
                     {
                         var detail = new Officesdetails
@@ -537,7 +550,8 @@ namespace SahayataNidhi.Controllers.Admin
                             Divisioncode = DivisionCode,
                             Districtcode = DistrictCode,
                             Areaname = area,
-                            Officename = $"{office.Officename} – {area}"
+                            Officename = $"{office.Officename} – {area}",
+                            Parentofficedetailid = ParentOfficeDetailId
                         };
                         dbcontext.Officesdetails.Add(detail);
                     }
@@ -552,7 +566,6 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
-
         [HttpPost]
         public async Task<IActionResult> UpdateOfficeDetail([FromForm] int OfficeDetailId, [FromForm] string AreaName, [FromForm] int DivisionCode, [FromForm] int DistrictCode)
         {

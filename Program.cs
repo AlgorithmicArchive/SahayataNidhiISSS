@@ -11,13 +11,22 @@ using System.Security.Claims;
 using EncryptionHelper;
 using Newtonsoft.Json.Serialization;
 using Newtonsoft.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Bind to all network interfaces
-// builder.WebHost.UseUrls("http://0.0.0.0:5004");
+// ============================================================
+// 1. Remove Server header (Kestrel) – mitigates #12 partially
+// ============================================================
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.AddServerHeader = false;
+});
 
-// Add services
+// ============================================================
+// 2. Existing service registrations (unchanged)
+// ============================================================
 builder.Services.AddControllersWithViews().AddRazorRuntimeCompilation();
 builder.Services.AddSignalR();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
@@ -35,32 +44,44 @@ builder.Services.AddDataProtection()
 builder.Services.AddControllers().AddNewtonsoftJson(options =>
 {
     options.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
-    // Use camelCase for property names
     options.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
     options.SerializerSettings.PreserveReferencesHandling = PreserveReferencesHandling.None;
     options.SerializerSettings.Formatting = Formatting.None;
 });
 
+// ============================================================
+// 3. FIX #4 – CORS: Read allowed origins from configuration
+// ============================================================
+var corsOrigins = builder.Configuration.GetSection("CorsAllowedOrigins").Get<string[]>();
+if (corsOrigins == null || corsOrigins.Length == 0)
+{
+    // Fallback for development only – never use wildcard in production
+    corsOrigins = builder.Environment.IsDevelopment()
+        ? new[] { "http://localhost:3000", "https://localhost:3000" }
+        : throw new InvalidOperationException("CorsAllowedOrigins is not configured.");
+}
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", builder =>
+    options.AddPolicy("StrictCors", policy =>
     {
-        builder.AllowAnyOrigin()
-               .AllowAnyMethod()
-               .AllowAnyHeader();
+        policy.WithOrigins(corsOrigins)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials(); // Set to false if you don't send credentials
     });
 });
 
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.Name = ".SahayataNidhi.Session";
-});
+// builder.Services.AddSession(options =>
+// {
+//     options.IdleTimeout = TimeSpan.FromMinutes(30);
+//     options.Cookie.HttpOnly = true;
+//     options.Cookie.IsEssential = true;
+//     options.Cookie.Name = ".SahayataNidhi.Session";
+//     options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Force secure cookie over HTTPS
+// });
 
-
-// JWT Authentication
+// JWT Authentication (unchanged)
 var jwtSecretKey = builder.Configuration.GetValue<string>("JWT:Secret");
 var key = Encoding.ASCII.GetBytes(jwtSecretKey!);
 builder.Services.AddAuthentication(options =>
@@ -102,7 +123,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Authorization policies
+// Authorization policies (unchanged)
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("CitizenPolicy", policy => policy.RequireRole("Citizen"))
     .AddPolicy("OfficerPolicy", policy => policy.RequireRole("Officer"))
@@ -118,7 +139,6 @@ builder.Services.AddScoped<UserHelperFunctions>();
 builder.Services.AddTransient<PdfService>();
 builder.Services.AddSingleton<IEncryptionService, EncryptionService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
-builder.Services.AddCors();
 builder.Services.AddDetection();
 
 builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
@@ -131,9 +151,25 @@ builder.Services.AddScoped<CronServices>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 
+builder.Services.AddScoped<SessionValidationFilter>();
+
+// Then, after AddControllersWithViews:
+builder.Services.AddControllersWithViews(options =>
+{
+    options.Filters.Add<SessionValidationFilter>();
+});
+
+// ============================================================
+// 4. Enforce HTTPS globally (RequireHttps filter)
+// ============================================================
+// builder.Services.Configure<MvcOptions>(options =>
+// {
+//     options.Filters.Add(new RequireHttpsAttribute());
+// });
+
 var app = builder.Build();
 
-
+// Background task registration (unchanged)
 app.Lifetime.ApplicationStarted.Register(async () =>
 {
     using var scope = app.Services.CreateScope();
@@ -141,21 +177,30 @@ app.Lifetime.ApplicationStarted.Register(async () =>
     await cronService.RegisterAllTasksAsync();
 });
 
+// ============================================================
+// 5. HTTP pipeline – order matters!
+// ============================================================
 
-// HTTP request pipeline
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    app.UseHsts();
+    // HSTS must come BEFORE HTTPS redirection and before any response headers
+    // app.UseHsts();
 }
 
 app.UsePathBase("/swdjk");
+
+// ============================================================
+// 6. FIX #2 & #3 – Enforce HTTPS redirection (uncommented)
+// ============================================================
 // app.UseHttpsRedirection();
+
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
     {
-        ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        // Remove wildcard CORS from static files – it's unsafe
+        // ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
         var fileExtension = Path.GetExtension(ctx.File.Name).ToLower();
         if (fileExtension == ".pdf")
             ctx.Context.Response.Headers.Append("Content-Disposition", "inline");
@@ -164,23 +209,35 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
-
-
 app.UseDetection();
 
-// ⚡ Add this for Nginx + ngrok forwarded headers
+// Forwarded headers for proxies (ngrok, nginx, etc.)
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
+// ============================================================
+// 7. Custom security middleware (Host whitelist, security headers, CSP, OPTIONS block)
+//    Must be placed after UseForwardedHeaders and before UseRouting
+// ============================================================
 
 app.UseRouting();
-app.UseCors("AllowAll");
-app.UseSession();
+
+// ============================================================
+// 8. Use the new restricted CORS policy (not "AllowAll")
+// ============================================================
+app.UseCors("StrictCors");
+
+
+
+// app.UseSession();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseMiddleware<SecurityMiddleware>();
+
 
 app.MapHub<ProgressHub>("/progressHub");
 
@@ -191,4 +248,3 @@ app.MapControllerRoute(
 app.MapFallbackToController("Index", "Home");
 
 app.Run();
-

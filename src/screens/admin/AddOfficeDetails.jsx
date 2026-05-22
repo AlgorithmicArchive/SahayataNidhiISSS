@@ -24,7 +24,6 @@ import MessageModal from "../../components/MessageModal";
 import ServerSideTable from "../../components/ServerSideTable";
 import { UserContext } from "../../UserContext";
 
-// Helper to safely extract array from API responses
 const extractArray = (data) => {
   if (Array.isArray(data)) return data;
   if (data?.data) return extractArray(data.data);
@@ -46,23 +45,24 @@ export default function AddOfficeDetails() {
       divisionCode: 0,
       districtCode: 0,
       areaNames: "",
+      parentOfficeDetailId: "",
     },
   });
 
   const officeTypeId = useWatch({ control, name: "officeTypeId" });
   const divisionCode = useWatch({ control, name: "divisionCode" });
+  const districtCode = useWatch({ control, name: "districtCode" });
 
   const [offices, setOffices] = useState([]);
   const [divisions, setDivisions] = useState([]);
   const [districts, setDistricts] = useState([]);
-  const [dpoList, setDpoList] = useState([]);
-  const [selectedDpo, setSelectedDpo] = useState(null);
+  const [parentCandidates, setParentCandidates] = useState([]);
   const [accessLevel, setAccessLevel] = useState("");
 
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingDistricts, setLoadingDistricts] = useState(false);
-  const [loadingDpo, setLoadingDpo] = useState(false);
+  const [loadingParents, setLoadingParents] = useState(false);
   const [showMsg, setShowMsg] = useState(false);
   const [msg, setMsg] = useState({ title: "", message: "", type: "success" });
   const [editOpen, setEditOpen] = useState(false);
@@ -79,10 +79,10 @@ export default function AddOfficeDetails() {
     );
   }, [userType, officerAuthorities]);
 
-  // FIX: Use short name to identify CDPO
-  const isCDPO = useMemo(() => {
+  // Determine if current office type is a child (needs parent)
+  const needsParent = useMemo(() => {
     const office = offices.find((o) => o.officeid === officeTypeId);
-    return office?.officenameshort === "CDPO";
+    return office && office.accesslevel !== "District"; // District is top-level
   }, [officeTypeId, offices]);
 
   // Fetch offices and divisions
@@ -115,23 +115,13 @@ export default function AddOfficeDetails() {
     setAccessLevel(office?.accesslevel || "");
     setValue("districtCode", 0);
     setValue("areaNames", "");
-    setSelectedDpo(null);
+    setValue("parentOfficeDetailId", "");
+    setParentCandidates([]);
   }, [officeTypeId, offices, setValue]);
 
-  // Clear selected DPO when division changes
+  // Fetch districts when division changes (for non-district levels)
   useEffect(() => {
-    setSelectedDpo(null);
-    setValue("districtCode", 0);
-  }, [divisionCode, setValue]);
-
-  // Fetch districts when division changes (only if not CDPO and level ≠ District)
-  useEffect(() => {
-    if (
-      !divisionCode ||
-      divisionCode === 0 ||
-      accessLevel === "District" ||
-      isCDPO
-    ) {
+    if (!divisionCode || divisionCode === 0 || accessLevel === "District") {
       setDistricts([]);
       return;
     }
@@ -143,41 +133,61 @@ export default function AddOfficeDetails() {
       .then((res) => setDistricts(extractArray(res.data)))
       .catch(() => setErrorMsg("Failed to load districts."))
       .finally(() => setLoadingDistricts(false));
-  }, [divisionCode, officeTypeId, accessLevel, isCDPO]);
+  }, [divisionCode, officeTypeId, accessLevel]);
 
-  // Fetch DPOs for CDPO
+  // Fetch parent office details when office type, division, district change
   useEffect(() => {
-    if (!isCDPO || !officeTypeId) {
-      setDpoList([]);
+    if (!needsParent || !officeTypeId || !divisionCode) {
+      setParentCandidates([]);
       return;
     }
-    setLoadingDpo(true);
-    axiosInstance.get(`/Admin/GetDPO`, {
-      params: {
-        officeType: officeTypeId,
-        divisionId: divisionCode   // 👈 add this
+
+    // For child offices, we need to find parent offices of the immediate higher level.
+    // Parent type depends on current office type (e.g., for Tehsil, parent is District office).
+    // We'll call an API that returns office details of the appropriate parent type.
+    const fetchParents = async () => {
+      setLoadingParents(true);
+      try {
+        // Determine parent office type id – this mapping should be defined in backend or config.
+        // Example: Tehsil -> District, Block -> District, Ward -> Municipality, etc.
+        const parentOfficeTypeId = await getParentOfficeTypeId(officeTypeId);
+        if (!parentOfficeTypeId) {
+          setParentCandidates([]);
+          return;
+        }
+        const params = {
+          officeTypeId: parentOfficeTypeId,
+          divisionCode: divisionCode,
+          districtCode: districtCode || 0,
+        };
+        const res = await axiosInstance.get("/Admin/GetParentOfficeDetails", { params });
+        setParentCandidates(extractArray(res.data));
+      } catch (err) {
+        console.error("Failed to load parent candidates", err);
+        setParentCandidates([]);
+      } finally {
+        setLoadingParents(false);
       }
-    })
-      .then(res => setDpoList(extractArray(res.data)))
-      .catch(() => setErrorMsg("Failed to load DPOs."))
-      .finally(() => setLoadingDpo(false));
-  }, [isCDPO, officeTypeId, divisionCode]);  // 👈 add divisionCode to dependency array
+    };
+    fetchParents();
+  }, [needsParent, officeTypeId, divisionCode, districtCode]);
 
-  // Reset form on edit close
-  useEffect(() => {
-    if (!editOpen) {
-      reset({
-        officeTypeId: "",
-        divisionCode: 0,
-        districtCode: 0,
-        areaNames: "",
-      });
-      setEditing(null);
-      setAccessLevel("");
+  // Helper to get parent office type id – you can store this in a config table
+  const getParentOfficeTypeId = async (childOfficeTypeId) => {
+    // For demonstration, assume a simple mapping:
+    // You should replace with a backend call to get the hierarchical parent.
+    const office = offices.find(o => o.officeid === childOfficeTypeId);
+    if (!office) return null;
+    switch (office.officenameshort) {
+      case "Tehsil": return offices.find(o => o.officenameshort === "District")?.officeid;
+      case "Block": return offices.find(o => o.officenameshort === "District")?.officeid;
+      case "Ward": return offices.find(o => o.officenameshort === "Municipality")?.officeid;
+      case "CDPO": return offices.find(o => o.officenameshort === "DPO")?.officeid;
+      default: return null;
     }
-  }, [editOpen, reset]);
+  };
 
-  // SUBMIT ADD
+  // Submit add
   const onSubmit = async (data) => {
     if (!data.areaNames.trim()) {
       setErrorMsg("Area name(s) required.");
@@ -193,12 +203,14 @@ export default function AddOfficeDetails() {
         fd.append("DistrictCode", 0);
       }
       fd.append("AreaNames", data.areaNames);
+      if (data.parentOfficeDetailId) {
+        fd.append("ParentOfficeDetailId", data.parentOfficeDetailId);
+      }
 
       const res = await axiosInstance.post("/Admin/AddOfficeDetail", fd);
       if (res.data.status) {
         setMsg({ title: "Success", message: res.data.message, type: "success" });
         setShowMsg(true);
-        // Only clear area names, keep selections
         setValue("areaNames", "");
         setRefresh((p) => !p);
       } else {
@@ -209,18 +221,21 @@ export default function AddOfficeDetails() {
     }
   };
 
-  // SUBMIT UPDATE
+  // Submit update (similar changes needed)
   const handleUpdate = async (data) => {
     if (!editing) return;
     try {
       const fd = new FormData();
       fd.append("OfficeDetailId", editing.officeDetailId);
-      fd.append("AreaName", data.areaNames); // single name
+      fd.append("AreaName", data.areaNames);
       fd.append("DivisionCode", data.divisionCode);
       if (accessLevel !== "District") {
         fd.append("DistrictCode", data.districtCode);
       } else {
         fd.append("DistrictCode", 0);
+      }
+      if (data.parentOfficeDetailId) {
+        fd.append("ParentOfficeDetailId", data.parentOfficeDetailId);
       }
 
       const res = await axiosInstance.post("/Admin/UpdateOfficeDetail", fd);
@@ -237,7 +252,7 @@ export default function AddOfficeDetails() {
     }
   };
 
-  // DELETE
+  // Delete (unchanged)
   const handleDelete = async (id) => {
     try {
       const fd = new FormData();
@@ -255,7 +270,7 @@ export default function AddOfficeDetails() {
     }
   };
 
-  // Columns
+  // Columns & actionFns (same as before)
   const columns = useMemo(
     () => [
       { field: "officeDetailId", headerName: "ID", flex: 1 },
@@ -263,13 +278,12 @@ export default function AddOfficeDetails() {
       { field: "officeTypeName", headerName: "Office Type", flex: 1 },
       { field: "divisionCode", headerName: "Division Code", flex: 0.5 },
       { field: "districtCode", headerName: "District Code", flex: 0.5 },
-      { field: "areacode", headerName: "Area Code (auto)", flex: 0.5 },
+      { field: "areacode", headerName: "Area Code", flex: 0.5 },
       { field: "areaName", headerName: "Area Name", flex: 1 },
     ],
     []
   );
 
-  // Action functions
   const actionFns = useMemo(
     () => ({
       UpdateOfficeDetail: (row) => {
@@ -279,16 +293,11 @@ export default function AddOfficeDetails() {
         }
         const rec = row.original;
         setEditing(rec);
-        // FIX: Use officeTypeId directly from the row data
         setValue("officeTypeId", rec.officeTypeId);
         setValue("divisionCode", rec.divisionCode);
         setValue("districtCode", rec.districtCode);
         setValue("areaNames", rec.areaName);
-
-        // Set DPO if it's a CDPO office (for edit modal)
-        if (rec.officeTypeName === "CDPO") {
-          setSelectedDpo(rec.districtCode);
-        }
+        setValue("parentOfficeDetailId", rec.parentOfficeDetailId || "");
         setEditOpen(true);
       },
       DeleteOfficeDetail: (row) => {
@@ -312,8 +321,8 @@ export default function AddOfficeDetails() {
   }
 
   const shouldShowDivision = true;
-  const shouldShowDistrict = accessLevel !== "District" && !isCDPO && officeTypeId;
-  const shouldShowDPO = isCDPO;
+  const shouldShowDistrict = accessLevel !== "District" && officeTypeId;
+  const shouldShowParent = needsParent && officeTypeId && divisionCode;
 
   return (
     <Container maxWidth="lg" sx={{ py: 8 }}>
@@ -380,66 +389,55 @@ export default function AddOfficeDetails() {
               </Grid>
             )}
 
-            {/* District / DPO */}
-            {shouldShowDPO ? (
+            {/* District (for non-District levels) */}
+            {shouldShowDistrict && (
               <Grid item xs={12} sm={4}>
-                <FormControl fullWidth disabled={loadingDpo}>
-                  <InputLabel shrink>DPO</InputLabel>
+                <Controller
+                  name="districtCode"
+                  control={control}
+                  rules={{ required: "District required" }}
+                  render={({ field }) => (
+                    <FormControl fullWidth error={!!errors.districtCode} disabled={loadingDistricts}>
+                      <InputLabel shrink>District</InputLabel>
+                      <Select
+                        {...field}
+                        value={field.value || 0}
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      >
+                        <MenuItem value={0}>Select District</MenuItem>
+                        {districts.map((d) => (
+                          <MenuItem key={d.districtId} value={d.districtId}>
+                            {d.districtName}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+            )}
+
+            {/* Parent Office Detail (for child offices) */}
+            {shouldShowParent && (
+              <Grid item xs={12} sm={4}>
+                <FormControl fullWidth disabled={loadingParents}>
+                  <InputLabel shrink>Parent Office Detail</InputLabel>
                   <Select
-                    value={selectedDpo || ""}
-                    onChange={(e) => {
-                      const dpoId = e.target.value;
-                      setSelectedDpo(dpoId);
-                      const selected = dpoList.find(
-                        (d) => d.officerId === dpoId
-                      );
-                      if (selected) setValue("districtCode", selected.officerId);
-                    }}
-                    label="DPO"
+                    value={control._formValues.parentOfficeDetailId || ""}
+                    onChange={(e) => setValue("parentOfficeDetailId", e.target.value)}
                   >
-                    <MenuItem value="">Select DPO</MenuItem>
-                    {dpoList.map((dpo) => (
-                      <MenuItem key={dpo.officerId} value={dpo.officerId}>
-                        {dpo.officerName}
+                    <MenuItem value="">None (Root)</MenuItem>
+                    {parentCandidates.map((p) => (
+                      <MenuItem key={p.officeDetailId} value={p.officeDetailId}>
+                        {p.officeName} ({p.areaName})
                       </MenuItem>
                     ))}
                   </Select>
                 </FormControl>
               </Grid>
-            ) : (
-              shouldShowDistrict && (
-                <Grid item xs={12} sm={4}>
-                  <Controller
-                    name="districtCode"
-                    control={control}
-                    rules={{ required: "District required" }}
-                    render={({ field }) => (
-                      <FormControl
-                        fullWidth
-                        error={!!errors.districtCode}
-                        disabled={loadingDistricts}
-                      >
-                        <InputLabel shrink>District</InputLabel>
-                        <Select
-                          {...field}
-                          value={field.value || 0}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
-                        >
-                          <MenuItem value={0}>Select District</MenuItem>
-                          {districts.map((d) => (
-                            <MenuItem key={d.districtId} value={d.districtId}>
-                              {d.districtName}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
-              )
             )}
 
-            {/* Area Names (manual) */}
+            {/* Area Names */}
             <Grid item xs={12} sm={4}>
               <Controller
                 name="areaNames"
@@ -469,12 +467,7 @@ export default function AddOfficeDetails() {
             </Grid>
 
             <Grid item xs={12}>
-              <Button
-                type="submit"
-                variant="contained"
-                fullWidth
-                disabled={!canModify}
-              >
+              <Button type="submit" variant="contained" fullWidth disabled={!canModify}>
                 Add Office Details
               </Button>
             </Grid>
@@ -543,7 +536,7 @@ export default function AddOfficeDetails() {
           </Typography>
           <form onSubmit={handleSubmit(handleUpdate)}>
             <Grid container spacing={3}>
-              {/* Division (always editable) */}
+              {/* Division */}
               <Grid item xs={12}>
                 <Controller
                   name="divisionCode"
@@ -569,8 +562,8 @@ export default function AddOfficeDetails() {
                 />
               </Grid>
 
-              {/* District if not CDPO and not District level */}
-              {accessLevel !== "District" && !isCDPO && (
+              {/* District (if editable) */}
+              {accessLevel !== "District" && officeTypeId && (
                 <Grid item xs={12}>
                   <Controller
                     name="districtCode"
@@ -597,6 +590,26 @@ export default function AddOfficeDetails() {
                 </Grid>
               )}
 
+              {/* Parent (if child) */}
+              {needsParent && (
+                <Grid item xs={12}>
+                  <FormControl fullWidth disabled={loadingParents}>
+                    <InputLabel shrink>Parent Office Detail</InputLabel>
+                    <Select
+                      value={control._formValues.parentOfficeDetailId || ""}
+                      onChange={(e) => setValue("parentOfficeDetailId", e.target.value)}
+                    >
+                      <MenuItem value="">None</MenuItem>
+                      {parentCandidates.map((p) => (
+                        <MenuItem key={p.officeDetailId} value={p.officeDetailId}>
+                          {p.officeName} ({p.areaName})
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+
               {/* Area Name */}
               <Grid item xs={12}>
                 <Controller
@@ -607,11 +620,7 @@ export default function AddOfficeDetails() {
                     <TextField
                       {...field}
                       fullWidth
-                      label={
-                        accessLevel === "District"
-                          ? "District Name"
-                          : "Area Name"
-                      }
+                      label="Area Name"
                       variant="outlined"
                     />
                   )}

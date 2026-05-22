@@ -1054,6 +1054,31 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     ),
   ]);
 
+  // Initialise cascading selects after formSections and initialData are ready
+  useEffect(() => {
+    if (!formSections.length || !initialData) return;
+
+    const processFields = (fields, sectionIdx) => {
+      fields.forEach(field => {
+        // If this field has a value and it is a parent (i.e., there exists a child with valueDependentOn = field.name)
+        const hasChildren = formSections.some(section =>
+          section.fields.some(f => f.enableValueDependency && f.valueDependentOn === field.name)
+        );
+        if (hasChildren && field.type === "select") {
+          const val = initialData[field.name];
+          if (val && val !== "Please Select") {
+            handleAreaChange(sectionIdx, field, val);
+          }
+        }
+        if (field.additionalFields) {
+          Object.values(field.additionalFields).forEach(arr => processFields(arr, sectionIdx));
+        }
+      });
+    };
+
+    formSections.forEach((section, idx) => processFields(section.fields, idx));
+  }, [formSections, initialData, handleAreaChange]);
+
   const handleCopyAddress = async (checked) => {
     if (!checked) {
       const permanentSection = formSections.find(
@@ -1211,207 +1236,104 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     }
   };
 
-  const handleAreaChange = async (sectionIndex, field, value) => {
+  const handleAreaChange = useCallback(async (sectionIndex, field, value) => {
     try {
-      let addressTypeKey = "";
-      if (field.name.startsWith("Present")) {
-        addressTypeKey = "PresentAddressType";
-      } else if (field.name.startsWith("Permanent")) {
-        addressTypeKey = "PermanentAddressType";
-      }
+      // Collect all fields that depend on this field via valueDependentOn
+      const dependents = [];
 
-      const AddressType = getValues(addressTypeKey);
-
-      const fieldNames = [
-        { name: "District", childname: "Tehsil", respectiveTable: "Tehsil" },
-        {
-          name: "PresentDistrict",
-          childname: {
-            Urban: ["PresentTehsil", "PresentMuncipality"],
-            Rural: ["PresentTehsil", "PresentBlock"],
-          },
-          respectiveTable: {
-            Urban: ["TehsilAll", "Muncipality"],
-            Rural: ["TehsilAll", "Block"],
-          },
-        },
-        {
-          name: "PermanentDistrict",
-          childname: {
-            Urban: ["PermanentTehsil", "PermanentMuncipality"],
-            Rural: ["PermanentTehsil", "PermanentBlock"],
-          },
-          respectiveTable: {
-            Urban: ["TehsilAll", "Muncipality"],
-            Rural: ["TehsilAll", "Block"],
-          },
-        },
-        {
-          name: "PresentMuncipality",
-          childname: "PresentWardNo",
-          respectiveTable: "Ward",
-        },
-        {
-          name: "PermanentMuncipality",
-          childname: "PermanentWardNo",
-          respectiveTable: "Ward",
-        },
-        {
-          name: "PresentBlock",
-          childname: "PresentHalqaPanchayat",
-          respectiveTable: "HalqaPanchayat",
-        },
-        {
-          name: "PermanentBlock",
-          childname: "PermanentHalqaPanchayat",
-          respectiveTable: "HalqaPanchayat",
-        },
-        {
-          name: "PresentHalqaPanchayat",
-          childname: "PresentVillage",
-          respectiveTable: "Village",
-        },
-        {
-          name: "PermanentHalqaPanchayat",
-          childname: "PermanentVillage",
-          respectiveTable: "Village",
-        },
-      ];
-
-      const match = fieldNames.find((f) => f.name === field.name);
-
-      if (!match) {
-        console.warn(`Field "${field.name}" not found in fieldNames.`);
-        return;
-      }
-
-
-      let childFieldNames =
-        typeof match.childname === "object"
-          ? match.childname[AddressType]
-          : match.childname;
-      if (!Array.isArray(childFieldNames)) {
-        childFieldNames = [childFieldNames];
-      }
-
-      let tableNames =
-        typeof match.respectiveTable === "object"
-          ? match.respectiveTable[AddressType]
-          : match.respectiveTable;
-      if (!Array.isArray(tableNames)) {
-        tableNames = [tableNames];
-      }
-
-      if (!childFieldNames.length || !tableNames.length) {
-        console.warn(`Invalid mapping for ${field.name} (${AddressType})`);
-        return;
-      }
-
-      for (let i = 0; i < childFieldNames.length; i++) {
-        const childFieldName = childFieldNames[i];
-        console.log(`Fetching options for ${childFieldName} based on ${field.name} (${value}) with table ${tableNames[i]}`);
-        let tableName = tableNames[i];
-        const childFieldDef = findFieldInSection(formSections[sectionIndex], childFieldName);
-        console.log(`Child field definition for ${childFieldName}:`, childFieldDef);
-        let officeTypeIdParam = '';
-        if (childFieldDef?.isOfficeField && childFieldDef?.officeTypeId) {
-          tableName = "OfficeDetails";
-          officeTypeIdParam = `&officeTypeId=${childFieldDef.officeTypeId}&isOfficeField=true`;
-        }
-        try {
-          const response = await axiosInstance.get(
-            `/Base/GetAreaList?table=${tableName}&parentId=${value}${officeTypeIdParam}`
-          );
-          const areaList = response.data?.data || [];
-
-          const uniqueOptions = [];
-          const seenValues = new Set();
-          areaList.forEach((item) => {
-            const optionValue = item.id ?? item.value;
-            if (!seenValues.has(optionValue)) {
-              seenValues.add(optionValue);
-              uniqueOptions.push({
-                value: optionValue,
-                label: item.name ?? item.label,
-              });
-            }
-          });
-
-          const newOptions = [
-            { label: "Please Select", value: "Please Select" },
-            ...uniqueOptions,
-          ];
-
-          const currentValue = getValues(childFieldName);
-          const isValueValid = newOptions.some(
-            (option) => option.value.toString() === currentValue?.toString(),
-          );
-          if (currentValue && !isValueValid) {
-            setValue(childFieldName, "Please Select", { shouldValidate: true });
+      const collectDependents = (fields, currentSectionIdx) => {
+        fields.forEach(f => {
+          if (f.enableValueDependency && f.valueDependentOn === field.name) {
+            dependents.push({ field: f, sectionIndex: currentSectionIdx });
           }
+          if (f.additionalFields) {
+            Object.values(f.additionalFields).forEach(arr => {
+              collectDependents(arr, currentSectionIdx);
+            });
+          }
+        });
+      };
 
-          setFormSections((prevSections) => {
-            const newSections = [...prevSections];
-            const section = newSections[sectionIndex];
-            let updated = false;
+      formSections.forEach((section, idx) => {
+        collectDependents(section.fields, idx);
+      });
 
-            section.fields = section.fields.map((f) => {
-              if (f.name === childFieldName) {
-                updated = true;
+      for (const dep of dependents) {
+        const childField = dep.field;
+        const childSectionIdx = dep.sectionIndex;
+
+        // Use dependentTable from child field
+        let tableName = childField.dependentTable;
+        if (!tableName) {
+          console.warn(`No dependentTable set for ${childField.name}, skipping`);
+          continue;
+        }
+
+        let officeTypeIdParam = '';
+        if (childField.isOfficeField && childField.officeTypeId) {
+          tableName = "OfficeDetails";
+          officeTypeIdParam = `&officeTypeId=${childField.officeTypeId}&isOfficeField=true`;
+        }
+
+        // Fetch options from API
+        const response = await axiosInstance.get(
+          `/Base/GetAreaList?table=${tableName}&parentId=${value}${officeTypeIdParam}`
+        );
+        const areaList = response.data?.data || [];
+
+        const uniqueOptions = [];
+        const seenValues = new Set();
+        areaList.forEach(item => {
+          const optionValue = item.id ?? item.value;
+          if (!seenValues.has(optionValue)) {
+            seenValues.add(optionValue);
+            uniqueOptions.push({
+              value: optionValue,
+              label: item.name ?? item.label,
+            });
+          }
+        });
+
+        const newOptions = [
+          { label: "Please Select", value: "Please Select" },
+          ...uniqueOptions,
+        ];
+
+        // Update child field's options in formSections state
+        setFormSections(prevSections => {
+          const newSections = [...prevSections];
+          const section = newSections[childSectionIdx];
+
+          const updateFieldOptions = (fields) => {
+            return fields.map(f => {
+              if (f.name === childField.name) {
                 return { ...f, options: newOptions };
               }
-
-              if (
-                f.additionalFields &&
-                typeof f.additionalFields === "object"
-              ) {
-                if (Array.isArray(f.additionalFields.Urban)) {
-                  f.additionalFields.Urban = f.additionalFields.Urban.map(
-                    (af) => {
-                      if (af.name === childFieldName) {
-                        updated = true;
-                        return { ...af, options: newOptions };
-                      }
-                      return af;
-                    },
-                  );
-                }
-
-                if (Array.isArray(f.additionalFields.Rural)) {
-                  f.additionalFields.Rural = f.additionalFields.Rural.map(
-                    (af) => {
-                      if (af.name === childFieldName) {
-                        updated = true;
-                        return { ...af, options: newOptions };
-                      }
-                      return af;
-                    },
-                  );
-                }
+              if (f.additionalFields) {
+                const updatedAdditional = {};
+                Object.keys(f.additionalFields).forEach(key => {
+                  updatedAdditional[key] = updateFieldOptions(f.additionalFields[key]);
+                });
+                return { ...f, additionalFields: updatedAdditional };
               }
-
               return f;
             });
+          };
 
-            if (!updated) {
-              console.warn(
-                `Child field "${childFieldName}" not found in section.`,
-              );
-            }
+          section.fields = updateFieldOptions(section.fields);
+          return newSections;
+        });
 
-            return newSections;
-          });
-        } catch (err) {
-          console.error(
-            `Error fetching options for ${childFieldName} (${tableName}):`,
-            err,
-          );
+        // If current value is not in new options, reset to "Please Select"
+        const currentVal = getValues(childField.name);
+        if (currentVal && !newOptions.some(opt => opt.value.toString() === currentVal.toString())) {
+          setValue(childField.name, "Please Select", { shouldValidate: true });
         }
       }
     } catch (error) {
-      console.error("Error in handleAreaChange:", error);
+      console.error("Dynamic handleAreaChange error:", error);
     }
-  };
+  }, [formSections, getValues, setValue, setFormSections]);
 
   const fetchBanks = async () => {
     try {
@@ -1695,6 +1617,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   };
 
   const renderField = (field, sectionIndex) => {
+
+    if (field.enableConditionalVisibility && field.conditionalField) {
+      const dependentValue = watch(field.conditionalField);
+      const shouldShow = !field.conditionalValues || field.conditionalValues.length === 0 ||
+        field.conditionalValues.includes(dependentValue);
+      if (!shouldShow) {
+        return null;
+      }
+    }
     const commonStyles = {
       "& .MuiOutlinedInput-root": {
         backgroundColor: "#FFFFFF",
@@ -2633,9 +2564,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           >
             <Grid container spacing={3} alignItems="stretch">
               {formSections.map((section, index) => {
-                const isFullRow =
-                  section.section === "Applicant Details" ||
-                  section.section === "Declearation"
+
+                const isFullRow = section.fullRow === true;
 
                 return (
                   <Grid

@@ -326,12 +326,12 @@ export function range(field, value) {
   }
 }
 
-// Helper function to parse DD/MM/YYYY and return a Date object
+// Add this helper function at the top (if not already there)
 function parseDDMMYYYY(value) {
   if (!value || typeof value !== "string") return null;
   const trimmed = value.trim();
 
-  // 1. Try DD/MM/YYYY first
+  // DD/MM/YYYY
   const ddmmyyyyPattern = /^(\d{2})\/(\d{2})\/(\d{4})$/;
   const ddMatch = trimmed.match(ddmmyyyyPattern);
   if (ddMatch) {
@@ -342,7 +342,7 @@ function parseDDMMYYYY(value) {
     return date;
   }
 
-  // 2. Try YYYY-MM-DD (ISO format)
+  // YYYY-MM-DD
   const isoPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
   const isoMatch = trimmed.match(isoPattern);
   if (isoMatch) {
@@ -353,43 +353,7 @@ function parseDDMMYYYY(value) {
     return date;
   }
 
-  // Not a recognised format
   return null;
-}
-
-export function isAgeGreaterThan(field, value, formData) {
-  let maxLengthValue;
-  try {
-    const result = resolveLengthConfig(
-      field.maxLength,
-      formData,
-      "maximum age",
-    );
-    if (result.error) return result.error;
-    maxLengthValue = result.value;
-  } catch (err) {
-    return err.message;
-  }
-
-  const inputDate = parseDDMMYYYY(value);
-  if (!inputDate) {
-    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
-  }
-
-  const currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
-
-  const compareDate = new Date(
-    currentDate.getFullYear() - maxLengthValue,
-    currentDate.getMonth(),
-    currentDate.getDate(),
-  );
-  compareDate.setHours(0, 0, 0, 0);
-
-  if (inputDate >= compareDate) {
-    return `Age should be greater than or equal to ${maxLengthValue}.`;
-  }
-  return true;
 }
 
 export function isDateWithinRange(field, value, formData) {
@@ -452,46 +416,6 @@ export function isDateWithinRange(field, value, formData) {
 //   return true;
 // }
 
-export function isDateAfterCurrentDate(field, value, formData) {
-  const inputDate = parseDDMMYYYY(value);
-  if (!inputDate) {
-    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
-  }
-
-  const currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
-
-  if (inputDate <= currentDate) {
-    return `${field.label || "Date"} must be after the current date.`;
-  }
-
-  if (field.name === "IfTemporaryDisabilityUdidCardValidUpto") {
-    const issueDate = parseDDMMYYYY(formData["UdidCardIssueDate"]);
-    if (!issueDate) {
-      return `UDID Card Issue Date must be in DD/MM/YYYY format and valid.`;
-    }
-    if (inputDate <= issueDate) {
-      return `${field.label || "Date"} must be after the UDID Card Issue date.`;
-    }
-  }
-  return true;
-}
-
-export function isDateBeforeCurrentDate(field, value) {
-  const inputDate = parseDDMMYYYY(value);
-  if (!inputDate) {
-    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
-  }
-
-  const currentDate = new Date();
-  currentDate.setHours(0, 0, 0, 0);
-
-  if (inputDate >= currentDate) {
-    return `${field.label || "Date"} must be before the current date.`;
-  }
-  return true;
-}
-
 export async function tehsilForDistrict(field, districtValue) {
   if (!districtValue) return [];
 
@@ -517,6 +441,128 @@ export async function tehsilForDistrict(field, districtValue) {
     console.error("Error in tehsilForDistrict:", error);
     return [];
   }
+}
+
+// Improved error message for age validation
+export function isAgeGreaterThan(field, value, formData) {
+  let maxLengthValue;
+  try {
+    const result = resolveLengthConfig(
+      field.maxLength,
+      formData,
+      "maximum age",
+    );
+    if (result.error) return result.error;
+    maxLengthValue = result.value;
+  } catch (err) {
+    return err.message;
+  }
+
+  const inputDate = parseDDMMYYYY(value);
+  if (!inputDate) {
+    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
+  }
+
+  const currentDate = new Date();
+  currentDate.setHours(0, 0, 0, 0);
+
+  const compareDate = new Date(
+    currentDate.getFullYear() - maxLengthValue,
+    currentDate.getMonth(),
+    currentDate.getDate(),
+  );
+  compareDate.setHours(0, 0, 0, 0);
+
+  if (inputDate >= compareDate) {
+    // Citizen-friendly message
+    return `You must be at least ${maxLengthValue} years old.`;
+  }
+  return true;
+}
+
+export function isDateGreaterThan(field, value, formData) {
+  const config = field.dateGreaterThanConfig;
+  if (!config) return true;
+
+  const inputDate = parseDDMMYYYY(value);
+  if (!inputDate) {
+    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
+  }
+
+  let referenceDate = null;
+  let referenceDescription = "";
+
+  if (config.type === "field") {
+    const referenceValue = formData[config.fieldName];
+    if (!referenceValue) {
+      return `The reference field "${config.fieldName}" is empty. Please fill it first.`;
+    }
+    referenceDate = parseDDMMYYYY(referenceValue);
+    if (!referenceDate) {
+      return `The reference field "${config.fieldName}" must contain a valid date in DD/MM/YYYY format.`;
+    }
+    // Find the label of the reference field for a better message
+    const refField =
+      field.dateGreaterThanConfig?.fieldLabel || config.fieldName;
+    referenceDescription = `the date in "${refField}"`;
+  } else if (config.type === "static") {
+    referenceDate = parseDDMMYYYY(config.staticDate);
+    if (!referenceDate) {
+      return `The fixed reference date (${config.staticDate}) is not valid. Please use DD/MM/YYYY.`;
+    }
+    referenceDescription = `the fixed date ${referenceDate.toLocaleDateString("en-GB")}`;
+  } else {
+    return true;
+  }
+
+  if (inputDate <= referenceDate) {
+    // Citizen-friendly message
+    return `${field.label} must be later than ${referenceDescription}.`;
+  }
+
+  return true;
+}
+
+// (Optional) Minor improvement for isDateAfterCurrentDate
+export function isDateAfterCurrentDate(field, value, formData) {
+  const inputDate = parseDDMMYYYY(value);
+  if (!inputDate) {
+    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
+  }
+
+  const currentDate = new Date();
+  currentDate.setHours(0, 0, 0, 0);
+
+  if (inputDate <= currentDate) {
+    return `${field.label} must be a future date (after today).`;
+  }
+
+  if (field.name === "IfTemporaryDisabilityUdidCardValidUpto") {
+    const issueDate = parseDDMMYYYY(formData["UdidCardIssueDate"]);
+    if (!issueDate) {
+      return `UDID Card Issue Date must be in DD/MM/YYYY format and valid.`;
+    }
+    if (inputDate <= issueDate) {
+      return `${field.label} must be later than the UDID Card Issue Date.`;
+    }
+  }
+  return true;
+}
+
+// (Optional) Minor improvement for isDateBeforeCurrentDate
+export function isDateBeforeCurrentDate(field, value) {
+  const inputDate = parseDDMMYYYY(value);
+  if (!inputDate) {
+    return `${field.label || "Date"} must be in DD/MM/YYYY format and valid.`;
+  }
+
+  const currentDate = new Date();
+  currentDate.setHours(0, 0, 0, 0);
+
+  if (inputDate >= currentDate) {
+    return `${field.label} must be a past date (before today).`;
+  }
+  return true;
 }
 
 // ────────────────────────────────────────────────
@@ -645,6 +691,7 @@ export const ValidationFunctionsList = {
   range,
   isDateAfterCurrentDate,
   isDateBeforeCurrentDate,
+  isDateGreaterThan,
   detectHuman,
 };
 
@@ -676,6 +723,7 @@ export const validationFunctionsList = [
   { id: "range", label: "Range Value" },
   { id: "isDateAfterCurrentDate", label: "After Current Date" },
   { id: "isDateBeforeCurrentDate", label: "Before Current Date" },
+  { id: "isDateGreaterThan", label: "Date > Reference Date" },
   { id: "detectHuman", label: "Detect Human" },
 ];
 

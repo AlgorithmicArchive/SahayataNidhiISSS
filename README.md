@@ -23,7 +23,7 @@ Sahayata Nidhi is structured into multiple modules:
 | ---------------------- | ------------------------------------- |
 | **Frontend**           | React.js, Bootstrap, Google Translate |
 | **Backend**            | ASP.NET Core MVC, REST APIs           |
-| **Database**           | SQL Server                            |
+| **Database**           | Postgres                              |
 | **Authentication**     | ASP.NET Identity / JWT                |
 | **Digital Signatures** | DSC Token Registration via USB        |
 | **Architecture**       | MVC + API Integration                 |
