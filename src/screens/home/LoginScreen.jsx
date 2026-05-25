@@ -26,6 +26,7 @@ import { UserContext } from "../../UserContext";
 import { ToastContainer, toast } from "react-toastify";
 import CircularProgress from "@mui/material/CircularProgress";
 import "react-toastify/dist/ReactToastify.css";
+import { rsaService } from "../../services/rsaService"; // NEW: RSA encryption service
 
 // CAPTCHA generator
 const generateCaptcha = () => {
@@ -62,7 +63,7 @@ export default function LoginScreen() {
   const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [otp, setOtp] = useState("");
   const [email, setEmail] = useState("");
-  const [loginError, setLoginError] = useState(""); // new state for error message
+  const [loginError, setLoginError] = useState("");
 
   const {
     handleSubmit,
@@ -88,6 +89,7 @@ export default function LoginScreen() {
 
   const navigate = useNavigate();
 
+
   useEffect(() => {
     setCaptcha(generateCaptcha());
   }, []);
@@ -112,16 +114,23 @@ export default function LoginScreen() {
     event.preventDefault();
   };
 
+  // NEW: Encrypt password with RSA before submission
   const onSubmit = async (data) => {
-    const formData = new FormData();
-    formData.append("username", data.username);
-    formData.append("password", data.password);
-
     setButtonLoading(true);
     setLoading(true);
-    setLoginError(""); // clear previous error
+    setLoginError("");
 
     try {
+      // In LoginScreen.jsx onSubmit
+      const encryptedUsername = await rsaService.encrypt(data.username);  // Add this
+      const encryptedPassword = await rsaService.encrypt(data.password);
+
+
+
+      const formData = new FormData();
+      formData.append("username", encryptedUsername);
+      formData.append("password", encryptedPassword);
+
       const response = await fetch(`${API_BASE}/Home/Login`, {
         method: "POST",
         body: formData,
@@ -503,7 +512,7 @@ export default function LoginScreen() {
             </Link>
           </Box>
 
-          {/* Error Message Below Login Button */}
+          {/* Error Message */}
           {loginError && (
             <Alert severity="error" sx={{ mt: 1, borderRadius: 2 }}>
               {loginError}

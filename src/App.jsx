@@ -11,6 +11,7 @@ import Footer from "./components/Footer";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { jwtDecode } from "jwt-decode";
+import { sessionHub } from "./services/sessionHub"; // Ensure this path is correct
 
 const App = () => (
   <ThemeProvider theme={GovSoftTheme}>
@@ -46,6 +47,41 @@ const MainContent = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [ssoLoading, setSsoLoading] = useState(false);
   const navigate = useNavigate();
+
+
+  /* -------------------------------------------------
+      SignalR: Real-time session management
+   ------------------------------------------------- */
+  useEffect(() => {
+    // Only connect when we have a valid token
+    if (!token) return;
+
+    let mounted = true;
+
+    const connectSignalR = async () => {
+      try {
+        await sessionHub.start(token);
+
+        if (!mounted) return;
+
+        // Handle forced logout from server (concurrent login)
+        sessionHub.setForceLogoutHandler((data) => {
+          toast.warning(data.message || "Your session was terminated.");
+          logoutAll();
+        });
+      } catch (err) {
+        console.error("SignalR connection failed:", err);
+        // Fallback: middleware will catch on next API call
+      }
+    };
+
+    connectSignalR();
+
+    return () => {
+      mounted = false;
+      sessionHub.stop();
+    };
+  }, [token]); // Reconnect when token changes (SSO login, etc.)
 
   /* -------------------------------------------------
      1. SSO ?sso= handling
@@ -100,7 +136,8 @@ const MainContent = () => {
   ------------------------------------------------- */
   useEffect(() => {
     if (userType && ssoLoading) {
-      window.history.replaceState({}, document.title, "/");
+      // ✅ Use navigate instead of raw history manipulation
+      navigate("/", { replace: true });
       redirectByUserType();
       setSsoLoading(false);
     }
@@ -179,7 +216,7 @@ const MainContent = () => {
     localStorage.removeItem("user");
     sessionStorage.clear();
     toast.error("Session expired. Please log in again.");
-    navigate("/swdjk/login");
+    navigate("/login"); // ✅ basename applied automatically
   };
 
   const redirectByUserType = () => {

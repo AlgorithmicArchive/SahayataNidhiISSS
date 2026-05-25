@@ -26,10 +26,11 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 using UAParser;
 using System.Dynamic;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.AspNetCore.SignalR;
 
 namespace SahayataNidhi.Controllers
 {
-    public class HomeController(ILogger<HomeController> logger, SwdjkContext dbContext, OtpStore otpStore, EmailSender emailSender, UserHelperFunctions helper, PdfService pdfService, IConfiguration configuration, IAuditLogService auditService, SessionRepository sessionRepo, IHttpClientFactory httpClientFactory, IMemoryCache memoryCache) : Controller
+    public class HomeController(ILogger<HomeController> logger, SwdjkContext dbContext, OtpStore otpStore, EmailSender emailSender, UserHelperFunctions helper, PdfService pdfService, IConfiguration configuration, IAuditLogService auditService, SessionRepository sessionRepo, IHttpClientFactory httpClientFactory, IMemoryCache memoryCache, IHubContext<SessionHub> hubContext, RsaKeyService rsaService) : Controller
     {
         private readonly ILogger<HomeController> _logger = logger;
         private readonly SwdjkContext _dbContext = dbContext;
@@ -42,7 +43,8 @@ namespace SahayataNidhi.Controllers
         private readonly SessionRepository _sessionRepo = sessionRepo;
         private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
         private readonly IMemoryCache _memoryCache = memoryCache;
-
+        private readonly IHubContext<SessionHub> _hubContext = hubContext;
+        private readonly RsaKeyService _rsaService = rsaService;
         public override void OnActionExecuted(ActionExecutedContext context)
         {
             base.OnActionExecuted(context);
@@ -76,6 +78,17 @@ namespace SahayataNidhi.Controllers
             var result = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
             return result?["tokenValid"] == "true";
         }
+
+        [HttpGet]
+        public IActionResult GetPublicKey([FromServices] RsaKeyService rsaService)
+        {
+            return Ok(new
+            {
+                publicKey = rsaService.GetPublicKeyPem(),
+                keyId = Guid.NewGuid().ToString("N")[..8]
+            });
+        }
+
 
         [HttpPost]
         public async Task<IActionResult> InitiateSSO()
@@ -293,7 +306,7 @@ namespace SahayataNidhi.Controllers
             return otp;
         }
 
-        private bool IsStrongPassword(string password, IConfiguration config)
+        private static bool IsStrongPassword(string password, IConfiguration config)
         {
             if (string.IsNullOrEmpty(password)) return false;
 
@@ -304,11 +317,36 @@ namespace SahayataNidhi.Controllers
             bool requireDigit = policy.GetValue<bool>("RequireDigit", true);
             bool requireSpecial = policy.GetValue<bool>("RequireSpecialChar", true);
 
+            // Basic complexity
             if (password.Length < minLen) return false;
             if (requireUpper && !password.Any(char.IsUpper)) return false;
             if (requireLower && !password.Any(char.IsLower)) return false;
             if (requireDigit && !password.Any(char.IsDigit)) return false;
             if (requireSpecial && !password.Any(ch => !char.IsLetterOrDigit(ch))) return false;
+
+            // Block common/generic passwords and patterns
+            var lower = password.ToLowerInvariant();
+
+            // Common passwords blacklist
+            var commonPasswords = new[] {
+                "password", "123456", "admin", "user", "login", "welcome",
+                "password123", "admin123", "user123", "login123", "welcome123",
+                "admin@123", "qwerty", "abc123", "letmein", "monkey", "dragon"
+            };
+            if (commonPasswords.Any(common => lower.Contains(common))) return false;
+
+            // Repeated characters (3+ same digits or 4+ same any char)
+            if (Regex.IsMatch(password, @"(\d)\1{2,}")) return false;
+            if (Regex.IsMatch(password, @"(.)\1{3,}")) return false;
+
+            // Sequential characters (4+)
+            const string sequences = "abcdefghijklmnopqrstuvwxyz0123456789qwertyuiopasdfghjklzxcvbnm";
+            for (int i = 0; i <= lower.Length - 4; i++)
+            {
+                var substring = lower.Substring(i, 4);
+                if (sequences.Contains(substring)) return false;
+                if (sequences.Contains(new string(substring.Reverse().ToArray()))) return false;
+            }
 
             return true;
         }
@@ -692,8 +730,31 @@ namespace SahayataNidhi.Controllers
         [HttpPost]
         public async Task<IActionResult> Login([FromForm] IFormCollection form)
         {
-            var username = form["username"].ToString();
-            var password = form["password"].ToString();
+            var encryptedUsername = form["username"].ToString();
+            var encryptedPassword = form["password"].ToString();
+
+            var username = _rsaService.Decrypt(encryptedUsername);  // Add this
+                                                                    // DEBUG: Log what we received
+
+            // Check if it looks like base64
+            if (string.IsNullOrEmpty(encryptedPassword) || encryptedPassword.Length < 100)
+            {
+                return Json(new { status = false, response = "Encryption failed. Password too short or empty." });
+            }
+            string password;
+            try
+            {
+                password = _rsaService.Decrypt(encryptedPassword);
+            }
+            catch (FormatException)
+            {
+                return Json(new { status = false, response = "Invalid encryption format." });
+            }
+            catch (Exception)
+            {
+                return Json(new { status = false, response = "Decryption failed." });
+            }
+
 
             // 1. Check lockout from cache
             string lockoutKey = $"Lockout_{username}";
@@ -738,9 +799,29 @@ namespace SahayataNidhi.Controllers
             if (!user.Isemailvalid)
                 return Json(new { status = false, response = "Email Not Verified.", isEmailVerified = false, email = user.Email });
 
-            // 🔐 CONCURRENT LOGIN FIX: Delete all previous sessions for this user
-            // This allows re‑login after browser close and prevents concurrent sessions.
-            await _sessionRepo.DeleteSessionsByUser(user.Userid);
+            // 🔐 CONCURRENT LOGIN FIX: Notify existing sessions then delete
+            var existingSessions = await _dbContext.Usersessions
+                .Where(s => s.Userid == user.Userid)
+                .ToListAsync();
+
+            if (existingSessions.Any())
+            {
+                // Notify all existing sessions to logout immediately via SignalR
+                await _hubContext.Clients.Group($"user_{user.Userid}")
+                    .SendAsync("ForceLogout", new
+                    {
+                        reason = "concurrent_login",
+                        message = "Your session was terminated because another login was detected.",
+                        terminatedAt = DateTime.UtcNow
+                    });
+
+                // Allow time for SignalR message delivery before DB deletion
+                await Task.Delay(500);
+
+                // Delete all old sessions
+                _dbContext.Usersessions.RemoveRange(existingSessions);
+                await _dbContext.SaveChangesAsync();
+            }
 
             _logger.LogInformation($"User {user.Username} ({user.Userid}) is attempting to log in.");
 
@@ -841,6 +922,7 @@ namespace SahayataNidhi.Controllers
                 department
             });
         }
+
         [HttpGet]
         [Authorize]
         public IActionResult RefreshToken()

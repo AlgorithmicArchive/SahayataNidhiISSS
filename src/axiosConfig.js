@@ -37,7 +37,7 @@ axiosInstance.interceptors.response.use(
       // sessionStorage.removeItem("profile");
 
       // Redirect to login page
-      window.location.href = "/login";
+      window.dispatchEvent(new CustomEvent("app:logout"));
     }
 
     // Let the component handle other errors normally

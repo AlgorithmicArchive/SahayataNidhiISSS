@@ -11,9 +11,10 @@ public class SecurityMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        // 1. Host Header Injection protection (Issue #1)
+        // 1. Host Header Injection protection
         var allowedHosts = _config.GetSection("AllowedHosts").Get<string[]>()
-            ?? new[] { "10.148.2.25", "localhost", "yourdomain.com" };
+            ?? new[] { "10.148.2.25", "localhost" };
+
         var requestHost = context.Request.Host.Host;
         if (!allowedHosts.Contains(requestHost, StringComparer.OrdinalIgnoreCase))
         {
@@ -22,27 +23,38 @@ public class SecurityMiddleware
             return;
         }
 
-        // 2. Security Headers (Issues #7, #8, #11)
-        context.Response.Headers.Append("X-Frame-Options", "DENY");
-        context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-        context.Response.Headers.Append("X-XSS-Protection", "1; mode=block");
-        context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-        context.Response.Headers.Append("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+        // 2. Security Headers
+        context.Response.Headers["X-Frame-Options"] = "DENY";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        // REMOVED: X-XSS-Protection (deprecated, CSP replaces it)
+        context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        context.Response.Headers["Permissions-Policy"] =
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
-        // 3. Content-Security-Policy (Issue #8) – adjust for React
-        context.Response.Headers.Append("Content-Security-Policy",
+        // 3. CSP - Hardened for React/Webpack staging
+        var stagingHost = _config["StagingHost"] ?? "10.148.2.25";
+
+        context.Response.Headers.ContentSecurityPolicy =
             "default-src 'self'; " +
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://trusted.cdn.com; " +
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://translate.google.com https://translate.googleapis.com; " +
             "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data:; " +
-            "frame-ancestors 'none';");
+            "img-src 'self' data: blob:; " +
+            "font-src 'self'; " +
+            $"connect-src 'self' http://{stagingHost}; " +
+            "frame-ancestors 'none'; " +
+            "base-uri 'self'; " +
+            "form-action 'self';";
 
-        // 4. Block OPTIONS method unless it's a CORS preflight (Issue #9)
+        // 4. Block standalone OPTIONS (keep your existing logic)
         if (context.Request.Method == "OPTIONS" && !context.Request.Headers.ContainsKey("Origin"))
         {
             context.Response.StatusCode = 405;
             return;
         }
+
+        // 5. Remove server fingerprinting (add if not done elsewhere)
+        context.Response.Headers.Remove("Server");
+        context.Response.Headers.Remove("X-Powered-By");
 
         await _next(context);
     }

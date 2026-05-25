@@ -69,9 +69,16 @@ const MyNavbar = () => {
   const handleLogout = async () => {
     try {
       const r = await axiosInstance.post(`${API_BASE}/Home/LogOut`);
-      if (r.data.sso) window.location.href = r.data.logoutUrl;
-    } catch { }
+      if (r.data.sso && r.data.logoutUrl) {
+        // External SSO logout — navigate away
+        window.location.href = r.data.logoutUrl;
+        return; // ⬅️ STOP HERE — don't clear state or navigate
+      }
+    } catch {
+      // Silent fail — continue with local logout
+    }
 
+    // Local logout only
     setToken(null);
     setUserType(null);
     setUsername(null);
@@ -79,7 +86,7 @@ const MyNavbar = () => {
     setVerified(false);
     sessionStorage.clear();
     closeAllMenus();
-    navigate("/login");
+    navigate("/login"); // ✅ React Router handles basename → /swdjk/login
   };
 
   const closeAllMenus = () => {

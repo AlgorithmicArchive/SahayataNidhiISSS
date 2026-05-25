@@ -72,14 +72,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-// builder.Services.AddSession(options =>
-// {
-//     options.IdleTimeout = TimeSpan.FromMinutes(30);
-//     options.Cookie.HttpOnly = true;
-//     options.Cookie.IsEssential = true;
-//     options.Cookie.Name = ".SahayataNidhi.Session";
-//     options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // Force secure cookie over HTTPS
-// });
 
 // JWT Authentication (unchanged)
 var jwtSecretKey = builder.Configuration.GetValue<string>("JWT:Secret");
@@ -150,6 +142,7 @@ builder.Services.AddScoped<SessionRepository>();
 builder.Services.AddScoped<CronServices>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<RsaKeyService>();
 
 builder.Services.AddScoped<SessionValidationFilter>();
 
@@ -231,13 +224,15 @@ app.UseCors("StrictCors");
 
 
 
-// app.UseSession();
 
-app.UseAuthentication();
-app.UseAuthorization();
+
+
+app.MapHub<SessionHub>("/sessionHub");
 
 app.UseMiddleware<SecurityMiddleware>();
 
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapHub<ProgressHub>("/progressHub");
 
