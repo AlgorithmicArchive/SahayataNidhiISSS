@@ -1,4 +1,3 @@
-// Services/RsaKeyService.cs
 using System.Security.Cryptography;
 using System.Text;
 
@@ -10,7 +9,6 @@ public class RsaKeyService
     {
         _rsa = RSA.Create(2048);
 
-        // Load from environment or generate
         var privateKeyPem = config["RSA_PRIVATE_KEY"];
         if (!string.IsNullOrEmpty(privateKeyPem))
         {
@@ -21,6 +19,7 @@ public class RsaKeyService
 
     public string GetPublicKeyPem()
     {
+        // SPKI format - standard and works with node-forge
         var pubKey = _rsa.ExportSubjectPublicKeyInfo();
         return Convert.ToBase64String(pubKey);
     }
@@ -28,7 +27,7 @@ public class RsaKeyService
     public string Decrypt(string base64Cipher)
     {
         var cipher = Convert.FromBase64String(base64Cipher);
-        var plain = _rsa.Decrypt(cipher, RSAEncryptionPadding.OaepSHA256);
+        var plain = _rsa.Decrypt(cipher, RSAEncryptionPadding.Pkcs1);
         return Encoding.UTF8.GetString(plain);
     }
 }

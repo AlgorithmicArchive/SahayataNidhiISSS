@@ -1,4 +1,4 @@
-// src/services/rsaService.js
+import forge from "node-forge";
 
 class RsaService {
   constructor() {
@@ -6,22 +6,21 @@ class RsaService {
   }
 
   async fetchPublicKey() {
-    const res = await fetch("/swdjk/Home/GetPublicKey");
-    const { publicKey } = await res.json();
-    this.publicKey = await this.importPublicKey(publicKey);
-    return publicKey;
+    const API_BASE = window.__CONFIG__?.API_URL || "";
+    const res = await fetch(`${API_BASE}/Home/GetPublicKey`);
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch public key: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const pem = this.spkiToPem(data.publicKey);
+    this.publicKey = forge.pki.publicKeyFromPem(pem);
   }
 
-  async importPublicKey(base64Spki) {
-    const binaryDer = Uint8Array.from(atob(base64Spki), (c) => c.charCodeAt(0));
-
-    return await window.crypto.subtle.importKey(
-      "spki",
-      binaryDer,
-      { name: "RSA-OAEP", hash: "SHA-256" },
-      false,
-      ["encrypt"],
-    );
+  spkiToPem(base64Spki) {
+    const formatted = base64Spki.match(/.{1,64}/g).join("\n");
+    return `-----BEGIN PUBLIC KEY-----\n${formatted}\n-----END PUBLIC KEY-----`;
   }
 
   async encrypt(plaintext) {
@@ -29,27 +28,16 @@ class RsaService {
       await this.fetchPublicKey();
     }
 
-    const encoder = new TextEncoder();
-    const data = encoder.encode(plaintext);
-
-    const encrypted = await window.crypto.subtle.encrypt(
-      { name: "RSA-OAEP" },
-      this.publicKey,
-      data,
-    );
-
-    // SAFE base64 encoding using array buffer
-    return this.arrayBufferToBase64(encrypted);
-  }
-
-  // Safe base64 conversion without String.fromCharCode issues
-  arrayBufferToBase64(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    // Verify key is 2048-bit
+    if (this.publicKey.n.bitLength() !== 2048) {
+      console.error(
+        "WARNING: Key is not 2048-bit!",
+        this.publicKey.n.bitLength(),
+      );
     }
-    return btoa(binary);
+
+    const encrypted = this.publicKey.encrypt(plaintext, "RSAES-PKCS1-V1_5");
+    return forge.util.encode64(encrypted);
   }
 }
 
