@@ -305,10 +305,15 @@ namespace SahayataNidhi.Controllers
 
             return otp;
         }
-
-        private static bool IsStrongPassword(string password, IConfiguration config)
+        private static bool IsStrongPassword(string password, IConfiguration config, out string? errorMessage)
         {
-            if (string.IsNullOrEmpty(password)) return false;
+            errorMessage = null;
+
+            if (string.IsNullOrEmpty(password))
+            {
+                errorMessage = "Password is required.";
+                return false;
+            }
 
             var policy = config.GetSection("PasswordPolicy");
             int minLen = policy.GetValue<int>("MinLength", 8);
@@ -317,35 +322,90 @@ namespace SahayataNidhi.Controllers
             bool requireDigit = policy.GetValue<bool>("RequireDigit", true);
             bool requireSpecial = policy.GetValue<bool>("RequireSpecialChar", true);
 
-            // Basic complexity
-            if (password.Length < minLen) return false;
-            if (requireUpper && !password.Any(char.IsUpper)) return false;
-            if (requireLower && !password.Any(char.IsLower)) return false;
-            if (requireDigit && !password.Any(char.IsDigit)) return false;
-            if (requireSpecial && !password.Any(ch => !char.IsLetterOrDigit(ch))) return false;
+            // 1. Minimum length
+            if (password.Length < minLen)
+            {
+                errorMessage = $"Password must be at least {minLen} characters.";
+                return false;
+            }
 
-            // Block common/generic passwords and patterns
+            // 2. Maximum length (prevent DoS)
+            if (password.Length > 128)
+            {
+                errorMessage = "Password must not exceed 128 characters.";
+                return false;
+            }
+
+            // 3. Uppercase
+            if (requireUpper && !password.Any(char.IsUpper))
+            {
+                errorMessage = "Password must contain at least one uppercase letter.";
+                return false;
+            }
+
+            // 4. Lowercase
+            if (requireLower && !password.Any(char.IsLower))
+            {
+                errorMessage = "Password must contain at least one lowercase letter.";
+                return false;
+            }
+
+            // 5. Digit
+            if (requireDigit && !password.Any(char.IsDigit))
+            {
+                errorMessage = "Password must contain at least one digit.";
+                return false;
+            }
+
+            // 6. Special character
+            if (requireSpecial && !password.Any(ch => !char.IsLetterOrDigit(ch)))
+            {
+                errorMessage = "Password must contain at least one special character.";
+                return false;
+            }
+
+            // 7. No whitespace
+            if (password.Any(char.IsWhiteSpace))
+            {
+                errorMessage = "Password must not contain spaces.";
+                return false;
+            }
+
+            // 8. Common/generic passwords
             var lower = password.ToLowerInvariant();
-
-            // Common passwords blacklist
             var commonPasswords = new[] {
-                "password", "123456", "admin", "user", "login", "welcome",
-                "password123", "admin123", "user123", "login123", "welcome123",
-                "admin@123", "qwerty", "abc123", "letmein", "monkey", "dragon"
-            };
-            if (commonPasswords.Any(common => lower.Contains(common))) return false;
+        "password", "123456", "admin", "user", "login", "welcome",
+        "password123", "admin123", "user123", "login123", "welcome123",
+        "admin@123", "qwerty", "abc123", "letmein", "monkey", "dragon"
+    };
+            if (commonPasswords.Any(common => lower.Contains(common)))
+            {
+                errorMessage = "This password is too common. Please choose a stronger password.";
+                return false;
+            }
 
-            // Repeated characters (3+ same digits or 4+ same any char)
-            if (Regex.IsMatch(password, @"(\d)\1{2,}")) return false;
-            if (Regex.IsMatch(password, @"(.)\1{3,}")) return false;
+            // 9. Repeated characters
+            if (Regex.IsMatch(password, @"(\d)\1{2,}"))
+            {
+                errorMessage = "Password must not contain 3 or more repeated digits.";
+                return false;
+            }
+            if (Regex.IsMatch(password, @"(.)\1{3,}"))
+            {
+                errorMessage = "Password must not contain 4 or more repeated characters.";
+                return false;
+            }
 
-            // Sequential characters (4+)
+            // 10. Sequential characters
             const string sequences = "abcdefghijklmnopqrstuvwxyz0123456789qwertyuiopasdfghjklzxcvbnm";
             for (int i = 0; i <= lower.Length - 4; i++)
             {
                 var substring = lower.Substring(i, 4);
-                if (sequences.Contains(substring)) return false;
-                if (sequences.Contains(new string(substring.Reverse().ToArray()))) return false;
+                if (sequences.Contains(substring) || sequences.Contains(new string(substring.Reverse().ToArray())))
+                {
+                    errorMessage = "Password must not contain sequential characters (e.g., 'abcd', '1234', 'qwerty').";
+                    return false;
+                }
             }
 
             return true;
@@ -619,9 +679,10 @@ namespace SahayataNidhi.Controllers
             string userId = form["userId"].ToString();
             string otp = form["otp"].ToString();
             string newPassword = form["newPassword"].ToString();
-            if (!IsStrongPassword(newPassword, _configuration))
+
+            if (!IsStrongPassword(newPassword, _configuration, out var passwordError))
             {
-                return Json(new { status = false, response = "Password does not meet security requirements. It must be at least 8 characters, include uppercase, lowercase, digit, and special character." });
+                return Json(new { status = false, response = passwordError });
             }
 
             if (string.IsNullOrEmpty(email) || !Regex.IsMatch(email, @"^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$"))
@@ -1031,9 +1092,9 @@ namespace SahayataNidhi.Controllers
             int district = string.IsNullOrEmpty(form["District"].ToString()) ? 0 : Convert.ToInt32(form["District"]);
             int tehsil = string.IsNullOrEmpty(form["Tehsil"].ToString()) ? 0 : Convert.ToInt32(form["Tehsil"]);
 
-            if (!IsStrongPassword(Password, _configuration))
+            if (!IsStrongPassword(Password, _configuration, out var passwordError))
             {
-                return Json(new { status = false, response = "Password does not meet security requirements. It must be at least 8 characters, include uppercase, lowercase, digit, and special character." });
+                return Json(new { status = false, response = passwordError });
             }
 
             var additionalDetails = new
@@ -1085,9 +1146,9 @@ namespace SahayataNidhi.Controllers
             var departmentId = form["department"].ToString();
             var accessLevel = form["accessLevel"].ToString();
             var accessCodeStr = form["accessCode"].ToString();
-            if (!IsStrongPassword(Password, _configuration))
+            if (!IsStrongPassword(Password, _configuration, out var passwordError))
             {
-                return Json(new { status = false, response = "Password does not meet security requirements. It must be at least 8 characters, include uppercase, lowercase, digit, and special character." });
+                return Json(new { status = false, response = passwordError });
             }
 
             var username = email;
