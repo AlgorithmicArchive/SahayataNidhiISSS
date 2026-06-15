@@ -5,20 +5,14 @@
     <base href="/swdjk/" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Department Of Social Welafare - JK-ISSS Pension</title>
-
+    <title>Department Of Social Welfare - JK-ISSS Pension</title>
+    <meta name="csp-nonce" content="@Context.Items["CspNonce"]" />
 </head>
 
 <body>
-    <!-- React will mount here -->
     <div id="root"></div>
-
-    <!-- Runtime config (must be first) -->
-    <script src="config.js"></script>
-
-    <!-- Include the bundled React file -->
-    <script src="~/js/bundle.js"></script>
-
+    <script nonce="@Context.Items["CspNonce"]" src="~/config.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/bundle.js"></script>
     @RenderBody()
 </body>
 

@@ -1,14 +1,30 @@
-// At the TOP of your main entry file
-import '@tensorflow/tfjs';
+// ============================================
+// CSP NONCE - MUST BE FIRST (before any imports)
+// ============================================
+const nonceMeta = document.querySelector('meta[name="csp-nonce"]');
+if (nonceMeta && nonceMeta.content) {
+    // Set Webpack's global nonce for dynamic chunks and inline scripts
+    __webpack_nonce__ = nonceMeta.content;
+}
 
+// ============================================
+// IMPORTS
+// ============================================
+import '@tensorflow/tfjs';
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "react-toastify/dist/ReactToastify.css";
 import "./index.css";
+import * as pdfjsLib from 'pdfjs-dist';
 
-// src/index.jsx - Add at very top, before any imports
+// Set worker source to the file you copied to wwwroot/js/
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/swdjk/js/pdf.worker.min.js';
+
+// ============================================
+// CONSOLE SUPPRESSIONS
+// ============================================
 
 // Suppress TensorFlow.js warnings
 const originalWarn = console.warn;
@@ -40,5 +56,8 @@ console.error = (...args) => {
     originalError.apply(console, args);
 };
 
-const root = createRoot(document.getElementById("root")); // Create a root
+// ============================================
+// RENDER
+// ============================================
+const root = createRoot(document.getElementById("root"));
 root.render(<App />);

@@ -8,7 +8,7 @@ module.exports = {
     filename: "bundle.js",
     publicPath: "/swdjk/js",
     clean: true,
-    sourceMapFilename: "[file].map", // Named source maps
+    sourceMapFilename: "[file].map",
   },
   module: {
     rules: [
@@ -50,14 +50,13 @@ module.exports = {
   plugins: [
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, "wwwroot/index.html"),
-      filename: "../index.html", // Output to wwwroot, not wwwroot/js
+      filename: "../index.html",
+      // Inject nonce placeholder - will be replaced by server or read at runtime
+      nonce: "<%= htmlWebpackPlugin.options.nonce %>",
     }),
   ],
   mode: process.env.NODE_ENV || "development",
-  devtool:
-    process.env.NODE_ENV === "production"
-      ? false
-      : "eval-cheap-module-source-map",
+  devtool: process.env.NODE_ENV === "production" ? false : "source-map",
   devServer: {
     static: {
       directory: path.resolve(__dirname, "wwwroot"),
