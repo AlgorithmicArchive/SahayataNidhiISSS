@@ -181,7 +181,6 @@ if (!app.Environment.IsDevelopment())
     // app.UseHsts();
 }
 
-app.UsePathBase("/swdjk");
 
 // ============================================================
 // 6. FIX #2 & #3 – Enforce HTTPS redirection (uncommented)

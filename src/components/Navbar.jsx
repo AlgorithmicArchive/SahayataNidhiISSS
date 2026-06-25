@@ -86,7 +86,7 @@ const MyNavbar = () => {
     setVerified(false);
     sessionStorage.clear();
     closeAllMenus();
-    navigate("/login"); // ✅ React Router handles basename → /swdjk/login
+    navigate("/login");
   };
 
   const closeAllMenus = () => {
@@ -107,7 +107,7 @@ const MyNavbar = () => {
           method: "POST",
         });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("SSO timeout")), SSO_TIMEOUT)
+          setTimeout(() => reject(new Error("SSO timeout")), SSO_TIMEOUT),
         );
 
         const response = await Promise.race([ssoPromise, timeoutPromise]);
@@ -229,7 +229,7 @@ const MyNavbar = () => {
           path: "/officerRegistration",
           key: "officerRegistration",
           isSpecial: true,
-        }
+        },
       );
     }
     // ---- Citizen ----
@@ -248,14 +248,14 @@ const MyNavbar = () => {
             { name: "Initiated Applications", path: "/user/initiated" },
             { name: "Incomplete Applications", path: "/user/incomplete" },
           ],
-        }
+        },
       );
     }
     // ---- Officer ----
     if (userType === "Officer" && verified) {
       m.push(
         { name: "Dashboard", path: "/officer/home", key: "officer-home" },
-        { name: "Reports", path: "/officer/reports", key: "officer-reports" }
+        { name: "Reports", path: "/officer/reports", key: "officer-reports" },
       );
       if (officerAuthorities?.canSanction) {
         m.push({
@@ -280,7 +280,10 @@ const MyNavbar = () => {
       const upd = [];
       if (officerAuthorities?.canCorrigendum)
         upd.push({ name: "Data Updation", path: "/officer/issuecorrigendum" });
-      if (officerAuthorities?.canWithhold || officerAuthorities?.canDirectWithheld)
+      if (
+        officerAuthorities?.canWithhold ||
+        officerAuthorities?.canDirectWithheld
+      )
         upd.push({ name: "Withheld Application", path: "/officer/withheld" });
       if (officerAuthorities?.canValidateAadhaar)
         upd.push({
@@ -310,7 +313,7 @@ const MyNavbar = () => {
           name: "Aadhaar Validations",
           path: "/viewer/aadhaarvalidations",
           key: "viewer-aadhaar",
-        }
+        },
       );
     }
     if (userType === "Admin" && verified) {
@@ -339,7 +342,7 @@ const MyNavbar = () => {
           name: "View Feedbacks",
           path: "/admin/viewFeedbacks",
           key: "admin-feedback",
-        }
+        },
       );
     }
     if (userType === "Designer" && verified) {
@@ -370,7 +373,7 @@ const MyNavbar = () => {
               path: "/designer/submissionlimitations",
             },
           ],
-        }
+        },
       );
     }
     return m;

@@ -17,7 +17,7 @@ const App = () => (
   <ThemeProvider theme={GovSoftTheme}>
     <UserProvider>
       <CssBaseline />
-      <Router basename="/swdjk">
+      <Router>
         <ScrollToTop />
         <Header />
         <MainContent />
@@ -47,7 +47,6 @@ const MainContent = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [ssoLoading, setSsoLoading] = useState(false);
   const navigate = useNavigate();
-
 
   /* -------------------------------------------------
       SignalR: Real-time session management

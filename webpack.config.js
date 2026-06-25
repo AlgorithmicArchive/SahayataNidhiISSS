@@ -6,7 +6,7 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, "wwwroot/js"),
     filename: "bundle.js",
-    publicPath: "/swdjk/js",
+    publicPath: "/js",
     clean: true,
     sourceMapFilename: "[file].map",
   },

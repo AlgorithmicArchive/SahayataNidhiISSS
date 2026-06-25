@@ -14,7 +14,7 @@ class SessionHubService {
     }
 
     this.connection = new signalR.HubConnectionBuilder()
-      .withUrl("/swdjk/sessionHub", {
+      .withUrl("/sessionHub", {
         accessTokenFactory: () => token,
       })
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]) // Retry pattern

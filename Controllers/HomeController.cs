@@ -1463,12 +1463,12 @@ namespace SahayataNidhi.Controllers
                     "Success"
                 );
 
-                return Redirect("/swdjk/login");
+                return Redirect("/login");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Logout failed");
-                return Redirect("/swdjk/login");
+                return Redirect("/login");
             }
         }
 
