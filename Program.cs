@@ -137,7 +137,7 @@ builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
 builder.Services.AddScoped<IExpirationSyncService, ExpirationSyncService>();
 builder.Services.AddHostedService<QueuedHostedService>();
 builder.Services.AddSingleton<ICronScheduler, CronScheduler>();
-builder.Services.AddHostedService<CronScheduler>();
+// builder.Services.AddHostedService<CronScheduler>();
 builder.Services.AddScoped<SessionRepository>();
 builder.Services.AddScoped<CronServices>();
 builder.Services.AddHttpClient();
@@ -163,12 +163,12 @@ builder.Services.AddControllersWithViews(options =>
 var app = builder.Build();
 
 // Background task registration (unchanged)
-app.Lifetime.ApplicationStarted.Register(async () =>
-{
-    using var scope = app.Services.CreateScope();
-    var cronService = scope.ServiceProvider.GetRequiredService<CronServices>();
-    await cronService.RegisterAllTasksAsync();
-});
+// app.Lifetime.ApplicationStarted.Register(async () =>
+// {
+//     using var scope = app.Services.CreateScope();
+//     var cronService = scope.ServiceProvider.GetRequiredService<CronServices>();
+//     await cronService.RegisterAllTasksAsync();
+// });
 
 // ============================================================
 // 5. HTTP pipeline – order matters!
