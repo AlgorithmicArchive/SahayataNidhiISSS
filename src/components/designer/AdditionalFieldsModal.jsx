@@ -22,14 +22,14 @@ import {
   useSensor,
   useSensors,
   DragOverlay,
-} from '@dnd-kit/core';
+} from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { SortableItem } from './SortableItem'; // Your existing SortableItem
+} from "@dnd-kit/sortable";
+import { SortableItem } from "./SortableItem"; // Your existing SortableItem
 import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
@@ -38,7 +38,9 @@ import { toast } from "react-toastify";
 // Function to normalize a field, preserving existing values INCLUDING DECLARATION
 const normalizeField = (field) => {
   const normalized = {
-    id: field.id || `field-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id:
+      field.id ||
+      `field-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     type: field.type || "text",
     label: field.label || "New Field",
     name: field.name || `NewField_${Date.now()}`,
@@ -58,17 +60,30 @@ const normalizeField = (field) => {
     value: field.value ?? undefined,
     dependentOn: field.dependentOn ?? undefined,
     dependentOptions: field.dependentOptions ?? undefined,
+    dependentTable: field.dependentTable ?? "", // ✅ ADD THIS
     isDependentEnclosure: field.isDependentEnclosure ?? false,
     dependentField: field.dependentField ?? undefined,
     dependentValues: Array.isArray(field.dependentValues)
       ? field.dependentValues
       : [],
-    optionsType: field.optionsType || (field.type === "select" ? "independent" : ""),
+    optionsType:
+      field.optionsType || (field.type === "select" ? "independent" : ""),
     // NEW: Declaration properties
     isConsentCheckbox: field.isConsentCheckbox || false,
     isDeclaration: field.isDeclaration || false,
     declaration: field.declaration || "",
-    declarationFields: Array.isArray(field.declarationFields) ? field.declarationFields : [],
+    declarationFields: Array.isArray(field.declarationFields)
+      ? field.declarationFields
+      : [],
+    // ✅ ADD THESE VALUE DEPENDENCY PROPERTIES
+    enableValueDependency: field.enableValueDependency || false,
+    valueDependentOn: field.valueDependentOn || "",
+    isOfficeField:
+      field.isOfficeField !== undefined ? field.isOfficeField : false,
+    officeTypeId: field.officeTypeId !== undefined ? field.officeTypeId : null,
+    enableConditionalVisibility: field.enableConditionalVisibility || false,
+    conditionalField: field.conditionalField || "",
+    conditionalValues: field.conditionalValues || [],
   };
   return normalized;
 };
@@ -78,7 +93,7 @@ const normalizeAdditionalFields = (additionalFields) => {
   const normalized = {};
   Object.keys(additionalFields).forEach((option) => {
     normalized[option] = (additionalFields[option] || []).map((field) =>
-      normalizeField(field)
+      normalizeField(field),
     );
   });
   return normalized;
@@ -93,13 +108,13 @@ const cleanDeclarationData = (fieldData) => {
       isDeclaration: true,
       declaration: fieldData.declaration || "",
       declarationFields: Array.isArray(fieldData.declarationFields)
-        ? fieldData.declarationFields.map(f => ({
-          id: f.id || f.name,
-          name: f.name,
-          label: f.label || f.name,
-          type: f.type || 'text',
-          required: f.required || false
-        }))
+        ? fieldData.declarationFields.map((f) => ({
+            id: f.id || f.name,
+            name: f.name,
+            label: f.label || f.name,
+            type: f.type || "text",
+            required: f.required || false,
+          }))
         : [],
     };
   }
@@ -117,12 +132,12 @@ const AdditionalFieldsModal = ({
   availableFormFields = [],
 }) => {
   const [localAdditionalFields, setLocalAdditionalFields] = useState(
-    normalizeAdditionalFields(selectedField.additionalFields || {})
+    normalizeAdditionalFields(selectedField.additionalFields || {}),
   );
   const [selectedOption, setSelectedOption] = useState(
     selectedField.options && selectedField.options.length > 0
       ? selectedField.options[0].value
-      : ""
+      : "",
   );
   const [editingField, setEditingField] = useState(null);
   const [nestedFieldToEdit, setNestedFieldToEdit] = useState(null);
@@ -137,12 +152,12 @@ const AdditionalFieldsModal = ({
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-    })
+    }),
   );
 
   useEffect(() => {
     setLocalAdditionalFields(
-      normalizeAdditionalFields(selectedField.additionalFields || {})
+      normalizeAdditionalFields(selectedField.additionalFields || {}),
     );
   }, [selectedField]);
 
@@ -189,7 +204,7 @@ const AdditionalFieldsModal = ({
     setLocalAdditionalFields((prev) => ({
       ...prev,
       [selectedOption]: (prev[selectedOption] || []).filter(
-        (field) => field.id !== fieldId
+        (field) => field.id !== fieldId,
       ),
     }));
   };
@@ -202,7 +217,9 @@ const AdditionalFieldsModal = ({
       isConsentCheckbox: field.isConsentCheckbox || false,
       isDeclaration: field.isDeclaration || false,
       declaration: field.declaration || "",
-      declarationFields: Array.isArray(field.declarationFields) ? field.declarationFields : []
+      declarationFields: Array.isArray(field.declarationFields)
+        ? field.declarationFields
+        : [],
     });
   };
 
@@ -219,10 +236,9 @@ const AdditionalFieldsModal = ({
       const updatedFields = {
         ...prev,
         [selectedOption]: (prev[selectedOption] || []).map((field) =>
-          field.id === cleanedField.id ? normalizeField(cleanedField) : field
+          field.id === cleanedField.id ? normalizeField(cleanedField) : field,
         ),
       };
-
 
       return updatedFields;
     });
@@ -254,10 +270,10 @@ const AdditionalFieldsModal = ({
                   nestedFields.map((nestedField) =>
                     nestedField.id === cleanedField.id
                       ? normalizeField(cleanedField)
-                      : nestedField
+                      : nestedField,
                   ),
-                ]
-              )
+                ],
+              ),
             );
             return { ...field, additionalFields: updatedAdditionalFields };
           }
@@ -286,10 +302,10 @@ const AdditionalFieldsModal = ({
     if (active.id !== over?.id) {
       const currentFields = localAdditionalFields[selectedOption] || [];
       const oldIndex = currentFields.findIndex(
-        (field) => field.id === active.id
+        (field) => field.id === active.id,
       );
       const newIndex = currentFields.findIndex(
-        (field) => field.id === over?.id
+        (field) => field.id === over?.id,
       );
 
       if (oldIndex !== -1 && newIndex !== -1) {
@@ -310,7 +326,7 @@ const AdditionalFieldsModal = ({
 
   const handleSave = () => {
     const updatedAdditionalFields = normalizeAdditionalFields(
-      localAdditionalFields
+      localAdditionalFields,
     );
     const updatedField = {
       ...selectedField,
@@ -331,8 +347,8 @@ const AdditionalFieldsModal = ({
   // Get the active field for DragOverlay
   const activeField = activeId
     ? (localAdditionalFields[selectedOption] || []).find(
-      (field) => field.id === activeId
-    )
+        (field) => field.id === activeId,
+      )
     : null;
 
   // Render a single field item
@@ -343,9 +359,11 @@ const AdditionalFieldsModal = ({
         mb: 2,
         p: 2,
         borderRadius: 1,
-        backgroundColor: field.isConsentCheckbox ? 'primary.light' : 'background.paper',
-        border: '1px solid',
-        borderColor: 'divider',
+        backgroundColor: field.isConsentCheckbox
+          ? "primary.light"
+          : "background.paper",
+        border: "1px solid",
+        borderColor: "divider",
       }}
     >
       <Box
@@ -355,8 +373,8 @@ const AdditionalFieldsModal = ({
           alignItems: "center",
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <DragIndicatorIcon sx={{ color: 'action.active' }} />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <DragIndicatorIcon sx={{ color: "action.active" }} />
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 500 }}>
               {field.label} ({field.type})
@@ -364,11 +382,12 @@ const AdditionalFieldsModal = ({
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {field.name}
-              {field.declaration && ` | ${field.declaration.substring(0, 50)}...`}
+              {field.declaration &&
+                ` | ${field.declaration.substring(0, 50)}...`}
             </Typography>
           </Box>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: "flex", gap: 1 }}>
           <Button
             variant="outlined"
             size="small"
@@ -397,8 +416,10 @@ const AdditionalFieldsModal = ({
 
       {/* Show declaration preview */}
       {field.isConsentCheckbox && field.declaration && (
-        <Box sx={{ mt: 1, p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
-          <Typography variant="caption" sx={{ fontStyle: 'italic' }}>
+        <Box
+          sx={{ mt: 1, p: 1, bgcolor: "background.default", borderRadius: 1 }}
+        >
+          <Typography variant="caption" sx={{ fontStyle: "italic" }}>
             Declaration: {field.declaration.substring(0, 100)}...
           </Typography>
         </Box>
@@ -406,7 +427,7 @@ const AdditionalFieldsModal = ({
 
       {field.additionalFields && (
         <Box sx={{ marginLeft: 2, mt: 1 }}>
-          <Typography variant="body2" sx={{ mb: 1, fontWeight: 'bold' }}>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: "bold" }}>
             Nested Additional Fields:
           </Typography>
           {Object.entries(field.additionalFields).map(
@@ -414,7 +435,7 @@ const AdditionalFieldsModal = ({
               <Box key={option} sx={{ mb: 1 }}>
                 <Typography
                   variant="body2"
-                  sx={{ fontWeight: "bold", color: 'primary.main' }}
+                  sx={{ fontWeight: "bold", color: "primary.main" }}
                 >
                   {option}:
                 </Typography>
@@ -425,7 +446,9 @@ const AdditionalFieldsModal = ({
                       p: 1,
                       mt: 0.5,
                       ml: 2,
-                      bgcolor: nestedField.isConsentCheckbox ? 'primary.light' : 'grey.50',
+                      bgcolor: nestedField.isConsentCheckbox
+                        ? "primary.light"
+                        : "grey.50",
                     }}
                   >
                     <Box
@@ -450,7 +473,7 @@ const AdditionalFieldsModal = ({
                   </Paper>
                 ))}
               </Box>
-            )
+            ),
           )}
         </Box>
       )}
@@ -460,7 +483,13 @@ const AdditionalFieldsModal = ({
   return (
     <Dialog open={true} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <Typography variant="h6">
             {isNested ? "Nested Additional Fields" : "Additional Properties"}
           </Typography>
@@ -472,7 +501,8 @@ const AdditionalFieldsModal = ({
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2 }}>
           Configure additional fields that appear based on the selected action.
-          Declaration checkboxes configured here will be properly saved with all declaration data.
+          Declaration checkboxes configured here will be properly saved with all
+          declaration data.
         </Alert>
 
         <Typography variant="subtitle1" sx={{ mb: 2 }}>
@@ -492,14 +522,21 @@ const AdditionalFieldsModal = ({
         </Select>
 
         <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 'bold' }}>
+          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: "bold" }}>
             Additional Fields for Option: {selectedOption}
           </Typography>
 
           {/* Debug info */}
-          {localAdditionalFields[selectedOption]?.some(f => f.isConsentCheckbox) && (
+          {localAdditionalFields[selectedOption]?.some(
+            (f) => f.isConsentCheckbox,
+          ) && (
             <Alert severity="success" sx={{ mb: 2 }}>
-              Contains {localAdditionalFields[selectedOption]?.filter(f => f.isConsentCheckbox).length}
+              Contains{" "}
+              {
+                localAdditionalFields[selectedOption]?.filter(
+                  (f) => f.isConsentCheckbox,
+                ).length
+              }
               declaration field(s) with saved data
             </Alert>
           )}
@@ -512,17 +549,17 @@ const AdditionalFieldsModal = ({
             onDragCancel={handleDragCancel}
           >
             <SortableContext
-              items={localAdditionalFields[selectedOption]?.map(f => f.id) || []}
+              items={
+                localAdditionalFields[selectedOption]?.map((f) => f.id) || []
+              }
               strategy={verticalListSortingStrategy}
             >
-              <Box sx={{ maxHeight: '400px', overflowY: 'auto' }}>
-                {(localAdditionalFields[selectedOption] || []).map(
-                  (field) => (
-                    <SortableItem key={field.id} id={field.id}>
-                      {renderFieldItem(field)}
-                    </SortableItem>
-                  )
-                )}
+              <Box sx={{ maxHeight: "400px", overflowY: "auto" }}>
+                {(localAdditionalFields[selectedOption] || []).map((field) => (
+                  <SortableItem key={field.id} id={field.id}>
+                    {renderFieldItem(field)}
+                  </SortableItem>
+                ))}
               </Box>
             </SortableContext>
             <DragOverlay>
@@ -532,15 +569,17 @@ const AdditionalFieldsModal = ({
                   sx={{
                     p: 2,
                     borderRadius: 1,
-                    backgroundColor: activeField.isConsentCheckbox ? 'primary.light' : 'background.paper',
-                    border: '2px solid',
-                    borderColor: 'primary.main',
+                    backgroundColor: activeField.isConsentCheckbox
+                      ? "primary.light"
+                      : "background.paper",
+                    border: "2px solid",
+                    borderColor: "primary.main",
                     cursor: "grabbing",
                     transform: "rotate(3deg)",
                   }}
                 >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <DragIndicatorIcon sx={{ color: 'primary.main' }} />
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <DragIndicatorIcon sx={{ color: "primary.main" }} />
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
                       {activeField.label} ({activeField.type})
                       {activeField.isConsentCheckbox && " 📝 Declaration"}

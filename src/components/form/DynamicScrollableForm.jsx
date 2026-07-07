@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import {
   runValidations,
@@ -249,7 +255,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
   const findFieldInSection = (section, fieldName) => {
     // Search in main fields
-    let found = section.fields.find(f => f.name === fieldName);
+    let found = section.fields.find((f) => f.name === fieldName);
     if (found) return found;
 
     // Search in additionalFields (Urban/Rural)
@@ -280,19 +286,23 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   };
 
   useEffect(() => {
-    const presentSection = formSections.find(s => s.section === "Present Address Details");
-    const permanentSection = formSections.find(s => s.section === "Permanent Address Details");
+    const presentSection = formSections.find(
+      (s) => s.section === "Present Address Details",
+    );
+    const permanentSection = formSections.find(
+      (s) => s.section === "Permanent Address Details",
+    );
 
     if (!presentSection || !permanentSection) return;
 
     // Recursive function to collect all field names from a section (including additionalFields)
     const collectFieldNames = (fields, prefix = "") => {
       let names = [];
-      fields.forEach(field => {
+      fields.forEach((field) => {
         names.push(prefix + field.name);
         if (field.additionalFields) {
           const additionalFieldArrays = Object.values(field.additionalFields);
-          additionalFieldArrays.forEach(arr => {
+          additionalFieldArrays.forEach((arr) => {
             if (Array.isArray(arr)) {
               names = names.concat(collectFieldNames(arr, prefix));
             }
@@ -307,13 +317,13 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
     // Build mapping: present name -> permanent name (by replacing "Present" with "Permanent")
     const mapping = {};
-    presentNames.forEach(pName => {
+    presentNames.forEach((pName) => {
       const permName = pName.replace(/^Present/, "Permanent");
       if (permanentNames.includes(permName)) {
         mapping[pName] = permName;
       } else {
         // Try to find any permanent field that matches after replacement
-        const possibleMatch = permanentNames.find(p => p === permName);
+        const possibleMatch = permanentNames.find((p) => p === permName);
         if (possibleMatch) mapping[pName] = possibleMatch;
       }
     });
@@ -323,7 +333,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   }, [formSections]);
 
   // Watch all present fields
-  const watchedPresentValuesArray = useWatch({ control, name: presentFieldNames }) || [];
+  const watchedPresentValuesArray =
+    useWatch({ control, name: presentFieldNames }) || [];
   const watchedPresentValues = useMemo(() => {
     const obj = {};
     presentFieldNames.forEach((name, idx) => {
@@ -338,7 +349,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
     isSyncingRef.current = true;
     try {
-      presentFieldNames.forEach(presentName => {
+      presentFieldNames.forEach((presentName) => {
         const permName = permanentFieldMap[presentName];
         if (!permName) return;
 
@@ -495,29 +506,29 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       if (districtOptionsLoaded.current) return;
 
       const districtField = formSections
-        .flatMap(s => s.fields)
-        .find(f => f.name === "District" && f.isOfficeField);
+        .flatMap((s) => s.fields)
+        .find((f) => f.name === "District" && f.isOfficeField);
       console.log("Found district field:", districtField);
 
       if (districtField && districtField.officeTypeId) {
         const parentId = 0; // or get from context if needed
         try {
           const response = await axiosInstance.get(
-            `/Base/GetAreaList?table=OfficeDetails&parentId=${parentId}&isOfficeField=true&officeTypeId=${districtField.officeTypeId}`
+            `/Base/GetAreaList?table=OfficeDetails&parentId=${parentId}&isOfficeField=true&officeTypeId=${districtField.officeTypeId}`,
           );
           const districtOptions = response.data.data || [];
           const newOptions = [
             { label: "Please Select", value: "Please Select" },
-            ...districtOptions.map(d => ({ value: d.value, label: d.label }))
+            ...districtOptions.map((d) => ({ value: d.value, label: d.label })),
           ];
 
-          setFormSections(prev =>
-            prev.map(section => ({
+          setFormSections((prev) =>
+            prev.map((section) => ({
               ...section,
-              fields: section.fields.map(f =>
-                f.name === "District" ? { ...f, options: newOptions } : f
-              )
-            }))
+              fields: section.fields.map((f) =>
+                f.name === "District" ? { ...f, options: newOptions } : f,
+              ),
+            })),
           );
 
           // Mark as loaded to prevent future runs
@@ -746,9 +757,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         }
 
         if ((mode === "incomplete" || mode === "edit") && referenceNumber) {
-          const { formDetails, additionalDetails } = await fetchFormDetails(
-            referenceNumber,
-          );
+          const { formDetails, additionalDetails } =
+            await fetchFormDetails(referenceNumber);
 
           setAdditionalDetails(additionalDetails);
 
@@ -1059,10 +1069,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     if (!formSections.length || !initialData) return;
 
     const processFields = (fields, sectionIdx) => {
-      fields.forEach(field => {
+      fields.forEach((field) => {
         // If this field has a value and it is a parent (i.e., there exists a child with valueDependentOn = field.name)
-        const hasChildren = formSections.some(section =>
-          section.fields.some(f => f.enableValueDependency && f.valueDependentOn === field.name)
+        const hasChildren = formSections.some((section) =>
+          section.fields.some(
+            (f) => f.enableValueDependency && f.valueDependentOn === field.name,
+          ),
         );
         if (hasChildren && field.type === "select") {
           const val = initialData[field.name];
@@ -1071,7 +1083,9 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           }
         }
         if (field.additionalFields) {
-          Object.values(field.additionalFields).forEach(arr => processFields(arr, sectionIdx));
+          Object.values(field.additionalFields).forEach((arr) =>
+            processFields(arr, sectionIdx),
+          );
         }
       });
     };
@@ -1236,104 +1250,125 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     }
   };
 
-  const handleAreaChange = useCallback(async (sectionIndex, field, value) => {
-    try {
-      // Collect all fields that depend on this field via valueDependentOn
-      const dependents = [];
-
-      const collectDependents = (fields, currentSectionIdx) => {
-        fields.forEach(f => {
-          if (f.enableValueDependency && f.valueDependentOn === field.name) {
-            dependents.push({ field: f, sectionIndex: currentSectionIdx });
-          }
-          if (f.additionalFields) {
-            Object.values(f.additionalFields).forEach(arr => {
-              collectDependents(arr, currentSectionIdx);
-            });
-          }
-        });
-      };
-
-      formSections.forEach((section, idx) => {
-        collectDependents(section.fields, idx);
-      });
-
-      for (const dep of dependents) {
-        const childField = dep.field;
-        const childSectionIdx = dep.sectionIndex;
-
-        // Use dependentTable from child field
-        let tableName = childField.dependentTable;
-        if (!tableName) {
-          console.warn(`No dependentTable set for ${childField.name}, skipping`);
-          continue;
-        }
-
-        let officeTypeIdParam = '';
-        if (childField.isOfficeField && childField.officeTypeId) {
-          tableName = "OfficeDetails";
-          officeTypeIdParam = `&officeTypeId=${childField.officeTypeId}&isOfficeField=true`;
-        }
-
-        // Fetch options from API
-        const response = await axiosInstance.get(
-          `/Base/GetAreaList?table=${tableName}&parentId=${value}${officeTypeIdParam}`
+  const handleAreaChange = useCallback(
+    async (sectionIndex, field, value) => {
+      try {
+        // Collect all fields that depend on this field via valueDependentOn
+        console.log(
+          `Handling area change for field: ${field.name} with value: ${value}`,
         );
-        const areaList = response.data?.data || [];
+        const dependents = [];
 
-        const uniqueOptions = [];
-        const seenValues = new Set();
-        areaList.forEach(item => {
-          const optionValue = item.id ?? item.value;
-          if (!seenValues.has(optionValue)) {
-            seenValues.add(optionValue);
-            uniqueOptions.push({
-              value: optionValue,
-              label: item.name ?? item.label,
+        const collectDependents = (fields, currentSectionIdx) => {
+          fields.forEach((f) => {
+            if (f.enableValueDependency && f.valueDependentOn === field.name) {
+              dependents.push({ field: f, sectionIndex: currentSectionIdx });
+            }
+            if (f.additionalFields) {
+              Object.values(f.additionalFields).forEach((arr) => {
+                collectDependents(arr, currentSectionIdx);
+              });
+            }
+          });
+        };
+
+        console.log("Dependents", dependents);
+        formSections.forEach((section, idx) => {
+          collectDependents(section.fields, idx);
+        });
+
+        for (const dep of dependents) {
+          const childField = dep.field;
+          console.log(
+            `Updating dependent field: ${childField.name} in section index: ${dep.sectionIndex}`,
+          );
+          const childSectionIdx = dep.sectionIndex;
+
+          // Use dependentTable from child field
+          let tableName = childField.dependentTable;
+          if (!tableName) {
+            console.warn(
+              `No dependentTable set for ${childField.name}, skipping`,
+            );
+            continue;
+          }
+
+          let officeTypeIdParam = "";
+          if (childField.isOfficeField && childField.officeTypeId) {
+            tableName = "OfficeDetails";
+            officeTypeIdParam = `&officeTypeId=${childField.officeTypeId}&isOfficeField=true`;
+          }
+
+          // Fetch options from API
+          const response = await axiosInstance.get(
+            `/Base/GetAreaList?table=${tableName}&parentId=${value}${officeTypeIdParam}`,
+          );
+          const areaList = response.data?.data || [];
+
+          const uniqueOptions = [];
+          const seenValues = new Set();
+          areaList.forEach((item) => {
+            const optionValue = item.id ?? item.value;
+            if (!seenValues.has(optionValue)) {
+              seenValues.add(optionValue);
+              uniqueOptions.push({
+                value: optionValue,
+                label: item.name ?? item.label,
+              });
+            }
+          });
+
+          const newOptions = [
+            { label: "Please Select", value: "Please Select" },
+            ...uniqueOptions,
+          ];
+
+          // Update child field's options in formSections state
+          setFormSections((prevSections) => {
+            const newSections = [...prevSections];
+            const section = newSections[childSectionIdx];
+
+            const updateFieldOptions = (fields) => {
+              return fields.map((f) => {
+                if (f.name === childField.name) {
+                  return { ...f, options: newOptions };
+                }
+                if (f.additionalFields) {
+                  const updatedAdditional = {};
+                  Object.keys(f.additionalFields).forEach((key) => {
+                    updatedAdditional[key] = updateFieldOptions(
+                      f.additionalFields[key],
+                    );
+                  });
+                  return { ...f, additionalFields: updatedAdditional };
+                }
+                return f;
+              });
+            };
+
+            section.fields = updateFieldOptions(section.fields);
+            return newSections;
+          });
+
+          // If current value is not in new options, reset to "Please Select"
+          const currentVal = getValues(childField.name);
+          if (
+            currentVal &&
+            !newOptions.some(
+              (opt) => opt.value.toString() === currentVal.toString(),
+            )
+          ) {
+            setValue(childField.name, "Please Select", {
+              shouldValidate: true,
             });
           }
-        });
-
-        const newOptions = [
-          { label: "Please Select", value: "Please Select" },
-          ...uniqueOptions,
-        ];
-
-        // Update child field's options in formSections state
-        setFormSections(prevSections => {
-          const newSections = [...prevSections];
-          const section = newSections[childSectionIdx];
-
-          const updateFieldOptions = (fields) => {
-            return fields.map(f => {
-              if (f.name === childField.name) {
-                return { ...f, options: newOptions };
-              }
-              if (f.additionalFields) {
-                const updatedAdditional = {};
-                Object.keys(f.additionalFields).forEach(key => {
-                  updatedAdditional[key] = updateFieldOptions(f.additionalFields[key]);
-                });
-                return { ...f, additionalFields: updatedAdditional };
-              }
-              return f;
-            });
-          };
-
-          section.fields = updateFieldOptions(section.fields);
-          return newSections;
-        });
-
-        // If current value is not in new options, reset to "Please Select"
-        const currentVal = getValues(childField.name);
-        if (currentVal && !newOptions.some(opt => opt.value.toString() === currentVal.toString())) {
-          setValue(childField.name, "Please Select", { shouldValidate: true });
         }
+      } catch (error) {
+        console.error("Dynamic handleAreaChange error:", error);
       }
-    } catch (error) {
-      console.error("Dynamic handleAreaChange error:", error);
-    }
-  }, [formSections, getValues, setValue, setFormSections]);
+    },
+    [formSections, getValues, setValue, setFormSections],
+  );
 
   const fetchBanks = async () => {
     try {
@@ -1362,7 +1397,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       const bankCode = response.data?.bankCode || "";
       setIfscPrefix(bankCode);
       setValue("IfscCode", bankCode, { shouldValidate: true });
-    } catch (error) { }
+    } catch (error) {}
   };
 
   const processField = (field, formData, initialData) => {
@@ -1382,9 +1417,9 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           formData[fileFieldName] || initialData[field.name]?.documents || [];
         sectionFormData["Documents"] = Array.isArray(documents)
           ? documents.map((doc) => ({
-            type: doc.type || "",
-            file: doc.file || null,
-          }))
+              type: doc.type || "",
+              file: doc.file || null,
+            }))
           : [];
       } else {
         sectionFormData["Enclosure"] =
@@ -1546,8 +1581,9 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         } else {
           setReferenceNumber(result.referenceNumber);
           toast.success(
-            `Form details have been saved as a draft. ${aadhaarExists &&
-            "If you don’t submit the form, you will need to re-verify your Aadhaar number when you edit it later"
+            `Form details have been saved as a draft. ${
+              aadhaarExists &&
+              "If you don’t submit the form, you will need to re-verify your Aadhaar number when you edit it later"
             }.`,
           );
           if (formRef.current) {
@@ -1608,19 +1644,20 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       prevSections.map((section) =>
         section.id === sectionId
           ? {
-            ...section,
-            fields: section.fields.filter((field) => field.id !== fieldId),
-          }
+              ...section,
+              fields: section.fields.filter((field) => field.id !== fieldId),
+            }
           : section,
       ),
     );
   };
 
   const renderField = (field, sectionIndex) => {
-
     if (field.enableConditionalVisibility && field.conditionalField) {
       const dependentValue = watch(field.conditionalField);
-      const shouldShow = !field.conditionalValues || field.conditionalValues.length === 0 ||
+      const shouldShow =
+        !field.conditionalValues ||
+        field.conditionalValues.length === 0 ||
         field.conditionalValues.includes(dependentValue);
       if (!shouldShow) {
         return null;
@@ -1895,7 +1932,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         variant="subtitle1"
                         sx={{ fontSize: 12, mt: 0.5, display: "block" }}
                       >
-                        Dummy Addhaar Number:123456789012 Dummy OTP: 1234567{" "}
+                        Dummy Addhaar Number:123456789012 Dummy OTP:
+                        1234567{" "}
                       </Typography>
                     )}
                   </Box>
@@ -2087,7 +2125,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     setImageValidation(false);
                   }
                 }
-              }
+              },
             }}
             render={({ field: { onChange, ref } }) => (
               <FormControl
@@ -2103,7 +2141,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                   sx={{
                     ...buttonStyles,
                     position: "relative",
-                    minWidth: 200
+                    minWidth: 200,
                   }}
                   onBlur={() => trigger(field.name)}
                 >
@@ -2113,7 +2151,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         size={22}
                         sx={{
                           color: "white",
-                          position: "absolute"
+                          position: "absolute",
                         }}
                       />
                       <span style={{ opacity: 0 }}>
@@ -2171,8 +2209,11 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               }
 
               // --- Add "Please Select" at the beginning if not already present ---
-              const pleaseSelect = { value: "Please Select", label: "Please Select" };
-              if (!options.some(opt => opt.value === pleaseSelect.value)) {
+              const pleaseSelect = {
+                value: "Please Select",
+                label: "Please Select",
+              };
+              if (!options.some((opt) => opt.value === pleaseSelect.value)) {
                 options = [pleaseSelect, ...options];
               }
               // -------------------------------------------------------------------
@@ -2198,6 +2239,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         const newValue = newOption?.value || "";
                         onChange({ target: { value: newValue } });
                         trigger(field.name);
+                        console.log(
+                          "Selected value:",
+                          newValue,
+                          "for field:",
+                          field.name,
+                        );
 
                         if (
                           /district|muncipality|block|halqapanchayat/i.test(
@@ -2340,11 +2387,17 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               (() => {
                 // Prepare options with "Please Select" at the beginning
                 let options = field.options || [];
-                const placeholderOption = { value: "placeholder", label: "Please Select" };
+                const placeholderOption = {
+                  value: "placeholder",
+                  label: "Please Select",
+                };
 
                 // Check if placeholder already exists (by label or by special value)
                 const hasPlaceholder = options.some(
-                  opt => opt.label === "Please Select" || opt.value === "placeholder" || opt.value === ""
+                  (opt) =>
+                    opt.label === "Please Select" ||
+                    opt.value === "placeholder" ||
+                    opt.value === "",
                 );
 
                 if (!hasPlaceholder) {
@@ -2355,10 +2408,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                   <Controller
                     name={selectFieldName}
                     control={control}
-                    defaultValue={initialData?.[field.name]?.selected || "placeholder"}
+                    defaultValue={
+                      initialData?.[field.name]?.selected || "placeholder"
+                    }
                     rules={{
                       validate: async (value) => {
-                        if (field.required && (!value || value === "placeholder")) {
+                        if (
+                          field.required &&
+                          (!value || value === "placeholder")
+                        ) {
                           return "Please select an option";
                         }
                         return true;
@@ -2374,11 +2432,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                           // Only trigger actual change if it's not the placeholder
                           if (newValue !== "placeholder") {
                             onChange(newValue);
-                            setValue(fileFieldName, null, { shouldValidate: true });
+                            setValue(fileFieldName, null, {
+                              shouldValidate: true,
+                            });
                           } else {
                             // If placeholder is selected, set empty value
                             onChange("");
-                            setValue(fileFieldName, null, { shouldValidate: true });
+                            setValue(fileFieldName, null, {
+                              shouldValidate: true,
+                            });
                           }
                           trigger(selectFieldName);
                         }}
@@ -2394,7 +2456,11 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         {options.map((option) => (
                           <option
                             key={option.id || option.value}
-                            value={option.value === "placeholder" ? "placeholder" : option.value}
+                            value={
+                              option.value === "placeholder"
+                                ? "placeholder"
+                                : option.value
+                            }
                           >
                             {option.label}
                           </option>
@@ -2414,7 +2480,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 validate: async (value) => {
                   const selectValue = getValues(selectFieldName);
                   // Check if a valid option is selected (not placeholder)
-                  if (field.required && !value && selectValue && selectValue !== "placeholder") {
+                  if (
+                    field.required &&
+                    !value &&
+                    selectValue &&
+                    selectValue !== "placeholder"
+                  ) {
                     return "Please upload a file";
                   }
                   if (value instanceof File) {
@@ -2486,7 +2557,11 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       borderRadius: "12px",
                       ...buttonStyles,
                     }}
-                    disabled={isDisabled || !getValues(selectFieldName) || getValues(selectFieldName) === "placeholder"}
+                    disabled={
+                      isDisabled ||
+                      !getValues(selectFieldName) ||
+                      getValues(selectFieldName) === "placeholder"
+                    }
                     onBlur={() => trigger(fileFieldName)}
                   >
                     Upload File
@@ -2564,7 +2639,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           >
             <Grid container spacing={3} alignItems="stretch">
               {formSections.map((section, index) => {
-
                 const isFullRow = section.fullRow === true;
 
                 return (

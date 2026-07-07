@@ -309,12 +309,14 @@ namespace SahayataNidhi.Controllers
      int? officeTypeId = null,
      bool isOfficeField = false)
         {
+            table = table?.ToLowerInvariant() ?? "";
+
             object? data = null;
 
             switch (table)
             {
                 // --------------------------------------------------------------------------------
-                case "OfficeDetails":
+                case "officedetails":
                     var odQuery = dbcontext.Officesdetails.AsQueryable();
                     if (officeTypeId.HasValue)
                         odQuery = odQuery.Where(od => od.Officeid == officeTypeId.Value);
@@ -328,7 +330,7 @@ namespace SahayataNidhi.Controllers
                     break;
 
                 // --------------------------------------------------------------------------------
-                case "District":
+                case "district":
                     if (isOfficeField && officeTypeId.HasValue)
                     {
                         data = dbcontext.Officesdetails
@@ -353,7 +355,7 @@ namespace SahayataNidhi.Controllers
                 // --------------------------------------------------------------------------------
                 // Tehsil – now perfectly mirrors the old "TehsilAll" logic
                 // --------------------------------------------------------------------------------
-                case "Tehsil":   // (formerly "TehsilAll")
+                case "tehsil":   // (formerly "TehsilAll")
                     if (isOfficeField && officeTypeId.HasValue)
                     {
                         data = dbcontext.Officesdetails
@@ -374,11 +376,11 @@ namespace SahayataNidhi.Controllers
                     break;
 
                 // If you still need "TehsilAll" for backward compatibility, keep it as an alias:
-                case "TehsilAll":
-                    goto case "Tehsil";   // reuse exactly the same logic
+                case "tehsilall":
+                    goto case "tehsil";   // reuse exactly the same logic
 
                 // --------------------------------------------------------------------------------
-                case "Block":
+                case "block":
                     if (isOfficeField && officeTypeId.HasValue)
                     {
                         data = dbcontext.Officesdetails
@@ -399,7 +401,7 @@ namespace SahayataNidhi.Controllers
                     break;
 
                 // --------------------------------------------------------------------------------
-                case "Muncipality":
+                case "muncipality":
                     data = dbcontext.Muncipalities
                         .Where(m => m.Districtid == parentId)
                         .OrderBy(m => m.Muncipalityname)
@@ -407,7 +409,7 @@ namespace SahayataNidhi.Controllers
                         .ToList();
                     break;
 
-                case "Ward":
+                case "ward":
                     data = dbcontext.Wards
                         .Where(w => w.Muncipalityid == parentId)
                         .OrderBy(w => w.Wardcode)
@@ -415,7 +417,7 @@ namespace SahayataNidhi.Controllers
                         .ToList();
                     break;
 
-                case "HalqaPanchayat":
+                case "halqapanchayat":
                     data = dbcontext.Halqapanchayat
                         .Where(h => h.Blockid == parentId)
                         .OrderBy(h => h.Halqapanchayatname)
@@ -423,7 +425,7 @@ namespace SahayataNidhi.Controllers
                         .ToList();
                     break;
 
-                case "Village":
+                case "village":
                     data = dbcontext.Villages
                         .Where(v => v.Halqapanchayatid == parentId)
                         .OrderBy(v => v.Villagename)
