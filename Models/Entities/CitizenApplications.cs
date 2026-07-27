@@ -31,5 +31,15 @@ public partial class CitizenApplications
 
     public long? ApplId { get; set; }
 
+    public string? FormdetailsFlat { get; set; }
+
+    public string? LatestWfStatus { get; set; }
+
+    public string? LatestWfDesignation { get; set; }
+
+    public string? LatestWfCompletedAt { get; set; }
+
+    public int? Division { get; set; }
+
     public virtual ICollection<Corrigendum> Corrigendum { get; set; } = new List<Corrigendum>();
 }

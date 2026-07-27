@@ -23,9 +23,5 @@ public partial class Officesdetails
 
     public int Areacode { get; set; }
 
-    public virtual ICollection<Officesdetails> InverseParentofficedetail { get; set; } = new List<Officesdetails>();
-
     public virtual Offices Office { get; set; } = null!;
-
-    public virtual Officesdetails? Parentofficedetail { get; set; }
 }

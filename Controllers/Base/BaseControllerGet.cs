@@ -380,7 +380,7 @@ namespace SahayataNidhi.Controllers
                     goto case "tehsil";   // reuse exactly the same logic
 
                 // --------------------------------------------------------------------------------
-                case "block":
+                case "blocks":
                     if (isOfficeField && officeTypeId.HasValue)
                     {
                         data = dbcontext.Officesdetails
@@ -401,7 +401,7 @@ namespace SahayataNidhi.Controllers
                     break;
 
                 // --------------------------------------------------------------------------------
-                case "muncipality":
+                case "muncipalities":
                     data = dbcontext.Muncipalities
                         .Where(m => m.Districtid == parentId)
                         .OrderBy(m => m.Muncipalityname)
@@ -409,7 +409,7 @@ namespace SahayataNidhi.Controllers
                         .ToList();
                     break;
 
-                case "ward":
+                case "wards":
                     data = dbcontext.Wards
                         .Where(w => w.Muncipalityid == parentId)
                         .OrderBy(w => w.Wardcode)
@@ -425,7 +425,7 @@ namespace SahayataNidhi.Controllers
                         .ToList();
                     break;
 
-                case "village":
+                case "villages":
                     data = dbcontext.Villages
                         .Where(v => v.Halqapanchayatid == parentId)
                         .OrderBy(v => v.Villagename)
@@ -900,39 +900,45 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpGet]
+        [HttpGet]
         public IActionResult RedirectToCitizen(string username, bool isCitizen)
         {
             var clientToken = Request.Cookies["ClientToken"];
             var localUser = dbcontext.Users.FirstOrDefault(u => u.Username == username);
+            var frontendUrl = _config["AppSettings:FrontendUrl"] ?? "http://localhost:3000";
 
-            if (localUser == null)
-                return Json(new { url = $"{_config["AppSettings:FrontendUrl"]}/login" });
+            localUser!.Usertype = isCitizen ? "Officer" : "Citizen";
 
-            // PRESERVE ORIGINAL USER TYPE
-            var actualUserType = localUser.Usertype; // <-- This is the real role from DB
+            // Generate sessionId and pass to GenerateJwt
+            var sessionId = Guid.NewGuid();
+            var jwt = helper.GenerateJwt(localUser!, clientToken!, sessionId);
 
-            // Temporarily override for this session
-            localUser.Usertype = isCitizen ? "Officer" : "Citizen";
+            // Create session in database
+            var newSession = new Usersessions
+            {
+                Sessionid = sessionId,
+                Userid = localUser.Userid,
+                Jwttoken = jwt,
+                Logintime = DateTime.Now,
+                Lastactivitytime = DateTime.Now
+            };
 
-            var jwt = helper.GenerateJwt(localUser!, clientToken!);
+            _sessionRepo.AddSessionAsync(newSession).Wait(); // or make method async
 
             dynamic ssoResponse = new ExpandoObject();
             ssoResponse.status = true;
             ssoResponse.token = jwt;
-            ssoResponse.userType = localUser.Usertype;           // <-- current (switched) view
-            ssoResponse.actualUserType = actualUserType;         // <-- original DB role
-            ssoResponse.username = localUser.Username;
-            ssoResponse.userId = localUser.Userid;
+            ssoResponse.userType = localUser?.Usertype;
+            ssoResponse.username = localUser?.Username;
+            ssoResponse.userId = localUser?.Userid;
             ssoResponse.designation = "";
             ssoResponse.department = helper.GetDepartment(localUser!);
-            ssoResponse.profile = localUser.Profile ?? "/assets/images/profile.jpg";
-            ssoResponse.email = localUser.Email;
+            ssoResponse.profile = localUser?.Profile ?? "/assets/images/profile.jpg";
+            ssoResponse.email = localUser?.Email;
 
             var encoded = JsonConvert.SerializeObject(ssoResponse);
-            var frontendUrl = _config["AppSettings:FrontendUrl"] ?? "http://localhost:3000";
 
-            _logger.LogInformation("REDIRECTING TO FRONTEND: {Url}", $"{frontendUrl}/verification?sso={encoded}");
-
+            _logger.LogInformation("REDIRECTING TO FRONTEND: {Url}", $"{frontendUrl}?sso={encoded}");
             return Json(new { url = $"{frontendUrl}/verification?sso={encoded}" });
         }
     }

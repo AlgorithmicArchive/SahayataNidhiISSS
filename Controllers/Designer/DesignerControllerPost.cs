@@ -152,8 +152,8 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = "Failed to save configuration", error = ex.Message });
             }
         }
-      
-      
+
+
         [HttpPost]
         public async Task<IActionResult> SaveLetterDetails(int serviceId, string objField, string letterData)
         {
@@ -494,37 +494,43 @@ namespace SahayataNidhi.Controllers
             try
             {
                 if (serviceId <= 0)
-                {
                     return BadRequest(new { status = false, message = "Invalid service ID." });
-                }
 
                 if (string.IsNullOrWhiteSpace(submissionLimitConfig))
-                {
-                    return BadRequest(new { status = false, message = "SubmissionLimitConfig is required." });
-                }
+                    return BadRequest(new { status = false, message = "Config is required." });
 
+                JObject config;
                 try
                 {
-                    var config = JsonConvert.DeserializeObject<dynamic>(submissionLimitConfig);
-                    if (config!.isLimited == true)
-                    {
-                        string limitType = config.limitType?.ToString()!;
-                        int limitCount = config.limitCount != null ? (int)config.limitCount : 0;
-
-                        if (string.IsNullOrEmpty(limitType) || !new[] { "All Time", "Yearly", "Monthly", "Weekly", "Daily" }.Contains(limitType))
-                        {
-                            return BadRequest(new { status = false, message = "Invalid limit type. Must be 'All Time', 'Yearly', 'Monthly', 'Weekly', or 'Daily'." });
-                        }
-                        if (limitCount <= 0)
-                        {
-                            return BadRequest(new { status = false, message = "Limit count must be greater than zero when limits are enabled." });
-                        }
-                    }
+                    config = JObject.Parse(submissionLimitConfig);
                 }
                 catch (JsonException ex)
                 {
-                    _logger.LogError(ex, "Invalid SubmissionLimitConfig JSON format");
-                    return BadRequest(new { status = false, message = "Invalid SubmissionLimitConfig JSON format." });
+                    _logger.LogError(ex, "Invalid JSON");
+                    return BadRequest(new { status = false, message = "Invalid JSON format." });
+                }
+
+                bool isLimited = config["isLimited"]?.Value<bool>() ?? false;
+                var limits = config["limits"] as JArray ?? new JArray();
+
+                // Validation
+                if (isLimited && !limits.Any())
+                    return BadRequest(new { status = false, message = "At least one limit rule required." });
+
+                var usedTypes = new HashSet<string>();
+                foreach (var rule in limits)
+                {
+                    var limitType = rule["limitType"]?.ToString();
+                    var limitCount = rule["limitCount"]?.Value<int>() ?? 0;
+
+                    if (string.IsNullOrWhiteSpace(limitType) || !ValidLimitTypes.Contains(limitType))
+                        return BadRequest(new { status = false, message = $"Invalid limit type: {limitType}" });
+
+                    if (limitCount <= 0)
+                        return BadRequest(new { status = false, message = $"Limit count must be > 0 for {limitType}." });
+
+                    if (!usedTypes.Add(limitType))
+                        return BadRequest(new { status = false, message = $"Duplicate limit type: {limitType}." });
                 }
 
                 var service = await dbcontext.Services
@@ -532,20 +538,24 @@ namespace SahayataNidhi.Controllers
                     .FirstOrDefaultAsync();
 
                 if (service == null)
-                {
                     return NotFound(new { status = false, message = "Service not found." });
-                }
 
-                service.Submissionlimitconfig = submissionLimitConfig;
+                service.Submissionlimitconfig = JsonConvert.SerializeObject(new
+                {
+                    isLimited,
+                    limits = limits.ToObject<List<dynamic>>()
+                });
+
                 await dbcontext.SaveChangesAsync();
 
                 return Ok(new { status = true, message = "Configuration saved successfully." });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error saving service configuration");
-                return StatusCode(500, new { status = false, message = $"Error saving configuration: {ex.Message}" });
+                _logger.LogError(ex, "Error saving config for service {ServiceId}", serviceId);
+                return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
     }
+
 }

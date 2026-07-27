@@ -6,6 +6,7 @@ using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Microsoft.AspNetCore.Authorization;
 
 namespace SahayataNidhi.Controllers.User
 {
@@ -507,6 +508,8 @@ namespace SahayataNidhi.Controllers.User
         [HttpGet]
         public dynamic? GetUserDetails()
         {
+            _logger.LogInformation("All claims: {Claims}",
+        string.Join(", ", User.Claims.Select(c => $"{c.Type}={c.Value}")));
             // Retrieve userId from JWT token
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
@@ -772,6 +775,11 @@ namespace SahayataNidhi.Controllers.User
                     return BadRequest(new { status = false, message = "Invalid service ID." });
                 }
 
+                if (!int.TryParse(userId, out int citizenId))
+                {
+                    return BadRequest(new { status = false, message = "User ID must be a valid number." });
+                }
+
                 // Fetch SubmissionLimitConfig
                 var service = await dbcontext.Services
                     .AsNoTracking()
@@ -789,7 +797,7 @@ namespace SahayataNidhi.Controllers.User
                 try
                 {
                     config = JsonConvert.DeserializeObject(service.Submissionlimitconfig!)
-                             ?? new { isLimited = false, limitType = "", limitCount = 0 };
+                             ?? new { isLimited = false, limits = new List<object>() };
                 }
                 catch (JsonException)
                 {
@@ -801,79 +809,117 @@ namespace SahayataNidhi.Controllers.User
                     return Ok(new { status = true, canSubmit = true });
                 }
 
-                string limitType = config.limitType?.ToString()!;
-                int limitCount = config.limitCount != null ? (int)config.limitCount : 0;
-
-                if (string.IsNullOrEmpty(limitType) || !new[] { "All Time", "Yearly", "Monthly", "Weekly", "Daily" }.Contains(limitType))
-                {
-                    return BadRequest(new { status = false, message = "Invalid limit type in configuration. Must be 'All Time', 'Yearly', 'Monthly', 'Weekly', or 'Daily'." });
-                }
-
-                if (limitCount <= 0)
-                {
-                    return BadRequest(new { status = false, message = "Invalid limit count in configuration." });
-                }
-
-                // Define date range for submission count
-                DateTime? startDate = null;
-                if (limitType == "Yearly")
-                {
-                    startDate = new DateTime(DateTime.Now.Year, 1, 1);
-                }
-                else if (limitType == "Monthly")
-                {
-                    startDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
-                }
-                else if (limitType == "Weekly")
-                {
-                    startDate = DateTime.Now.AddDays(-(int)DateTime.Now.DayOfWeek);
-                }
-                else if (limitType == "Daily")
-                {
-                    startDate = DateTime.Now.Date;
-                }
-
-                // Fetch submissions
+                // Fetch all submissions for this citizen & service (do this once)
                 var submissions = await dbcontext.CitizenApplications
                     .AsNoTracking()
-                    .Where(s => s.Serviceid == serviceId && s.CitizenId == Convert.ToInt32(userId))
+                    .Where(s => s.Serviceid == serviceId && s.CitizenId == citizenId)
                     .Select(s => new { s.CreatedAt })
                     .ToListAsync();
 
-                // Count submissions within the date range
-                int submissionCount = 0;
-                if (limitType == "All Time")
-                {
-                    submissionCount = submissions.Count;
-                }
-                else
-                {
-                    var format = "dd MMM yyyy hh:mm:ss tt";
-                    var provider = CultureInfo.InvariantCulture;
-                    submissionCount = submissions.Count(s =>
+                var format = "dd MMM yyyy hh:mm:ss tt";
+                var provider = CultureInfo.InvariantCulture;
+
+                // Parse all submission dates once
+                var parsedDates = submissions
+                    .Select(s =>
                     {
-                        if (DateTime.TryParseExact(s.CreatedAt, format, provider, DateTimeStyles.None, out DateTime createdAt))
+                        DateTime.TryParseExact(s.CreatedAt, format, provider, DateTimeStyles.None, out DateTime dt);
+                        return dt;
+                    })
+                    .Where(dt => dt != default)
+                    .ToList();
+
+                // Handle new format (array of limits)
+                var limits = config.limits as JArray ?? config.limits as IEnumerable<dynamic>;
+
+                // Fallback: old single-rule format
+                if (limits == null && config.limitType != null)
+                {
+                    limits = new List<dynamic>
+            {
+                new { limitType = config.limitType.ToString(), limitCount = (int)config.limitCount }
+            };
+                }
+
+                if (limits == null || !limits.Any())
+                {
+                    return Ok(new { status = true, canSubmit = true });
+                }
+
+                var breachedLimits = new List<object>();
+                bool overallCanSubmit = true;
+
+                foreach (var rule in limits)
+                {
+                    string limitType = rule.limitType?.ToString()!;
+                    int limitCount = rule.limitCount != null ? (int)rule.limitCount : 0;
+
+                    if (string.IsNullOrEmpty(limitType) || !new[] { "All Time", "Yearly", "Monthly", "Weekly", "Daily" }.Contains(limitType))
+                    {
+                        continue; // Skip invalid rules, or return BadRequest if you prefer strictness
+                    }
+
+                    if (limitCount <= 0)
+                    {
+                        continue;
+                    }
+
+                    // Define date range
+                    DateTime? startDate = null;
+                    var now = DateTime.Now;
+
+                    switch (limitType)
+                    {
+                        case "Yearly":
+                            startDate = new DateTime(now.Year, 1, 1);
+                            break;
+                        case "Monthly":
+                            startDate = new DateTime(now.Year, now.Month, 1);
+                            break;
+                        case "Weekly":
+                            startDate = now.AddDays(-(int)now.DayOfWeek);
+                            break;
+                        case "Daily":
+                            startDate = now.Date;
+                            break;
+                    }
+
+                    // Count submissions
+                    int submissionCount = limitType == "All Time"
+                        ? parsedDates.Count
+                        : parsedDates.Count(dt => dt >= startDate!.Value);
+
+                    bool ruleCanSubmit = submissionCount < limitCount;
+
+                    if (!ruleCanSubmit)
+                    {
+                        overallCanSubmit = false;
+                        breachedLimits.Add(new
                         {
-                            return createdAt >= startDate!.Value;
-                        }
-                        return false;
+                            limitType,
+                            limitCount,
+                            currentCount = submissionCount
+                        });
+                    }
+                }
+
+                if (!overallCanSubmit)
+                {
+                    return Ok(new
+                    {
+                        status = true,
+                        canSubmit = false,
+                        message = "Submission limit exceeded for one or more rules.",
+                        breachedLimits
                     });
                 }
 
-                bool canSubmit = submissionCount < limitCount;
-
-                if (!canSubmit)
-                {
-                    return Ok(new { status = true, canSubmit, limitType, limitCount });
-                }
-
-                return Ok(new { status = true, canSubmit });
+                return Ok(new { status = true, canSubmit = true });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { status = false, message = $"Error checking submission limit: {ex.Message}" });
             }
         }
-
     }
 }

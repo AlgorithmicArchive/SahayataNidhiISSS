@@ -24,7 +24,10 @@ public class SessionRepository
             .FirstOrDefaultAsync();
     }
 
-
+    public async Task<Usersessions?> GetSessionByIdAsync(Guid sessionId)
+    {
+        return await _dbContext.Usersessions.FirstOrDefaultAsync(s => s.Sessionid == sessionId);
+    }
     public async Task AddSessionAsync(Usersessions session)
     {
         _dbContext.Usersessions.Add(session);
@@ -58,11 +61,13 @@ public class SessionRepository
     // Optional: if you need to delete a single session by ID (for logout)
     public async Task DeleteSessionById(Guid sessionId)
     {
-        var session = await _dbContext.Usersessions.FirstOrDefaultAsync(s => s.Sessionid == sessionId);
-        if (session != null)
+        var rowsAffected = await _dbContext.Usersessions
+            .Where(s => s.Sessionid == sessionId)
+            .ExecuteDeleteAsync();
+
+        if (rowsAffected == 0)
         {
-            _dbContext.Usersessions.Remove(session);
-            await _dbContext.SaveChangesAsync();
+            _logger.LogInformation("Session {SessionId} already deleted or not found", sessionId);
         }
     }
 

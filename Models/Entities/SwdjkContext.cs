@@ -99,6 +99,7 @@ public partial class SwdjkContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
+            .HasPostgresExtension("dblink")
             .HasPostgresExtension("pgcrypto")
             .HasPostgresExtension("uuid-ossp");
 
@@ -361,21 +362,35 @@ public partial class SwdjkContext : DbContext
 
             entity.ToTable("citizen_applications");
 
-            entity.HasIndex(e => new { e.Serviceid, e.Datatype }, "idx_citizen_applications_active").HasFilter("(status <> 'Incomplete'::text)");
+            entity.HasIndex(e => new { e.Referencenumber, e.Status, e.LatestWfStatus, e.LatestWfDesignation }, "idx_active_applications").HasFilter("(status <> ALL (ARRAY['Sanctioned'::text, 'Rejected'::text, 'Initiated'::text]))");
 
-            entity.HasIndex(e => e.ApplId, "idx_citizen_applications_appl_id");
+            entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.Status }, "idx_ca_service_datatype_status").HasFilter("(formdetails_flat IS NOT NULL)");
 
-            entity.HasIndex(e => e.CreatedAt, "idx_citizen_applications_created_at").IsDescending();
+            entity.HasIndex(e => new { e.Serviceid, e.LatestWfStatus }, "idx_ca_service_status").HasFilter("(workflow IS NOT NULL)");
 
-            entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.Status }, "idx_citizen_applications_service_datatype");
+            entity.HasIndex(e => new { e.Serviceid, e.Status, e.LatestWfStatus, e.LatestWfDesignation }, "idx_ca_service_status2_forwarded_desig").HasFilter("(workflow IS NOT NULL)");
 
-            entity.HasIndex(e => new { e.Serviceid, e.Status }, "idx_citizen_applications_service_status");
+            entity.HasIndex(e => new { e.Serviceid, e.LatestWfStatus, e.LatestWfDesignation }, "idx_ca_service_status_desig").HasFilter("(workflow IS NOT NULL)");
 
-            entity.HasIndex(e => e.Status, "idx_citizen_applications_status");
+            entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.LatestWfStatus }, "idx_ca_serviceid_workflow_notnull").HasFilter("(workflow IS NOT NULL)");
 
-            entity.HasIndex(e => e.Workflow, "idx_citizen_applications_workflow_gin").HasMethod("gin");
+            entity.HasIndex(e => e.CitizenId, "idx_citizen_id");
 
-            entity.HasIndex(e => e.Serviceid, "ix_citizen_applications_serviceid");
+            entity.HasIndex(e => e.Division, "idx_division");
+
+            entity.HasIndex(e => e.FormdetailsFlat, "idx_formdetails_flat_gin").HasMethod("gin");
+
+            entity.HasIndex(e => e.LatestWfDesignation, "idx_latest_wf_designation");
+
+            entity.HasIndex(e => e.LatestWfStatus, "idx_latest_wf_status");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Districtuidforbank }, "idx_serviceid_district");
+
+            entity.HasIndex(e => new { e.Status, e.LatestWfStatus, e.LatestWfCompletedAt }, "idx_status_wf_date");
+
+            entity.HasIndex(e => new { e.Status, e.LatestWfStatus }, "idx_status_wf_status");
+
+            entity.HasIndex(e => e.Workflow, "idx_workflow_gin").HasMethod("gin");
 
             entity.Property(e => e.Referencenumber)
                 .HasMaxLength(50)
@@ -395,9 +410,22 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Districtuidforbank)
                 .HasMaxLength(6)
                 .HasColumnName("districtuidforbank");
+            entity.Property(e => e.Division).HasColumnName("division");
             entity.Property(e => e.Formdetails)
                 .HasColumnType("jsonb")
                 .HasColumnName("formdetails");
+            entity.Property(e => e.FormdetailsFlat)
+                .HasColumnType("jsonb")
+                .HasColumnName("formdetails_flat");
+            entity.Property(e => e.LatestWfCompletedAt)
+                .HasMaxLength(20)
+                .HasColumnName("latest_wf_completed_at");
+            entity.Property(e => e.LatestWfDesignation)
+                .HasMaxLength(100)
+                .HasColumnName("latest_wf_designation");
+            entity.Property(e => e.LatestWfStatus)
+                .HasMaxLength(50)
+                .HasColumnName("latest_wf_status");
             entity.Property(e => e.Referencenumberalphanumeric)
                 .HasMaxLength(50)
                 .HasColumnName("referencenumberalphanumeric");
@@ -486,6 +514,28 @@ public partial class SwdjkContext : DbContext
 
             entity.ToTable("corrigendum");
 
+            entity.HasIndex(e => e.Datatype, "idx_corr_datatype");
+
+            entity.HasIndex(e => new { e.Referencenumber, e.LatestWfStatus, e.Type }, "idx_corr_latest_wf_status").HasFilter("((workflow IS NOT NULL) AND (jsonb_typeof(workflow) = 'array'::text))");
+
+            entity.HasIndex(e => e.Referencenumber, "idx_corr_legacy_prefix")
+                .HasFilter("((referencenumber)::text ~~ 'JK-SW-PNS/%'::text)")
+                .HasOperators(new[] { "text_pattern_ops" });
+
+            entity.HasIndex(e => new { e.Referencenumber, e.LatestWfDesignation, e.LatestWfStatus, e.Type }, "idx_corr_nonlegacy_service_desig_status").HasFilter("((referencenumber)::text !~~ 'JK-SW-PNS/%'::text)");
+
+            entity.HasIndex(e => new { e.Referencenumber, e.Type, e.Status }, "idx_corr_ref_type_status");
+
+            entity.HasIndex(e => e.Referencenumber, "idx_corr_referencenumber");
+
+            entity.HasIndex(e => e.Serviceid, "idx_corr_serviceid");
+
+            entity.HasIndex(e => new { e.Serviceid, e.LatestWfStatus }, "idx_corr_serviceid_status");
+
+            entity.HasIndex(e => new { e.Type, e.LatestWfStatus, e.LatestWfDesignation, e.Referencenumber }, "idx_corr_type_status_desig").HasFilter("(workflow IS NOT NULL)");
+
+            entity.HasIndex(e => new { e.Status, e.Type, e.Referencenumber }, "idx_corrigendum_status_type");
+
             entity.HasIndex(e => e.Workflow, "idx_corrigendum_workflow_gin").HasMethod("gin");
 
             entity.HasIndex(e => new { e.Referencenumber, e.Type, e.Status }, "ix_corrigendum_referencenumber_type_status");
@@ -501,15 +551,32 @@ public partial class SwdjkContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("createdat");
             entity.Property(e => e.Currentplayer).HasColumnName("currentplayer");
+            entity.Property(e => e.Datatype)
+                .HasDefaultValueSql("'new'::character varying")
+                .HasColumnType("character varying")
+                .HasColumnName("datatype");
             entity.Property(e => e.History)
                 .HasColumnType("jsonb")
                 .HasColumnName("history");
+            entity.Property(e => e.LatestWfCompletedAt)
+                .HasMaxLength(20)
+                .HasColumnName("latest_wf_completed_at");
+            entity.Property(e => e.LatestWfDesignation)
+                .HasMaxLength(100)
+                .HasColumnName("latest_wf_designation");
+            entity.Property(e => e.LatestWfStatus)
+                .HasMaxLength(50)
+                .HasColumnName("latest_wf_status");
             entity.Property(e => e.Location)
                 .HasColumnType("jsonb")
                 .HasColumnName("location");
+            entity.Property(e => e.LocationFlat)
+                .HasColumnType("jsonb")
+                .HasColumnName("location_flat");
             entity.Property(e => e.Referencenumber)
                 .HasMaxLength(50)
                 .HasColumnName("referencenumber");
+            entity.Property(e => e.Serviceid).HasColumnName("serviceid");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .HasColumnName("status");
@@ -804,11 +871,6 @@ public partial class SwdjkContext : DbContext
                 .HasForeignKey(d => d.Officeid)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_officesdetails_offices");
-
-            entity.HasOne(d => d.Parentofficedetail).WithMany(p => p.InverseParentofficedetail)
-                .HasForeignKey(d => d.Parentofficedetailid)
-                .OnDelete(DeleteBehavior.SetNull)
-                .HasConstraintName("fk_officesdetails_parent");
         });
 
         modelBuilder.Entity<Pensionpayments>(entity =>
@@ -1352,14 +1414,37 @@ public partial class SwdjkContext : DbContext
 
             entity.ToTable("withheld_applications");
 
+            entity.HasIndex(e => e.Datatype, "idx_wh_datatype");
+
+            entity.HasIndex(e => new { e.Serviceid, e.LatestWfStatus, e.Withheldtype }, "idx_wh_latest_wf_status").HasFilter("((iswithheld = true) AND (workflow IS NOT NULL))");
+
+            entity.HasIndex(e => e.Referencenumber, "idx_wh_legacy_prefix")
+                .HasFilter("((referencenumber)::text ~~ 'JK-SW-PNS/%'::text)")
+                .HasOperators(new[] { "text_pattern_ops" });
+
+            entity.HasIndex(e => new { e.Serviceid, e.LatestWfDesignation, e.LatestWfStatus, e.Iswithheld, e.Withheldtype }, "idx_wh_nonlegacy_service_desig_status").HasFilter("((referencenumber)::text !~~ 'JK-SW-PNS/%'::text)");
+
+            entity.HasIndex(e => e.Referencenumber, "idx_wh_referencenumber");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Iswithheld, e.LatestWfStatus, e.LatestWfDesignation }, "idx_wh_service_status_desig").HasFilter("((iswithheld = true) AND (workflow IS NOT NULL))");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Iswithheld, e.Referencenumber }, "idx_wh_service_withheld").HasFilter("(iswithheld = true)");
+
+            entity.HasIndex(e => e.Serviceid, "idx_wh_serviceid");
+
             entity.HasIndex(e => new { e.Serviceid, e.Iswithheld, e.Withheldtype }, "idx_withheld_applications_service_type");
 
             entity.HasIndex(e => e.Workflow, "idx_withheld_applications_workflow_gin").HasMethod("gin");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Iswithheld, e.Referencenumber }, "idx_withheld_service");
 
             entity.HasIndex(e => new { e.Serviceid, e.Iswithheld }, "ix_withheld_applications_serviceid_iswithheld");
 
             entity.Property(e => e.WithheldId).HasColumnName("withheld_id");
             entity.Property(e => e.Currentplayer).HasColumnName("currentplayer");
+            entity.Property(e => e.Datatype)
+                .HasColumnType("character varying")
+                .HasColumnName("datatype");
             entity.Property(e => e.Files)
                 .HasColumnType("jsonb")
                 .HasColumnName("files");
@@ -1369,9 +1454,21 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Iswithheld)
                 .HasDefaultValue(false)
                 .HasColumnName("iswithheld");
+            entity.Property(e => e.LatestWfCompletedAt)
+                .HasMaxLength(20)
+                .HasColumnName("latest_wf_completed_at");
+            entity.Property(e => e.LatestWfDesignation)
+                .HasMaxLength(100)
+                .HasColumnName("latest_wf_designation");
+            entity.Property(e => e.LatestWfStatus)
+                .HasMaxLength(50)
+                .HasColumnName("latest_wf_status");
             entity.Property(e => e.Location)
                 .HasColumnType("jsonb")
                 .HasColumnName("location");
+            entity.Property(e => e.LocationFlat)
+                .HasColumnType("jsonb")
+                .HasColumnName("location_flat");
             entity.Property(e => e.Referencenumber)
                 .HasMaxLength(50)
                 .HasColumnName("referencenumber");

@@ -17,5 +17,11 @@ namespace SahayataNidhi.Controllers
         {
             return View();
         }
+
+        private static readonly HashSet<string> ValidLimitTypes = new()
+        {
+            "All Time", "Yearly", "Monthly", "Weekly", "Daily"
+        };
+
     }
 }

@@ -25,5 +25,17 @@ public partial class Corrigendum
 
     public DateTime Createdat { get; set; }
 
+    public string? LatestWfStatus { get; set; }
+
+    public string? LatestWfDesignation { get; set; }
+
+    public string? LatestWfCompletedAt { get; set; }
+
+    public string? LocationFlat { get; set; }
+
+    public int? Serviceid { get; set; }
+
+    public string? Datatype { get; set; }
+
     public virtual CitizenApplications ReferencenumberNavigation { get; set; } = null!;
 }

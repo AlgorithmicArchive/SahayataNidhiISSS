@@ -480,6 +480,7 @@ namespace SahayataNidhi.Controllers.Officer
                     var corrigendum = new Corrigendum
                     {
                         Corrigendumid = CorrigendumNumber,
+                        Serviceid = serviceId,
                         Referencenumber = referenceNumber,
                         Location = location,
                         Corrigendumfields = JsonConvert.SerializeObject(corrigendumFields),
@@ -487,6 +488,7 @@ namespace SahayataNidhi.Controllers.Officer
                         Currentplayer = filteredWorkflow.Count > 1 ? 1 : 0,
                         History = JsonConvert.SerializeObject(History),
                         Status = "Initiated",
+                        Datatype = "new",
                         Type = type
                     };
 
@@ -1104,6 +1106,7 @@ namespace SahayataNidhi.Controllers.Officer
                     Withheldtype = withheldType,
                     Withheldreason = withheldReason,
                     Status = action == "approve" ? "Approved" : "Initiated",
+                    Datatype = "new",
                     Files = fileNames.Count > 0 ? JsonConvert.SerializeObject(fileNames) : null,
                 };
 

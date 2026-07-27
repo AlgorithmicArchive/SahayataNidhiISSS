@@ -90,7 +90,7 @@ namespace SahayataNidhi.Controllers
         }
 
 
-        [HttpPost]
+        [HttpGet]
         public async Task<IActionResult> InitiateSSO()
         {
             try
@@ -186,17 +186,42 @@ namespace SahayataNidhi.Controllers
                     return Unauthorized(new { status = false, response = "Token validation failed" });
                 }
 
+                var janUserJson = System.Text.Json.JsonSerializer.Serialize(janUser, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                });
+
+                _logger.LogInformation("COMPLETE JAN USER JSON: {JanUserJson}", janUserJson);
+
                 var localUser = await _helper.FindOrCreateJanParichayUser(janUser);
                 if (localUser == null)
                 {
                     _logger.LogError("USER CREATION FAILED");
-                    return StatusCode(500, new { status = false, response = "User creation failed" });
+                    return Redirect($"{frontendUrl}");
+                    // return StatusCode(500, new { status = false, response = "User creation failed" });
                 }
 
                 localUser.Usertype = char.ToUpper(localUser.Usertype![0])
                      + localUser.Usertype[1..];
 
-                var jwt = _helper.GenerateJwt(localUser, janUser.ClientToken);
+                // Generate ONE sessionId
+                var sessionId = Guid.NewGuid();
+
+                // Pass it to GenerateJwt
+                var jwt = _helper.GenerateJwt(localUser, janUser.ClientToken, sessionId);
+
+                // Create session with THE SAME sessionId
+                var newSession = new Usersessions
+                {
+                    Sessionid = sessionId,
+                    Userid = localUser.Userid,
+                    Jwttoken = jwt,
+                    Logintime = DateTime.Now,
+                    Lastactivitytime = DateTime.Now
+                };
+
+                await _sessionRepo.AddSessionAsync(newSession);
 
                 var cookieOptions = new CookieOptions
                 {
@@ -1463,12 +1488,12 @@ namespace SahayataNidhi.Controllers
                     "Success"
                 );
 
-                return Redirect("/login");
+                return Redirect("/");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Logout failed");
-                return Redirect("/login");
+                return Redirect("/");
             }
         }
 

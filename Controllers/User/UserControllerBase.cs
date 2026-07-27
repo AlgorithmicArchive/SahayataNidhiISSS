@@ -54,6 +54,25 @@ namespace SahayataNidhi.Controllers.User
             return View(details);
         }
 
+        [AllowAnonymous]
+        [HttpGet]
+        public IActionResult DebugAuth()
+        {
+            var result = new
+            {
+                HasAuthHeader = Request.Headers.ContainsKey("Authorization"),
+                AuthHeader = Request.Headers["Authorization"].FirstOrDefault()?.Substring(0, Math.Min(50, Request.Headers["Authorization"].FirstOrDefault()?.Length ?? 0)) + "...",
+                IsAuthenticated = User.Identity?.IsAuthenticated ?? false,
+                UserName = User.Identity?.Name,
+                Claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList(),
+                RemoteIp = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Scheme = Request.Scheme,
+                Host = Request.Host.ToString()
+            };
+
+            return Ok(result);
+        }
+
         public IActionResult GetServiceNames()
         {
             var services = dbcontext.Services.ToList();

@@ -101,7 +101,7 @@ export default function Verification() {
       setRedirecting(true);
       navigate(redirectPath, { replace: true });
     },
-    [navigate]
+    [navigate],
   );
 
   // Process SSO data from URL
@@ -124,7 +124,7 @@ export default function Verification() {
       if (!ssoData.status || !ssoData.token) {
         throw new Error("Invalid SSO data format");
       }
-
+      console.log("SSO Data received:", ssoData);
       const decodedToken = jwtDecode(ssoData.token);
       const currentTime = Date.now() / 1000;
       if (decodedToken.exp && decodedToken.exp < currentTime) {
@@ -141,7 +141,7 @@ export default function Verification() {
       sessionStorage.setItem("department", ssoData.department || "");
       sessionStorage.setItem(
         "actualUserType",
-        ssoData.actualUserType || ssoData.userType
+        ssoData.actualUserType || ssoData.userType,
       );
       sessionStorage.setItem("verified", "true");
 
@@ -257,8 +257,8 @@ export default function Verification() {
       try {
         const response = await fetch(
           `${API_BASE}/Home/SendLoginOtp?username=${encodeURIComponent(
-            currentUsername
-          )}`
+            currentUsername,
+          )}`,
         );
 
         if (!response.ok) {
@@ -269,8 +269,7 @@ export default function Verification() {
 
         if (data.status) {
           setOtpMessage(
-            data.message ||
-            "OTP sent to your registered email and mobile."
+            data.message || "OTP sent to your registered email and mobile.",
           );
         } else {
           const errorMsg = data.message || "Failed to send OTP.";
@@ -286,7 +285,7 @@ export default function Verification() {
       } catch (error) {
         console.error("Error sending OTP:", error);
         setErrorMessage(
-          "Network error. Please check your connection and try again."
+          "Network error. Please check your connection and try again.",
         );
       } finally {
         setIsSendingOtp(false);
@@ -355,7 +354,9 @@ export default function Verification() {
 
         redirectBasedOnUserType(response.userType);
       } else {
-        setErrorMessage(response.message || "Verification failed. Please try again.");
+        setErrorMessage(
+          response.message || "Verification failed. Please try again.",
+        );
       }
     } catch (error) {
       console.error("Verification error:", error);
@@ -379,8 +380,8 @@ export default function Verification() {
     try {
       const response = await fetch(
         `${API_BASE}/Home/SendLoginOtp?username=${encodeURIComponent(
-          currentUsername
-        )}`
+          currentUsername,
+        )}`,
       );
 
       if (!response.ok) {
@@ -391,8 +392,7 @@ export default function Verification() {
 
       if (data.status) {
         setOtpMessage(
-          data.message ||
-          "OTP sent to your registered email and mobile."
+          data.message || "OTP sent to your registered email and mobile.",
         );
       } else {
         const errorMsg = data.message || "Failed to send OTP.";
@@ -428,7 +428,11 @@ export default function Verification() {
           bgcolor: "background.default",
         }}
       >
-        <CircularProgress size={60} thickness={4} sx={{ color: "primary.main" }} />
+        <CircularProgress
+          size={60}
+          thickness={4}
+          sx={{ color: "primary.main" }}
+        />
         <Typography variant="h6" color="text.primary" fontWeight="medium">
           {redirecting ? "Redirecting..." : "Completing your login..."}
         </Typography>
@@ -495,7 +499,11 @@ export default function Verification() {
           bgcolor: "background.default",
         }}
       >
-        <CircularProgress size={60} thickness={4} sx={{ color: "primary.main" }} />
+        <CircularProgress
+          size={60}
+          thickness={4}
+          sx={{ color: "primary.main" }}
+        />
         <Typography variant="h6" color="text.primary" fontWeight="medium">
           Redirecting...
         </Typography>

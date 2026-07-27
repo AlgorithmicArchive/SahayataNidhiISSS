@@ -30,4 +30,14 @@ public partial class WithheldApplications
     public string? Status { get; set; }
 
     public DateOnly? Withheldon { get; set; }
+
+    public string? LatestWfStatus { get; set; }
+
+    public string? LatestWfDesignation { get; set; }
+
+    public string? LatestWfCompletedAt { get; set; }
+
+    public string? LocationFlat { get; set; }
+
+    public string? Datatype { get; set; }
 }

@@ -100,7 +100,11 @@ const submitButtonStyles = {
 };
 
 // New component to display previous officers' details
-const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => {
+const PreviousOfficersDetails = ({
+  previousOfficersDetails,
+  open,
+  setOpen,
+}) => {
   const getStatusIcon = (status) => {
     if (status?.toLowerCase() === "approved") {
       return <CheckCircle sx={{ color: "#4caf50", mr: 1 }} />;
@@ -132,23 +136,29 @@ const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => 
     <Box sx={{ width: "100%", mx: "auto", mb: 3 }}>
       <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
         <Tooltip
-          title={open ? "Hide previous officers' details" : "Show previous officers' details"}
+          title={
+            open
+              ? "Hide previous officers' details"
+              : "Show previous officers' details"
+          }
           arrow
         >
           <Button
             onClick={() => setOpen(!open)}
             sx={buttonStyles}
             endIcon={
-              open ? (
-                <RemoveCircleOutlineSharp />
-              ) : (
-                <AddCircleOutlineSharp />
-              )
+              open ? <RemoveCircleOutlineSharp /> : <AddCircleOutlineSharp />
             }
             aria-expanded={open}
-            aria-label={open ? "Hide previous officers' details" : "Show previous officers' details"}
+            aria-label={
+              open
+                ? "Hide previous officers' details"
+                : "Show previous officers' details"
+            }
           >
-            {open ? "Hide Previous Officers' Actions" : "Show Previous Officers' Actions"}
+            {open
+              ? "Hide Previous Officers' Actions"
+              : "Show Previous Officers' Actions"}
           </Button>
         </Tooltip>
       </Box>
@@ -163,14 +173,28 @@ const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => 
                 boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
                 "&:hover": {
                   boxShadow: "0 4px 16px rgba(0, 0, 0, 0.12)",
-                }
+                },
               }}
             >
               <CardContent>
                 {/* Officer Header */}
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    mb: 2,
+                  }}
+                >
                   <Box sx={{ display: "flex", alignItems: "center" }}>
-                    <Avatar sx={{ bgcolor: "primary.main", mr: 2, width: 40, height: 40 }}>
+                    <Avatar
+                      sx={{
+                        bgcolor: "primary.main",
+                        mr: 2,
+                        width: 40,
+                        height: 40,
+                      }}
+                    >
                       {officer.officerDesignation?.charAt(0) || "O"}
                     </Avatar>
                     <Box>
@@ -182,9 +206,19 @@ const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => 
                       </Typography>
                     </Box>
                   </Box>
-                  <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                    }}
+                  >
                     {getStatusChip(officer.status)}
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ mt: 1 }}
+                    >
                       Step {officer.playerIndex + 1}
                     </Typography>
                   </Box>
@@ -195,7 +229,11 @@ const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => 
                 {/* Remarks Section */}
                 {officer.remarks && (
                   <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 600, mb: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      color="primary"
+                      sx={{ fontWeight: 600, mb: 1 }}
+                    >
                       Remarks
                     </Typography>
                     <Typography
@@ -216,7 +254,11 @@ const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => 
                 {/* Recommendation Section */}
                 {(officer.recommendation || officer.recommendationRemarks) && (
                   <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" color="secondary" sx={{ fontWeight: 600, mb: 1 }}>
+                    <Typography
+                      variant="subtitle2"
+                      color="secondary"
+                      sx={{ fontWeight: 600, mb: 1 }}
+                    >
                       Recommendation
                     </Typography>
                     {officer.recommendation && (
@@ -249,81 +291,109 @@ const PreviousOfficersDetails = ({ previousOfficersDetails, open, setOpen }) => 
                 )}
 
                 {/* Declaration Section */}
-                {officer.additionalDetails && Object.keys(officer.additionalDetails).length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: "text.primary" }}>
-                      Additional Details
-                    </Typography>
-                    {Object.entries(officer.additionalDetails).map(([key, value]) => {
-                      if (!value || String(value).trim() === "") return null;
+                {officer.additionalDetails &&
+                  Object.keys(officer.additionalDetails).length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 600, mb: 1, color: "text.primary" }}
+                      >
+                        Additional Details
+                      </Typography>
+                      {Object.entries(officer.additionalDetails).map(
+                        ([key, value]) => {
+                          if (!value || String(value).trim() === "")
+                            return null;
 
-                      const isDeclaration = key.toLowerCase().includes("declaration");
-                      const formattedKey = key
-                        .replace(/([A-Z])/g, " $1")
-                        .replace(/_/g, " ")
-                        .trim()
-                        .replace(/^./, str => str.toUpperCase());
+                          const isDeclaration = key
+                            .toLowerCase()
+                            .includes("declaration");
+                          const formattedKey = key
+                            .replace(/([A-Z])/g, " $1")
+                            .replace(/_/g, " ")
+                            .trim()
+                            .replace(/^./, (str) => str.toUpperCase());
 
-                      return (
-                        <Box key={key} sx={{ mb: 1.5 }}>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                            {formattedKey}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              p: 1.5,
-                              bgcolor: isDeclaration ? "#fff3e0" : "background.default",
-                              borderRadius: "6px",
-                              borderLeft: "3px solid",
-                              borderColor: isDeclaration ? "warning.main" : "grey.400",
-                              fontStyle: isDeclaration ? "italic" : "normal",
-                              whiteSpace: "pre-wrap",
-                            }}
-                          >
-                            {String(value)}
-                          </Typography>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                )}
+                          return (
+                            <Box key={key} sx={{ mb: 1.5 }}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ display: "block", mb: 0.5 }}
+                              >
+                                {formattedKey}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  p: 1.5,
+                                  bgcolor: isDeclaration
+                                    ? "#fff3e0"
+                                    : "background.default",
+                                  borderRadius: "6px",
+                                  borderLeft: "3px solid",
+                                  borderColor: isDeclaration
+                                    ? "warning.main"
+                                    : "grey.400",
+                                  fontStyle: isDeclaration
+                                    ? "italic"
+                                    : "normal",
+                                  whiteSpace: "pre-wrap",
+                                }}
+                              >
+                                {String(value)}
+                              </Typography>
+                            </Box>
+                          );
+                        },
+                      )}
+                    </Box>
+                  )}
 
                 {/* Action Form Fields */}
-                {officer.actionFormFields && officer.actionFormFields.length > 0 && (
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: "text.primary" }}>
-                      Action Form Fields
-                    </Typography>
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
-                      {officer.actionFormFields.map((field, fieldIndex) => (
-                        field.value && field.label ? (
-                          <Chip
-                            key={fieldIndex}
-                            label={`${field.label}: ${field.value}`}
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                              borderColor: "primary.light",
-                              color: "text.primary",
-                              fontSize: "0.75rem"
-                            }}
-                          />
-                        ) : null
-                      ))}
+                {officer.actionFormFields &&
+                  officer.actionFormFields.length > 0 && (
+                    <Box>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ fontWeight: 600, mb: 1, color: "text.primary" }}
+                      >
+                        Action Form Fields
+                      </Typography>
+                      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                        {officer.actionFormFields.map((field, fieldIndex) =>
+                          field.value && field.label ? (
+                            <Chip
+                              key={fieldIndex}
+                              label={`${field.label}: ${field.value}`}
+                              size="small"
+                              variant="outlined"
+                              sx={{
+                                borderColor: "primary.light",
+                                color: "text.primary",
+                                fontSize: "0.75rem",
+                              }}
+                            />
+                          ) : null,
+                        )}
+                      </Box>
                     </Box>
-                  </Box>
-                )}
+                  )}
 
                 {/* Action Date */}
                 {officer.actionDate && (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2, textAlign: "right" }}>
-                    Action taken on: {new Date(officer.actionDate).toLocaleDateString('en-IN', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 2, textAlign: "right" }}
+                  >
+                    Action taken on:{" "}
+                    {new Date(officer.actionDate).toLocaleDateString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
                     })}
                   </Typography>
                 )}
@@ -414,18 +484,18 @@ const CollapsibleCorrigendumTable = ({
     <Box sx={{ width: "100%", mx: "auto", mb: 3 }}>
       <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
         <Tooltip
-          title={open ? `Collapse ${title.toLowerCase()}` : `Expand ${title.toLowerCase()}`}
+          title={
+            open
+              ? `Collapse ${title.toLowerCase()}`
+              : `Expand ${title.toLowerCase()}`
+          }
           arrow
         >
           <Button
             onClick={() => setOpen(!open)}
             sx={buttonStyles}
             endIcon={
-              open ? (
-                <RemoveCircleOutlineSharp />
-              ) : (
-                <AddCircleOutlineSharp />
-              )
+              open ? <RemoveCircleOutlineSharp /> : <AddCircleOutlineSharp />
             }
             aria-expanded={open}
             aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
@@ -462,18 +532,18 @@ const CollapsibleAttachments = ({
     <Box sx={{ width: "100%", mx: "auto", mb: 3 }}>
       <Box sx={{ display: "flex", justifyContent: "center", mb: 2 }}>
         <Tooltip
-          title={open ? `Collapse ${title.toLowerCase()}` : `Expand ${title.toLowerCase()}`}
+          title={
+            open
+              ? `Collapse ${title.toLowerCase()}`
+              : `Expand ${title.toLowerCase()}`
+          }
           arrow
         >
           <Button
             onClick={() => setOpen(!open)}
             sx={buttonStyles}
             endIcon={
-              open ? (
-                <RemoveCircleOutlineSharp />
-              ) : (
-                <AddCircleOutlineSharp />
-              )
+              open ? <RemoveCircleOutlineSharp /> : <AddCircleOutlineSharp />
             }
             aria-expanded={open}
             aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
@@ -545,7 +615,12 @@ const CollapsibleAttachments = ({
 };
 
 // Helper function to replace placeholders with actual values (SAFE VERSION)
-const processDeclaration = (declarationText, declarationFields, formDetails, applicationId) => {
+const processDeclaration = (
+  declarationText,
+  declarationFields,
+  formDetails,
+  applicationId,
+) => {
   if (!declarationText) return "";
 
   let processedText = declarationText;
@@ -554,7 +629,7 @@ const processDeclaration = (declarationText, declarationFields, formDetails, app
   const fieldsArray = Array.isArray(declarationFields) ? declarationFields : [];
 
   // Replace each placeholder with actual value from formDetails
-  fieldsArray.forEach(field => {
+  fieldsArray.forEach((field) => {
     if (!field || !field.name) return;
 
     const placeholder = `{${field.name}}`;
@@ -566,9 +641,12 @@ const processDeclaration = (declarationText, declarationFields, formDetails, app
     }
 
     // If still no value, use applicationId for referencenumber placeholder
-    if (!value && (field.name.toLowerCase().includes('referencenumber') ||
-      field.name.toLowerCase().includes('reference') ||
-      field.name.toLowerCase().includes('applicationno'))) {
+    if (
+      !value &&
+      (field.name.toLowerCase().includes("referencenumber") ||
+        field.name.toLowerCase().includes("reference") ||
+        field.name.toLowerCase().includes("applicationno"))
+    ) {
       value = applicationId || "";
     }
 
@@ -581,7 +659,10 @@ const processDeclaration = (declarationText, declarationFields, formDetails, app
 
     // Only replace if placeholder exists in the text
     if (processedText.includes(placeholder)) {
-      processedText = processedText.replace(new RegExp(placeholder, 'g'), value);
+      processedText = processedText.replace(
+        new RegExp(placeholder, "g"),
+        value,
+      );
     }
   });
 
@@ -593,19 +674,27 @@ const getValueByName = (data, name) => {
   if (!data || !name) return null;
 
   // If data is not an object, return null
-  if (typeof data !== 'object' || data === null) {
+  if (typeof data !== "object" || data === null) {
     return null;
   }
 
   // Check if data is an array (iterate through sections)
   if (Array.isArray(data)) {
     for (const field of data) {
-      if (field && typeof field === 'object' && field.name === name) {
-        return field.value || field.File || field.Enclosure || field.Photo || null;
+      if (field && typeof field === "object" && field.name === name) {
+        return (
+          field.value || field.File || field.Enclosure || field.Photo || null
+        );
       }
       // Check additionalFields if present
-      if (field && field.additionalFields && typeof field.additionalFields === 'object') {
-        for (const additionalFieldArray of Object.values(field.additionalFields)) {
+      if (
+        field &&
+        field.additionalFields &&
+        typeof field.additionalFields === "object"
+      ) {
+        for (const additionalFieldArray of Object.values(
+          field.additionalFields,
+        )) {
           if (Array.isArray(additionalFieldArray)) {
             for (const subField of additionalFieldArray) {
               if (subField && subField.name === name) {
@@ -623,12 +712,20 @@ const getValueByName = (data, name) => {
   for (const section of Object.values(data)) {
     if (Array.isArray(section)) {
       for (const field of section) {
-        if (field && typeof field === 'object' && field.name === name) {
-          return field.value || field.File || field.Enclosure || field.Photo || null;
+        if (field && typeof field === "object" && field.name === name) {
+          return (
+            field.value || field.File || field.Enclosure || field.Photo || null
+          );
         }
         // Check additionalFields if present
-        if (field && field.additionalFields && typeof field.additionalFields === 'object') {
-          for (const additionalFieldArray of Object.values(field.additionalFields)) {
+        if (
+          field &&
+          field.additionalFields &&
+          typeof field.additionalFields === "object"
+        ) {
+          for (const additionalFieldArray of Object.values(
+            field.additionalFields,
+          )) {
             if (Array.isArray(additionalFieldArray)) {
               for (const subField of additionalFieldArray) {
                 if (subField && subField.name === name) {
@@ -711,7 +808,7 @@ export default function UserDetails() {
       try {
         // Call the API directly to get all data including corrigendum
         const response = await axiosInstance.get("/Officer/GetUserDetails", {
-          params: { applicationId }
+          params: { applicationId },
         });
 
         if (response.data.error) {
@@ -745,24 +842,26 @@ export default function UserDetails() {
             setActionForm(Array.isArray(actionFormData) ? actionFormData : []);
 
             // Find dynamic declaration in additionalFields
-            const defaultActionField = actionFormData.find(field => field.name === "defaultAction");
+            const defaultActionField = actionFormData.find(
+              (field) => field.name === "defaultAction",
+            );
             if (defaultActionField?.additionalFields?.Forward) {
               // Find declaration checkbox in Forward additionalFields
-              const declarationField = defaultActionField.additionalFields.Forward.find(
-                field => field.isConsentCheckbox && field.isDeclaration
-              );
+              const declarationField =
+                defaultActionField.additionalFields.Forward.find(
+                  (field) => field.isConsentCheckbox && field.isDeclaration,
+                );
               if (declarationField) {
                 setDynamicDeclaration({
                   declaration: declarationField.declaration,
                   declarationFields: declarationField.declarationFields,
-                  fieldId: declarationField.id
+                  fieldId: declarationField.id,
                 });
                 console.log("Found dynamic declaration:", declarationField);
               }
             }
           }
         }
-
       } catch (error) {
         console.error("Error fetching user details:", error);
         toast.error("Failed to load user details. Please try again.", {
@@ -842,8 +941,8 @@ export default function UserDetails() {
     } catch (error) {
       throw new Error(
         "Error signing PDF: " +
-        error.message +
-        " Check if Desktop App is started.",
+          error.message +
+          " Check if Desktop App is started.",
       );
     }
   }
@@ -941,7 +1040,7 @@ export default function UserDetails() {
       if (!updateResponse.data.status) {
         throw new Error(
           "Failed to update PDF on server: " +
-          (updateResponse.data.response || "Unknown error"),
+            (updateResponse.data.response || "Unknown error"),
         );
       }
 
@@ -1193,7 +1292,8 @@ export default function UserDetails() {
 
     for (const [key, value] of Object.entries(data)) {
       // Skip defaultAction and Remarks (both sent separately)
-      if (key === "defaultAction" || key === "Remarks" || key === "remarks") continue;
+      if (key === "defaultAction" || key === "Remarks" || key === "remarks")
+        continue;
 
       if (value == null) {
         additionalDetails[key] = "";
@@ -1208,10 +1308,17 @@ export default function UserDetails() {
         cleanedValue = value.name || "";
       }
       // Handle enclosure-style object { selected, file } or similar
-      else if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+      else if (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+      ) {
         cleanedValue = { ...value };
         ["file", "File", "Enclosure", "Photo"].forEach((fileProp) => {
-          if (cleanedValue[fileProp] && cleanedValue[fileProp] instanceof File) {
+          if (
+            cleanedValue[fileProp] &&
+            cleanedValue[fileProp] instanceof File
+          ) {
             formData.append(key, cleanedValue[fileProp]);
             cleanedValue[fileProp] = cleanedValue[fileProp].name || "";
           }
@@ -1243,7 +1350,7 @@ export default function UserDetails() {
     try {
       const { data: result } = await axiosInstance.post(
         "/Officer/HandleAction",
-        formData
+        formData,
       );
 
       if (!result.status) {
@@ -1253,7 +1360,7 @@ export default function UserDetails() {
       setCanTakeAction(false);
 
       const actionField = actionForm.find(
-        (field) => field.name === "defaultAction"
+        (field) => field.name === "defaultAction",
       );
       const actionLabel =
         actionField?.options.find((option) => option.value === defaultAction)
@@ -1353,7 +1460,7 @@ export default function UserDetails() {
                 margin="normal"
                 inputProps={{
                   maxLength: field.validationFunctions?.includes(
-                    "specificLength"
+                    "specificLength",
                   )
                     ? field.maxLength
                     : undefined,
@@ -1459,7 +1566,7 @@ export default function UserDetails() {
                                   unregister(nestedFieldName, {
                                     keepValue: false,
                                   });
-                                }
+                                },
                               );
                             }
                           });
@@ -1490,7 +1597,10 @@ export default function UserDetails() {
                           `${field.name}_${additionalField.id}`;
 
                         // Handle checkbox with declaration specially
-                        if (additionalField.type === "checkbox" && additionalField.isDeclaration) {
+                        if (
+                          additionalField.type === "checkbox" &&
+                          additionalField.isDeclaration
+                        ) {
                           const declarationText = getDeclarationText();
                           return (
                             <Controller
@@ -1521,7 +1631,7 @@ export default function UserDetails() {
                                           onChange(
                                             e.target.checked
                                               ? declarationText
-                                              : ""
+                                              : "",
                                           );
                                         }}
                                         color="primary"
@@ -1553,7 +1663,7 @@ export default function UserDetails() {
                             </InputLabel>
                             {renderField(
                               { ...additionalField, name: additionalFieldName },
-                              sectionIndex
+                              sectionIndex,
                             )}
                           </Box>
                         );
@@ -1694,7 +1804,7 @@ export default function UserDetails() {
           dynamicDeclaration.declaration,
           dynamicDeclaration.declarationFields,
           formDetails,
-          applicationId
+          applicationId,
         );
       }
       // else {
@@ -1776,38 +1886,44 @@ export default function UserDetails() {
         />
 
         {/* Corrigendum Fields Table - Added below Movement History */}
-        {corrigendumData && corrigendumData.fieldChanges && corrigendumData.fieldChanges.length > 0 && (
-          <CollapsibleCorrigendumTable
-            title={`Application details Updated`}
-            columns={[
-              { accessorKey: "sno", header: "S.No." },
-              { accessorKey: "formField", header: "Description" },
-              { accessorKey: "oldvalue", header: "As Existing" },
-              {
-                accessorKey: "newvalue",
-                header: corrigendumData.corrigendumType === "Amendment"
-                  ? "As Updated"
-                  : "As Corrected"
-              },
-            ]}
-            data={corrigendumData.fieldChanges}
-            open={corrigendumOpen}
-            setOpen={setCorrigendumOpen}
-            onViewPdf={handleViewPdf}
-          />
-        )}
+        {corrigendumData &&
+          corrigendumData.fieldChanges &&
+          corrigendumData.fieldChanges.length > 0 && (
+            <CollapsibleCorrigendumTable
+              title={`Application details Updated`}
+              columns={[
+                { accessorKey: "sno", header: "S.No." },
+                { accessorKey: "formField", header: "Description" },
+                { accessorKey: "oldvalue", header: "As Existing" },
+                {
+                  accessorKey: "newvalue",
+                  header:
+                    corrigendumData.corrigendumType === "Amendment"
+                      ? "As Updated"
+                      : "As Corrected",
+                },
+              ]}
+              data={corrigendumData.fieldChanges}
+              open={corrigendumOpen}
+              setOpen={setCorrigendumOpen}
+              onViewPdf={handleViewPdf}
+            />
+          )}
 
         {/* Corrigendum Attachments Section - Updated to match design */}
-        {corrigendumData && corrigendumData.files && corrigendumData.fieldChanges.length > 0 && corrigendumData.files.length > 0 && (
-          <CollapsibleAttachments
-            title={`Application Details Updated Attachments`}
-            files={corrigendumData.files}
-            corrigendumType={corrigendumData.corrigendumType}
-            open={attachmentsOpen}
-            setOpen={setAttachmentsOpen}
-            onViewPdf={handleViewPdf}
-          />
-        )}
+        {corrigendumData &&
+          corrigendumData.files &&
+          corrigendumData.fieldChanges.length > 0 &&
+          corrigendumData.files.length > 0 && (
+            <CollapsibleAttachments
+              title={`Application Details Updated Attachments`}
+              files={corrigendumData.files}
+              corrigendumType={corrigendumData.corrigendumType}
+              open={attachmentsOpen}
+              setOpen={setAttachmentsOpen}
+              onViewPdf={handleViewPdf}
+            />
+          )}
 
         <Box sx={{ display: "flex", justifyContent: "center", my: 4 }}>
           <CustomButton
@@ -1896,7 +2012,9 @@ export default function UserDetails() {
                                         formatKey={formatKey}
                                       />
                                       {errors.returnFields && (
-                                        <FormHelperText sx={{ color: "error.main" }}>
+                                        <FormHelperText
+                                          sx={{ color: "error.main" }}
+                                        >
                                           {errors.returnFields.message}
                                         </FormHelperText>
                                       )}
@@ -2019,7 +2137,7 @@ export default function UserDetails() {
                     onChange={(e) => setSigningMethod(e.target.value)}
                   >
                     <MenuItem value="dsc">DSC (USB Token)</MenuItem>
-                    <MenuItem value="esign">eSign (Aadhaar)</MenuItem>
+                    {/* <MenuItem value="esign">eSign (Aadhaar)</MenuItem> */}
                   </Select>
                 </FormControl>
                 {signingMethod === "esign" && (

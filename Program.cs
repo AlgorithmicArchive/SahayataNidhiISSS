@@ -144,13 +144,10 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<RsaKeyService>();
 
-builder.Services.AddScoped<SessionValidationFilter>();
-
-// Then, after AddControllersWithViews:
 builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add<SessionValidationFilter>();
-});
+}).AddRazorRuntimeCompilation();
 
 // ============================================================
 // 4. Enforce HTTPS globally (RequireHttps filter)
@@ -231,6 +228,7 @@ app.MapHub<SessionHub>("/sessionHub");
 app.UseMiddleware<SecurityMiddleware>();
 
 app.UseAuthentication();
+app.UseMiddleware<JanParichayValidationMiddleware>();
 app.UseAuthorization();
 
 app.MapHub<ProgressHub>("/progressHub");

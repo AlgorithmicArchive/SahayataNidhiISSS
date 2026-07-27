@@ -587,9 +587,7 @@ namespace SahayataNidhi.Controllers
             try
             {
                 if (serviceId <= 0)
-                {
                     return BadRequest(new { status = false, message = "Invalid service ID." });
-                }
 
                 var service = await dbcontext.Services
                     .AsNoTracking()
@@ -598,35 +596,52 @@ namespace SahayataNidhi.Controllers
                     .FirstOrDefaultAsync();
 
                 if (service == null)
-                {
                     return NotFound(new { status = false, message = "Service not found." });
-                }
+
+                object config;
 
                 try
                 {
-                    var config = JsonConvert.DeserializeObject<dynamic>(service.Submissionlimitconfig!);
-                    return Ok(new { status = true, config });
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogError(ex, "Failed to deserialize JSON config");
-                    // Return default config if JSON is invalid
-                    return Ok(new
+                    var parsed = JObject.Parse(service.Submissionlimitconfig!);
+
+                    // New format: has "limits" array
+                    if (parsed["limits"] != null)
                     {
-                        status = true,
                         config = new
                         {
-                            isLimited = false,
-                            limitType = "",
-                            limitCount = 0
+                            isLimited = parsed["isLimited"]?.Value<bool>() ?? false,
+                            limits = parsed["limits"]?.ToObject<List<dynamic>>() ?? new List<dynamic>()
+                        };
+                    }
+                    // Old format: migrate on-the-fly
+                    else
+                    {
+                        var isLimited = parsed["isLimited"]?.Value<bool>() ?? false;
+                        var limits = new List<object>();
+
+                        if (isLimited && !string.IsNullOrEmpty(parsed["limitType"]?.ToString()))
+                        {
+                            limits.Add(new
+                            {
+                                limitType = parsed["limitType"]!.ToString(),
+                                limitCount = parsed["limitCount"]?.Value<int>() ?? 0
+                            });
                         }
-                    });
+
+                        config = new { isLimited, limits };
+                    }
                 }
+                catch
+                {
+                    config = new { isLimited = false, limits = new List<object>() };
+                }
+
+                return Ok(new { status = true, config });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching service configuration");
-                return StatusCode(500, new { status = false, message = $"Error fetching configuration: {ex.Message}" });
+                _logger.LogError(ex, "Error fetching config for service {ServiceId}", serviceId);
+                return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
 

@@ -13,11 +13,20 @@ import {
   Box,
   CircularProgress,
   Alert,
+  IconButton,
+  Chip,
+  Divider,
+  Grid,
+  Paper,
 } from "@mui/material";
+import DeleteIcon from "@mui/icons-material/Delete";
+import AddIcon from "@mui/icons-material/Add";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axiosInstance from "../../axiosConfig";
 import { UserContext } from "../../UserContext";
+
+const LIMIT_TYPES = ["All Time", "Yearly", "Monthly", "Weekly", "Daily"];
 
 export default function SubmissionLimitations() {
   const { userType, officerAuthorities } = useContext(UserContext);
@@ -25,20 +34,13 @@ export default function SubmissionLimitations() {
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [config, setConfig] = useState({
     isLimited: false,
-    limitType: "",
-    limitCount: 0,
+    limits: [],
   });
   const [isFetchingServices, setIsFetchingServices] = useState(false);
   const [isFetchingConfig, setIsFetchingConfig] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  // Log UserContext values for debugging
-  useEffect(() => {
-    console.log("UserContext Values:", { userType, officerAuthorities });
-  }, [userType, officerAuthorities]);
-
-  // Determine permissions from UserContext
   const canSaveConfig = userType === "Designer";
 
   // Fetch services
@@ -67,10 +69,10 @@ export default function SubmissionLimitations() {
     fetchServices();
   }, []);
 
-  // Fetch SubmissionLimitConfig when service is selected
+  // Fetch config when service selected
   useEffect(() => {
     if (!selectedServiceId) {
-      setConfig({ isLimited: false, limitType: "", limitCount: 0 });
+      setConfig({ isLimited: false, limits: [] });
       setFetchError("");
       return;
     }
@@ -83,15 +85,20 @@ export default function SubmissionLimitations() {
           params: { serviceId: selectedServiceId },
         });
         if (response.data.status && response.data.config) {
-          setConfig(response.data.config);
+          // Ensure limits array exists
+          const loadedConfig = {
+            isLimited: response.data.config.isLimited ?? false,
+            limits: response.data.config.limits || [],
+          };
+          setConfig(loadedConfig);
           toast.success("Configuration loaded successfully.");
         } else {
-          setConfig({ isLimited: false, limitType: "", limitCount: 0 });
+          setConfig({ isLimited: false, limits: [] });
           toast.info("No existing configuration found for this service.");
         }
       } catch (error) {
         console.error("Error fetching configuration:", error);
-        setConfig({ isLimited: false, limitType: "", limitCount: 0 });
+        setConfig({ isLimited: false, limits: [] });
         setFetchError("Failed to load configuration.");
         toast.error("Failed to load configuration.");
       } finally {
@@ -102,15 +109,50 @@ export default function SubmissionLimitations() {
     fetchConfig();
   }, [selectedServiceId]);
 
-  const handleConfigChange = (field, value) => {
+  const handleToggleLimited = (checked) => {
     setConfig((prev) => {
-      const newConfig = { ...prev, [field]: value };
-      // Reset limitType and limitCount if isLimited is false
-      if (field === "isLimited" && !value) {
-        return { ...newConfig, limitType: "", limitCount: 0 };
+      if (!checked) {
+        return { isLimited: false, limits: [] };
       }
-      return newConfig;
+      return { ...prev, isLimited: true };
     });
+  };
+
+  const handleAddLimit = () => {
+    const usedTypes = config.limits.map((l) => l.limitType);
+    const availableTypes = LIMIT_TYPES.filter((t) => !usedTypes.includes(t));
+
+    if (availableTypes.length === 0) {
+      toast.warning("All limit types are already in use.");
+      return;
+    }
+
+    setConfig((prev) => ({
+      ...prev,
+      limits: [...prev.limits, { limitType: availableTypes[0], limitCount: 1 }],
+    }));
+  };
+
+  const handleUpdateLimit = (index, field, value) => {
+    setConfig((prev) => {
+      const newLimits = [...prev.limits];
+      newLimits[index] = { ...newLimits[index], [field]: value };
+      return { ...prev, limits: newLimits };
+    });
+  };
+
+  const handleDeleteLimit = (index) => {
+    setConfig((prev) => ({
+      ...prev,
+      limits: prev.limits.filter((_, i) => i !== index),
+    }));
+  };
+
+  const getAvailableTypesForRule = (currentIndex) => {
+    const usedTypes = config.limits
+      .filter((_, i) => i !== currentIndex)
+      .map((l) => l.limitType);
+    return LIMIT_TYPES.filter((t) => !usedTypes.includes(t));
   };
 
   const handleSaveConfig = async () => {
@@ -119,15 +161,29 @@ export default function SubmissionLimitations() {
       return;
     }
 
-    if (config.isLimited && (!config.limitType || config.limitCount <= 0)) {
-      toast.error("Please select a valid limit type and count.");
+    if (config.isLimited && config.limits.length === 0) {
+      toast.error("Please add at least one limit rule.");
       return;
+    }
+
+    // Client-side validation
+    for (const rule of config.limits) {
+      if (!rule.limitType) {
+        toast.error("Please select a limit type for all rules.");
+        return;
+      }
+      if (rule.limitCount <= 0) {
+        toast.error(
+          `Limit count for ${rule.limitType} must be greater than zero.`,
+        );
+        return;
+      }
     }
 
     setIsSaving(true);
     const formData = new FormData();
     formData.append("serviceId", selectedServiceId);
-    formData.append("SubmissionLimitConfig", JSON.stringify(config));
+    formData.append("submissionLimitConfig", JSON.stringify(config));
 
     try {
       const response = await axiosInstance.post(
@@ -144,7 +200,10 @@ export default function SubmissionLimitations() {
       }
     } catch (error) {
       console.error("Error saving configuration:", error);
-      toast.error("An error occurred while saving the configuration.");
+      toast.error(
+        error.response?.data?.message ||
+          "An error occurred while saving the configuration.",
+      );
     } finally {
       setIsSaving(false);
     }
@@ -168,12 +227,13 @@ export default function SubmissionLimitations() {
           Configure Submission Limits
         </Typography>
 
+        {/* Service Selection */}
         {isFetchingServices ? (
           <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
             <CircularProgress size={20} sx={{ mr: 2 }} />
             <Typography variant="body2">Loading services...</Typography>
           </Box>
-        ) : fetchError ? (
+        ) : fetchError && !selectedServiceId ? (
           <Alert severity="error" sx={{ mb: 2 }}>
             {fetchError}
           </Alert>
@@ -202,6 +262,7 @@ export default function SubmissionLimitations() {
           </FormControl>
         )}
 
+        {/* Config Section */}
         {selectedServiceId && (
           <>
             {isFetchingConfig ? (
@@ -217,78 +278,178 @@ export default function SubmissionLimitations() {
               </Alert>
             ) : (
               <>
-                {selectedServiceId && !canSaveConfig && (
+                {/* Permission Warning */}
+                {!canSaveConfig && (
                   <Alert severity="warning" sx={{ mb: 2 }}>
                     You do not have permission to configure submission limits.
-                    Please contact an administrator or log in as a Senior
-                    Officer.
+                    Please contact an administrator or log in as a Designer.
                   </Alert>
                 )}
+
+                {/* Enable Limits Toggle */}
                 <FormControlLabel
                   control={
                     <Checkbox
                       checked={config.isLimited}
-                      onChange={(e) =>
-                        handleConfigChange("isLimited", e.target.checked)
-                      }
+                      onChange={(e) => handleToggleLimited(e.target.checked)}
                       disabled={!canSaveConfig}
                     />
                   }
                   label="Enable Submission Limits"
                   sx={{ mb: 2 }}
                 />
+
+                {/* Limit Rules */}
                 {config.isLimited && (
-                  <>
-                    <FormControl fullWidth sx={{ mb: 3 }}>
-                      <InputLabel id="limit-type-select-label">
-                        Limit Type
-                      </InputLabel>
-                      <Select
-                        labelId="limit-type-select-label"
-                        value={config.limitType}
-                        label="Limit Type"
-                        onChange={(e) =>
-                          handleConfigChange("limitType", e.target.value)
+                  <Box sx={{ mb: 3 }}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        mb: 2,
+                      }}
+                    >
+                      <Typography variant="h6" sx={{ fontWeight: "medium" }}>
+                        Limit Rules
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={handleAddLimit}
+                        disabled={
+                          !canSaveConfig ||
+                          config.limits.length >= LIMIT_TYPES.length
                         }
-                        disabled={!canSaveConfig}
                       >
-                        <MenuItem value="" disabled>
-                          Select Limit Type
-                        </MenuItem>
-                        <MenuItem value="All Time">All Time</MenuItem>
-                        <MenuItem value="Yearly">Yearly</MenuItem>
-                        <MenuItem value="Monthly">Monthly</MenuItem>
-                        <MenuItem value="Weekly">Weekly</MenuItem>
-                        <MenuItem value="Daily">Daily</MenuItem>
-                      </Select>
-                    </FormControl>
-                    <TextField
-                      label="Limit Count"
-                      type="number"
-                      value={config.limitCount}
-                      onChange={(e) =>
-                        handleConfigChange(
-                          "limitCount",
-                          parseInt(e.target.value) || 0,
-                        )
-                      }
-                      fullWidth
-                      variant="outlined"
-                      sx={{ mb: 3 }}
-                      inputProps={{ min: 0 }}
-                      disabled={!canSaveConfig}
-                    />
-                  </>
+                        Add Rule
+                      </Button>
+                    </Box>
+
+                    {config.limits.length === 0 && (
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        No limit rules configured. Click "Add Rule" to create
+                        one.
+                      </Alert>
+                    )}
+
+                    {config.limits.map((rule, index) => (
+                      <Paper
+                        key={index}
+                        elevation={1}
+                        sx={{
+                          p: 2,
+                          mb: 2,
+                          borderLeft: 4,
+                          borderColor: "primary.main",
+                        }}
+                      >
+                        <Grid container spacing={2} alignItems="center">
+                          <Grid item xs={12} sm={5}>
+                            <FormControl fullWidth size="small">
+                              <InputLabel>Limit Type</InputLabel>
+                              <Select
+                                value={rule.limitType}
+                                label="Limit Type"
+                                onChange={(e) =>
+                                  handleUpdateLimit(
+                                    index,
+                                    "limitType",
+                                    e.target.value,
+                                  )
+                                }
+                                disabled={!canSaveConfig}
+                              >
+                                <MenuItem value="" disabled>
+                                  Select Type
+                                </MenuItem>
+                                {getAvailableTypesForRule(index).map((type) => (
+                                  <MenuItem key={type} value={type}>
+                                    {type}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                          </Grid>
+
+                          <Grid item xs={12} sm={5}>
+                            <TextField
+                              label="Limit Count"
+                              type="number"
+                              value={rule.limitCount}
+                              onChange={(e) =>
+                                handleUpdateLimit(
+                                  index,
+                                  "limitCount",
+                                  Math.max(1, parseInt(e.target.value) || 0),
+                                )
+                              }
+                              fullWidth
+                              size="small"
+                              inputProps={{ min: 1 }}
+                              disabled={!canSaveConfig}
+                            />
+                          </Grid>
+
+                          <Grid item xs={12} sm={2}>
+                            <IconButton
+                              color="error"
+                              onClick={() => handleDeleteLimit(index)}
+                              disabled={!canSaveConfig}
+                              size="small"
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </Grid>
+                        </Grid>
+
+                        <Box sx={{ mt: 1 }}>
+                          <Chip
+                            label={`Max ${rule.limitCount} application${rule.limitCount !== 1 ? "s" : ""} per ${rule.limitType.toLowerCase()}`}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                          />
+                        </Box>
+                      </Paper>
+                    ))}
+
+                    {/* Summary */}
+                    {config.limits.length > 0 && (
+                      <Alert severity="success" sx={{ mt: 2 }}>
+                        <Typography
+                          variant="subtitle2"
+                          sx={{ fontWeight: "bold", mb: 0.5 }}
+                        >
+                          Active Limits:
+                        </Typography>
+                        {config.limits.map((rule, idx) => (
+                          <Typography key={idx} variant="body2">
+                            • {rule.limitType}: {rule.limitCount} application
+                            {rule.limitCount !== 1 ? "s" : ""}
+                          </Typography>
+                        ))}
+                      </Alert>
+                    )}
+                  </Box>
                 )}
+
+                {/* Save Button */}
                 <Button
                   variant="contained"
                   color="success"
                   onClick={handleSaveConfig}
-                  disabled={isSaving || !canSaveConfig || !selectedServiceId}
+                  disabled={
+                    isSaving ||
+                    !canSaveConfig ||
+                    !selectedServiceId ||
+                    (config.isLimited && config.limits.length === 0)
+                  }
                   sx={{ mt: 2 }}
                 >
                   {isSaving ? (
-                    <CircularProgress size={24} />
+                    <CircularProgress size={24} color="inherit" />
                   ) : (
                     "Save Configuration"
                   )}

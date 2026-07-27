@@ -126,11 +126,10 @@ namespace SahayataNidhi.Controllers.User
             }
 
             int districtId = Convert.ToInt32(FindFieldRecursively(formdetailsToken, "District")!["value"]);
-            var districtTask = dbcontext.District.FirstOrDefaultAsync(s => s.Districtid == districtId);
-            var serviceTask = dbcontext.Services.FirstOrDefaultAsync(s => s.Serviceid == serviceId);
-            await Task.WhenAll(districtTask, serviceTask);
-            var districtDetails = districtTask.Result;
-            var service = serviceTask.Result;
+
+            var districtDetails = await dbcontext.District.FirstOrDefaultAsync(s => s.Districtid == districtId);
+            var service = await dbcontext.Services.FirstOrDefaultAsync(s => s.Serviceid == serviceId);
+
             if (districtDetails == null || service == null)
                 return Json(new { status = false, message = "District or service not found." });
 
@@ -398,6 +397,8 @@ namespace SahayataNidhi.Controllers.User
                 return Json(new { status = true, ReferenceNumber, type = "Save" });
             }
         }
+
+
         [HttpPost]
         public async Task<IActionResult> UpdateApplicationDetails([FromForm] IFormCollection form)
         {

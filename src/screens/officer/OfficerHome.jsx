@@ -348,6 +348,8 @@ export default function OfficerHome() {
     };
   }, []);
 
+  // ✅ SINGLE API CALL - legacy data now included in GetApplicationsCount response
+
   const debouncedHandleRecords = useCallback(
     debounce(async (newServiceId) => {
       if (!newServiceId || newServiceId === lastServiceId) return;
@@ -359,10 +361,9 @@ export default function OfficerHome() {
 
         const response = await axiosInstance.get(
           "/Officer/GetApplicationsCount",
-          {
-            params: { ServiceId: newServiceId },
-          },
+          { params: { ServiceId: newServiceId } },
         );
+
         setCountList(response.data.countList || []);
         setCorrigendumList(response.data.corrigendumList || []);
         setAmendmentList(response.data.amendmentList || []);
@@ -370,17 +371,10 @@ export default function OfficerHome() {
         setTemporaryCountList(response.data.temporaryCountList || []);
         setWithheldCountList(response.data.withheldCountList || []);
         setCitizenPendingList(response.data.citizenPendingList || []);
+        setLegacyCountList(response.data.legacyCountList || []); // ✅ From same response
         setCanSanction(response.data.canSanction || false);
         setCanHavePool(response.data.canHavePool || false);
         setOfficerAuthorities(response.data.officerAuthorities || {});
-
-        const legacyResponse = await axiosInstance.get(
-          "/Officer/GetLegacyCount",
-          {
-            params: { ServiceId: newServiceId },
-          },
-        );
-        setLegacyCountList(legacyResponse.data.countList || []);
 
         const newCounts = {
           total:
@@ -423,15 +417,15 @@ export default function OfficerHome() {
               0,
             ) || 0,
           legacyTotal:
-            legacyResponse.data.countList.find(
+            response.data.legacyCountList?.find(
               (item) => item.label === "Total Applications",
             )?.count || 0,
           legacyRejected:
-            legacyResponse.data.countList.find(
+            response.data.legacyCountList?.find(
               (item) => item.label === "Rejected",
             )?.count || 0,
           legacySanctioned:
-            legacyResponse.data.countList.find(
+            response.data.legacyCountList?.find(
               (item) => item.label === "Sanctioned",
             )?.count || 0,
         };
@@ -446,7 +440,7 @@ export default function OfficerHome() {
       } finally {
         setLoading(false);
       }
-    }, 500),
+    }, 300),
     [lastServiceId],
   );
 
@@ -528,7 +522,7 @@ export default function OfficerHome() {
       type === "Corrigendum" || type === "Correction"
         ? "/Officer/GetCorrigendumApplications"
         : statusName === "PCP-UDID Expires in 3 Months" ||
-          statusName === "PCP Applications"
+            statusName === "PCP Applications"
           ? "/Officer/GetTemporaryDisability"
           : statusName.includes("Withheld")
             ? "/Officer/GetWithheldApplications"
@@ -655,6 +649,17 @@ export default function OfficerHome() {
               /\//g,
               "_",
             )}_CorrectionSanctionLetter.pdf`;
+          } else if (type === "handleViewCorrigendumApplication") {
+            const userdata = row.original;
+            navigate("/officer/viewcorrigendumdetails", {
+              state: {
+                referenceNumber: userdata.referenceNumber,
+                ...(userdata.applicationId && {
+                  applicationId: userdata.applicationId,
+                }),
+                type: userdata.applicationType,
+              },
+            });
           } else {
             throw new Error(`Invalid action type: ${type}`);
           }
@@ -700,8 +705,12 @@ export default function OfficerHome() {
         const userdata = row.original;
         console.log("Userdata for expiration email:", userdata);
         const referenceNumber = userdata.referenceNumber;
-        const expirationDate = userdata.expiryDate?.split('(')[0].trim() || "";
-        console.log("Sending expiration email for:", referenceNumber, expirationDate);
+        const expirationDate = userdata.expiryDate?.split("(")[0].trim() || "";
+        console.log(
+          "Sending expiration email for:",
+          referenceNumber,
+          expirationDate,
+        );
         const formdata = new FormData();
         formdata.append("referenceNumber", referenceNumber);
         formdata.append("expirationDate", expirationDate);
@@ -791,8 +800,8 @@ export default function OfficerHome() {
     } catch (error) {
       throw new Error(
         "Error signing PDF: " +
-        error.message +
-        " Check if Desktop App is started.",
+          error.message +
+          " Check if Desktop App is started.",
       );
     }
   };
@@ -884,7 +893,8 @@ export default function OfficerHome() {
         }
       } catch (error) {
         toast.error(
-          `Error processing ${selectedAction.toLowerCase()} for ID ${id}: ${error.message
+          `Error processing ${selectedAction.toLowerCase()} for ID ${id}: ${
+            error.message
           }`,
           {
             position: "top-right",
@@ -921,12 +931,14 @@ export default function OfficerHome() {
       setCurrentIdIndex(0);
       setCurrentApplicationId("");
       toast.success(
-        `${selectedAction === "toInbox"
-          ? "Returned to Inbox"
-          : selectedAction === "Sanction"
-            ? "Sanctioned"
-            : "Rejected"
-        } ${successCount} of ${ids.length} application${ids.length > 1 ? "s" : ""
+        `${
+          selectedAction === "toInbox"
+            ? "Returned to Inbox"
+            : selectedAction === "Sanction"
+              ? "Sanctioned"
+              : "Rejected"
+        } ${successCount} of ${ids.length} application${
+          ids.length > 1 ? "s" : ""
         }!`,
         { position: "top-right", autoClose: 2000, theme: "colored" },
       );
@@ -995,7 +1007,8 @@ export default function OfficerHome() {
             setCurrentIdIndex(0);
             setCurrentApplicationId("");
             toast.success(
-              `Sanctioned ${pendingIds.length} application${pendingIds.length > 1 ? "s" : ""
+              `Sanctioned ${pendingIds.length} application${
+                pendingIds.length > 1 ? "s" : ""
               }!`,
               {
                 position: "top-right",
@@ -1067,7 +1080,7 @@ export default function OfficerHome() {
         if (!updateResponse.data.status) {
           throw new Error(
             "Failed to update PDF on server: " +
-            (updateResponse.data.response || "Unknown error"),
+              (updateResponse.data.response || "Unknown error"),
           );
         }
 
@@ -1137,7 +1150,8 @@ export default function OfficerHome() {
           setCurrentApplicationId("");
           setConfirmOpen(false);
           toast.success(
-            `Sanctioned ${pendingIds.length} application${pendingIds.length > 1 ? "s" : ""
+            `Sanctioned ${pendingIds.length} application${
+              pendingIds.length > 1 ? "s" : ""
             }!`,
             {
               position: "top-right",
@@ -1406,8 +1420,8 @@ export default function OfficerHome() {
         // Give a tiny delay for DOM to fully render
         setTimeout(() => {
           sectionContainerRef.current.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
+            behavior: "smooth",
+            block: "start",
           });
           hasScrolledRef.current = true;
         }, 100);
@@ -1728,8 +1742,6 @@ export default function OfficerHome() {
             />
           )}
 
-
-
           {corrigendumList?.length > 0 && (
             <ConsolidatedStatCard
               title="Corrigendums"
@@ -1747,8 +1759,6 @@ export default function OfficerHome() {
               sectionTooltip="Corrections made before cases are sanctioned"
             />
           )}
-
-
         </CardGrid>
 
         {/* View-Only Cards Section */}

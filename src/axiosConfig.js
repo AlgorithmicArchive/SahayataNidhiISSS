@@ -16,6 +16,7 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = sessionStorage.getItem("token");
+    console.log("Adding token to request:", token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -25,22 +26,26 @@ axiosInstance.interceptors.request.use(
 );
 
 // Response interceptor - handles 401 (unauthorized) globally
+// Response interceptor - handles 401 (unauthorized) globally
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    // If we get 401 → token likely expired/invalid → clear session & redirect to login
     if (error.response && error.response.status === 401) {
-      sessionStorage.removeItem("token");
-      sessionStorage.removeItem("userType");
-      // Optional: clear more items if needed
-      // sessionStorage.removeItem("username");
-      // sessionStorage.removeItem("profile");
+      console.error("401 received on:", error.config.url);
 
-      // Redirect to login page
-      window.dispatchEvent(new CustomEvent("app:logout"));
+      // Clear everything
+      sessionStorage.clear();
+      localStorage.clear();
+
+      // Clear all cookies
+      document.cookie.split(";").forEach((c) => {
+        const [name] = c.split("=");
+        document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`;
+      });
+
+      // Force reload to clear any in-memory state
+      window.location.reload();
     }
-
-    // Let the component handle other errors normally
     return Promise.reject(error);
   },
 );

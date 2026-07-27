@@ -104,7 +104,7 @@ const MyNavbar = () => {
 
         const SSO_TIMEOUT = 5000; // 5 seconds
         const ssoPromise = fetch(`${API_BASE}/Home/InitiateSSO`, {
-          method: "POST",
+          method: "GET",
         });
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error("SSO timeout")), SSO_TIMEOUT),
@@ -136,6 +136,12 @@ const MyNavbar = () => {
       navigate(path);
       closeAllMenus();
     }
+  };
+
+  const callSSo = async () => {
+    const ssoPromise = fetch(`${API_BASE}/Home/InitiateSSO`, {
+      method: "POST",
+    });
   };
 
   const handleMobileMenuOpen = (e) => setMobileMenuAnchor(e.currentTarget);
@@ -285,11 +291,11 @@ const MyNavbar = () => {
         officerAuthorities?.canDirectWithheld
       )
         upd.push({ name: "Withheld Application", path: "/officer/withheld" });
-      if (officerAuthorities?.canValidateAadhaar)
-        upd.push({
-          name: "Validate Aadhaar",
-          path: "/officer/validateaadhaar",
-        });
+      // if (officerAuthorities?.canValidateAadhaar)
+      //   upd.push({
+      //     name: "Validate Aadhaar",
+      //     path: "/officer/validateaadhaar",
+      //   });
       if (upd.length)
         m.push({
           name: "Applications Updations",
@@ -300,7 +306,7 @@ const MyNavbar = () => {
         name: "View Applications",
         key: "view-apps",
         subItems: [
-          { name: "Aadhaar Validations", path: "/officer/aadhaarvalidations" },
+          // { name: "Aadhaar Validations", path: "/officer/aadhaarvalidations" },
           { name: "Search Application", path: "/officer/searchapplication" },
         ],
       });
@@ -309,11 +315,11 @@ const MyNavbar = () => {
     if (userType === "Viewer" && verified) {
       m.push(
         { name: "Dashboard", path: "/viewer/home", key: "viewer-home" },
-        {
-          name: "Aadhaar Validations",
-          path: "/viewer/aadhaarvalidations",
-          key: "viewer-aadhaar",
-        },
+        // {
+        //   name: "Aadhaar Validations",
+        //   path: "/viewer/aadhaarvalidations",
+        //   key: "viewer-aadhaar",
+        // },
       );
     }
     if (userType === "Admin" && verified) {

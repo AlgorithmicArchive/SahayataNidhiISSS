@@ -375,12 +375,14 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
         if (userSignature == null)
             throw new ArgumentException("Invalid JanParichay user data");
 
+        _logger.LogInformation("Finding or creating user with JanParichay data: {UserSignature}", userSignature);
+
         var effectiveEmail = string.IsNullOrEmpty(userSignature.Email) ? userSignature.UserId : userSignature.Email;
         if (string.IsNullOrEmpty(effectiveEmail))
             throw new ArgumentException("Invalid JanParichay user data: Missing both Email and UserId");
 
         var existingUser = await dbcontext.Users
-            .FirstOrDefaultAsync(u => u.Email == effectiveEmail);
+            .FirstOrDefaultAsync(u => u.Email == effectiveEmail || userSignature.UserId!.Contains(u.Username!) || u.Username == userSignature.UserName);
 
         if (existingUser != null)
         {
@@ -393,31 +395,32 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
             return existingUser;
         }
 
-        var additionalDetails = new
-        {
-            DateOfBirth = userSignature.Dob
-        };
-        var additionalJson = JsonSerializer.Serialize(additionalDetails);
+        return null!;
+        // var additionalDetails = new
+        // {
+        //     DateOfBirth = userSignature.Dob
+        // };
+        // var additionalJson = JsonSerializer.Serialize(additionalDetails);
 
-        var newUser = new Users
-        {
-            Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim(),
-            Username = effectiveEmail,
-            Email = effectiveEmail,
-            Mobilenumber = userSignature.MobileNo,
-            Usertype = userSignature.UserType ?? "Citizen",
-            Profile = userSignature.ProfilePic ?? "/assets/images/profile.jpg",
-            Backupcodes = null,
-            Additionaldetails = additionalJson,
-            Isemailvalid = true,
-            Registereddate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
-        };
+        // var newUser = new Users
+        // {
+        //     Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim(),
+        //     Username = effectiveEmail,
+        //     Email = effectiveEmail,
+        //     Mobilenumber = userSignature.MobileNo,
+        //     Usertype = userSignature.UserType ?? "Citizen",
+        //     Profile = userSignature.ProfilePic ?? "/assets/images/profile.jpg",
+        //     Backupcodes = null,
+        //     Additionaldetails = additionalJson,
+        //     Isemailvalid = true,
+        //     Registereddate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
+        // };
 
-        _logger.LogInformation($"Creating new user with UserData: {newUser}");
+        // _logger.LogInformation($"Creating new user with UserData: {newUser}");
 
-        dbcontext.Users.Add(newUser);
-        await dbcontext.SaveChangesAsync();
-        return newUser;
+        // dbcontext.Users.Add(newUser);
+        // await dbcontext.SaveChangesAsync();
+        // return newUser;
     }
 
     // LOGOUT
@@ -464,16 +467,17 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
         return "";
     }
 
-    public string GenerateJwt(Users user, string clientToken)
+    public string GenerateJwt(Users user, string clientToken, Guid sessionId)
     {
         var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Userid.ToString()),
-            new(ClaimTypes.Name, user.Username!),
-            new(ClaimTypes.Role, user.Usertype!),
-            new("Profile", user.Profile!),
-            new("JanParichayClientToken", clientToken)
-        };
+    {
+        new(ClaimTypes.NameIdentifier, user.Userid.ToString()),
+        new(ClaimTypes.Name, user.Username!),
+        new(ClaimTypes.Role, user.Usertype!),
+        new("Profile", user.Profile!),
+        new("JanParichayClientToken", clientToken),
+        new("SessionId", sessionId.ToString()), // Use passed sessionId
+    };
 
         var key = Encoding.ASCII.GetBytes(_configuration["JWT:Secret"]!);
         var tokenDescriptor = new SecurityTokenDescriptor

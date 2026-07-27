@@ -30,7 +30,7 @@ namespace SahayataNidhi.Controllers.Officer
         IAuditLogService auditService,
         IConfiguration config,
         IMemoryCache memoryCache,
-        IExpirationSyncService expirationSyncService) : Controller   // <-- add this parameter
+        IExpirationSyncService expirationSyncService, SessionRepository sessionRepo) : Controller   // <-- add this parameter
     {
         protected readonly SwdjkContext dbcontext = dbcontext;
         protected readonly ILogger<OfficerController> _logger = logger;
@@ -44,7 +44,7 @@ namespace SahayataNidhi.Controllers.Officer
         private readonly IConfiguration _config = config;
         private readonly IMemoryCache _memoryCache = memoryCache;
         private readonly IExpirationSyncService _expirationSyncService = expirationSyncService;
-
+        private readonly SessionRepository _sessionRepo = sessionRepo;
         public override void OnActionExecuted(ActionExecutedContext context)
         {
             base.OnActionExecuted(context);

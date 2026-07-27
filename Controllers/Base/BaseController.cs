@@ -11,7 +11,7 @@ using Wangkanai.Detection.Services;
 
 namespace SahayataNidhi.Controllers
 {
-    public partial class BaseController(SwdjkContext dbcontext, ILogger<BaseController> logger, IDetectionService detection, IWebHostEnvironment webHostEnvironment, IConfiguration config, UserHelperFunctions helper) : Controller
+    public partial class BaseController(SwdjkContext dbcontext, ILogger<BaseController> logger, IDetectionService detection, IWebHostEnvironment webHostEnvironment, IConfiguration config, UserHelperFunctions helper, SessionRepository sessionRepo) : Controller
     {
         protected readonly SwdjkContext dbcontext = dbcontext;
         protected readonly ILogger<BaseController> _logger = logger;
@@ -19,7 +19,7 @@ namespace SahayataNidhi.Controllers
         private readonly IWebHostEnvironment _webHostEnvironment = webHostEnvironment;
         private readonly IConfiguration _config = config;
         protected readonly UserHelperFunctions helper = helper;
-
+        private readonly SessionRepository _sessionRepo = sessionRepo;
         private const long MinImageFile = 20 * 1024;  // 20KB
         private const long MaxImageFile = 50 * 1024;  // 50KB
         private const long MinPdfFile = 100 * 1024; // 100KB

@@ -15,15 +15,16 @@ public class SessionValidationFilter : IAsyncAuthorizationFilter
 
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
-
         // Skip if not authenticated
         if (!context.HttpContext.User.Identity?.IsAuthenticated == true)
             return;
 
         _logger.LogWarning("=== SessionValidationFilter running ===");
         _logger.LogWarning("IsAuthenticated: {IsAuth}", context.HttpContext.User.Identity?.IsAuthenticated);
+
         var sessionIdClaim = context.HttpContext.User.FindFirst("SessionId")?.Value;
         _logger.LogWarning("SessionId claim: {Claim}", sessionIdClaim);
+
         if (string.IsNullOrEmpty(sessionIdClaim))
         {
             _logger.LogWarning("SessionId claim missing in JWT");
@@ -43,6 +44,7 @@ public class SessionValidationFilter : IAsyncAuthorizationFilter
         {
             _logger.LogInformation("Session {SessionId} no longer exists (likely replaced by newer login)", sessionId);
             context.Result = new UnauthorizedResult();
+            return;
         }
     }
 }
