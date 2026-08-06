@@ -20,6 +20,7 @@ import PeopleIcon from "@mui/icons-material/People";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import MiscellaneousServicesIcon from "@mui/icons-material/MiscellaneousServices";
+import VerifiedUserIcon from "@mui/icons-material/VerifiedUser"; // NEW: Icon for DSC Validations
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axiosInstance from "../../axiosConfig";
@@ -86,7 +87,7 @@ const CardGrid = styled(Box)(({ theme }) => ({
   },
 }));
 
-// Define card data with colors and types
+// Define card data with colors and types (NEW: Added Pending DSC Validations)
 const cardData = [
   {
     title: "Total Registered Officers",
@@ -115,6 +116,13 @@ const cardData = [
     color: "#388e3c",
     dataKey: "totalServices",
     type: "Services",
+  },
+  {
+    title: "Pending DSC Validations",
+    icon: <VerifiedUserIcon />,
+    color: "#9c27b0", // Purple for pending actions
+    dataKey: "pendingDscCount",
+    type: "DSC",
   },
 ];
 
@@ -209,6 +217,7 @@ export default function AdminHome() {
     totalRegisteredUsers: 0,
     totalApplicationsSubmitted: 0,
     totalServices: 0,
+    pendingDscCount: 0, // NEW: Added for DSC count
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -219,6 +228,7 @@ export default function AdminHome() {
 
   const { department } = useContext(UserContext);
 
+  // NEW: Added ApproveDSC and RejectDSC to action functions
   const actionFunctions = {
     ValidateOfficer: async (row) => {
       const userdata = row.original;
@@ -247,6 +257,67 @@ export default function AdminHome() {
       } catch (error) {
         console.error("Error validating officer:", error);
         toast.error("An error occurred while validating officer.", {
+          position: "top-right",
+          autoClose: 3000,
+          theme: "colored",
+        });
+      }
+    },
+    ApproveDSC: async (row) => {
+      const data = row.original;
+      const formData = new FormData();
+      formData.append("certificateId", data.certificateId);
+      formData.append("action", "APPROVED");
+
+      try {
+        const response = await axiosInstance.post("/Admin/ReviewDSC", formData);
+        if (response.data.status) {
+          toast.success(response.data.message || "DSC approved successfully!", {
+            position: "top-right",
+            autoClose: 2000,
+            theme: "colored",
+          });
+          // Note: If your ServerSideTable has a refresh method/prop, trigger it here to update the table instantly
+        } else {
+          toast.error(response.data.message || "Approval failed.", {
+            position: "top-right",
+            autoClose: 3000,
+            theme: "colored",
+          });
+        }
+      } catch (error) {
+        console.error("Error approving DSC:", error);
+        toast.error("An error occurred while approving DSC.", {
+          position: "top-right",
+          autoClose: 3000,
+          theme: "colored",
+        });
+      }
+    },
+    RejectDSC: async (row) => {
+      const data = row.original;
+      const formData = new FormData();
+      formData.append("certificateId", data.certificateId);
+      formData.append("action", "REJECTED");
+
+      try {
+        const response = await axiosInstance.post("/Admin/ReviewDSC", formData);
+        if (response.data.status) {
+          toast.success(response.data.message || "DSC rejected successfully!", {
+            position: "top-right",
+            autoClose: 2000,
+            theme: "colored",
+          });
+        } else {
+          toast.error(response.data.message || "Rejection failed.", {
+            position: "top-right",
+            autoClose: 3000,
+            theme: "colored",
+          });
+        }
+      } catch (error) {
+        console.error("Error rejecting DSC:", error);
+        toast.error("An error occurred while rejecting DSC.", {
           position: "top-right",
           autoClose: 3000,
           theme: "colored",
@@ -289,9 +360,14 @@ export default function AdminHome() {
       setUrl("/Admin/GetApplicationsList");
     } else if (type === "Services") {
       setUrl("/Admin/GetServices");
+    } else if (type === "DSC") {
+      setUrl("/Admin/GetPendingDSCList"); // NEW: Route for DSC table
     }
-    setListType(type);
+
+    // NEW: Display a cleaner title for the DSC table
+    setListType(type === "DSC" ? "Pending DSC Validations" : type);
     setShowTable(true);
+
     requestAnimationFrame(() => {
       if (tableRef.current) {
         tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -547,30 +623,6 @@ export default function AdminHome() {
             {cardData.map((card, index) => renderStatCard(card, index))}
           </CardGrid>
 
-          {/* Chart Section
-          <StyledCard>
-            <CardContent sx={{ p: 4 }}>
-              <Typography
-                variant="h6"
-                sx={{
-                  mb: 3,
-                  fontWeight: 600,
-                  color: "#2d3748",
-                  fontFamily: "'Inter', sans-serif",
-                }}
-              >
-                Data Distribution
-              </Typography>
-              <Box
-                sx={{ height: "400px", width: "100%", position: "relative" }}
-              >
-                <Fade in={!loading}>
-                  <DashboardChart data={dashboardData} />
-                </Fade>
-              </Box>
-            </CardContent>
-          </StyledCard> */}
-
           {/* Table Section */}
           {showTable && (
             <Box ref={tableRef} sx={{ mt: 6 }}>
@@ -588,7 +640,7 @@ export default function AdminHome() {
                     List of {listType}
                   </Typography>
                   <ServerSideTable
-                    key={listType}
+                    key={listType} // Forces re-fetch when listType changes
                     url={url}
                     extraParams={{}}
                     actionFunctions={actionFunctions}

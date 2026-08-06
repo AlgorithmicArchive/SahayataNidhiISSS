@@ -39,7 +39,9 @@ const ProfileCard = styled(Box)`
   max-width: 500px;
   width: 90%; /* Use percentage for responsiveness */
   height: max-content;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
   &:hover {
     transform: translateY(-6px);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
@@ -107,7 +109,9 @@ const StatBox = styled(Box)`
   padding: 1rem;
   text-align: center;
   border: 1px solid #e0e7ff;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -428,8 +432,8 @@ export default function UserHome() {
                 }}
               >
                 {showMobileNumber
-                  ? userDetails?.mobileNumber || "N/A"
-                  : maskMobileNumber(userDetails?.mobileNumber)}
+                  ? userDetails?.mobilenumber || "N/A"
+                  : maskMobileNumber(userDetails?.mobilenumber)}
               </Typography>
               <Tooltip
                 title={

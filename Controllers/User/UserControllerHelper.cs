@@ -221,21 +221,6 @@ namespace SahayataNidhi.Controllers.User
             return "/uploads/" + uniqueFileName;
         }
 
-        [HttpGet]
-        public IActionResult GetServiceContent(int serviceId)
-        {
-            // Retrieve the serviceId from the JWT claims or other mechanisms if necessary.
-            var service = dbcontext.Services.FirstOrDefault(ser => ser.Serviceid == serviceId);
-
-            if (service != null)
-            {
-                return Json(new { status = true, service.Servicename, service.Formelement, service.Serviceid });
-            }
-            else
-            {
-                return Json(new { status = false, message = "No Service Found" });
-            }
-        }
 
         public string GetFieldValue(string fieldName, dynamic data)
         {

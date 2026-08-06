@@ -3,3 +3,6 @@ dotnet ef dbcontext scaffold "Name=DefaultConnection" Microsoft.EntityFrameworkC
 
 # Postgres
 dotnet ef dbcontext scaffold "Name=DefaultConnection" Npgsql.EntityFrameworkCore.PostgreSQL -o Models/Entities --force --no-pluralize
+
+# Publish the application
+ dotnet publish -c Release -r win-x64 -o publish

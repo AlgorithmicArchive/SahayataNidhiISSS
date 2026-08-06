@@ -16,4 +16,8 @@ public partial class Certificates
     public DateTime? Expirationdate { get; set; }
 
     public string? Registereddate { get; set; }
+
+    public string? Status { get; set; }
+
+    public string? CertSubjectName { get; set; }
 }

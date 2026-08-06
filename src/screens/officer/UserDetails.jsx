@@ -99,6 +99,20 @@ const submitButtonStyles = {
   },
 };
 
+// ✅ NEW: Helper function to check DSC status before sanctioning
+const checkDSCStatus = async () => {
+  try {
+    const response = await axiosInstance.get("/Officer/GetDSCStatus");
+    return response.data; // Expected: { status: true } or { status: false, reason: "..." }
+  } catch (error) {
+    console.error("Error checking DSC status:", error);
+    return {
+      status: false,
+      reason: "Failed to connect to the server to verify DSC status.",
+    };
+  }
+};
+
 // New component to display previous officers' details
 const PreviousOfficersDetails = ({
   previousOfficersDetails,
@@ -1390,10 +1404,28 @@ export default function UserDetails() {
     setButtonLoading(true);
 
     if (defaultAction === "sanction") {
+      // ✅ 1. Check backend DSC status FIRST
+      const dscCheck = await checkDSCStatus();
+
+      if (!dscCheck.status) {
+        // 🛑 BLOCK the action and show the specific reason from the backend
+        toast.error(
+          `Cannot proceed with Sanction: ${dscCheck.reason || "Your DSC is not valid or pending."}`,
+          {
+            position: "top-center",
+            autoClose: 6000, // Longer duration so the user can read the reason
+            theme: "colored",
+          },
+        );
+        setButtonLoading(false);
+        return; // Exit early, do NOT proceed to fetch sanction letter
+      }
+
+      // ✅ 2. Keep existing frontend certificate check for later PIN validation
       const certDetails = await fetchCertificateDetails();
       if (!certDetails) {
         toast.error(
-          "You have not registered DSC, so you can't sanction this application.",
+          "You have not registered a DSC, so you can't sanction this application.",
           {
             position: "top-center",
             autoClose: 3000,
@@ -1411,6 +1443,7 @@ export default function UserDetails() {
       return;
     }
 
+    // For non-sanction actions, proceed normally
     await handleFinalSubmit(data);
   };
 

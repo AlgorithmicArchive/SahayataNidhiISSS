@@ -12,31 +12,24 @@ namespace SahayataNidhi.Controllers.Admin
     public partial class AdminController : Controller
     {
         [HttpPost]
-        public IActionResult ValidateOfficer(string email)
+        public IActionResult ReviewDSC(int certificateId, string action)
         {
             try
             {
-                if (string.IsNullOrEmpty(email))
-                {
-                    return BadRequest(new { status = false, message = "email is required." });
-                }
+                if (certificateId <= 0)
+                    return BadRequest(new { status = false, message = "Valid certificate ID is required." });
 
-                var officer = dbcontext.Users.FirstOrDefault(u => u.Email == email);
-                if (officer == null)
-                {
-                    return NotFound(new { status = false, message = "Officer not found." });
-                }
+                if (string.IsNullOrEmpty(action) || (action != "APPROVED" && action != "REJECTED"))
+                    return BadRequest(new { status = false, message = "Action must be either 'APPROVED' or 'REJECTED'." });
 
-                var additionalDetails = JsonConvert.DeserializeObject<Dictionary<string, dynamic>>(officer.Additionaldetails ?? "{}");
-                if (additionalDetails == null)
-                {
-                    return BadRequest(new { status = false, message = "Invalid officer details." });
-                }
+                var certificate = dbcontext.Certificates.FirstOrDefault(c => c.Uuid == certificateId);
+                if (certificate == null)
+                    return NotFound(new { status = false, message = "Certificate not found." });
 
-                bool currentValidate = additionalDetails.ContainsKey("Validate") ? additionalDetails["Validate"] : false;
-                additionalDetails["Validate"] = !currentValidate;
+                if (certificate.Status == action)
+                    return BadRequest(new { status = false, message = $"Certificate is already {action.ToLower()}." });
 
-                officer.Additionaldetails = JsonConvert.SerializeObject(additionalDetails);
+                certificate.Status = action;
                 dbcontext.SaveChanges();
 
                 string currentDateTime = DateTime.Now.AddHours(5.5).ToString("dd MMM yyyy, hh:mm tt") + " IST";
@@ -44,15 +37,15 @@ namespace SahayataNidhi.Controllers.Admin
                 return Json(new
                 {
                     status = true,
-                    message = additionalDetails["Validate"] ? "Officer validated" : "Officer unvalidated",
-                    isValidated = additionalDetails["Validate"],
+                    message = action == "APPROVED" ? "DSC approved successfully." : "DSC rejected successfully.",
+                    isApproved = action == "APPROVED",
                     updatedAt = currentDateTime
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error validating officer: {Username}", email);
-                return StatusCode(500, new { status = false, message = "An error occurred while validating the officer." });
+                _logger.LogError(ex, "Error reviewing DSC for Certificate ID: {CertificateId}", certificateId);
+                return StatusCode(500, new { status = false, message = "An error occurred while reviewing the DSC." });
             }
         }
 

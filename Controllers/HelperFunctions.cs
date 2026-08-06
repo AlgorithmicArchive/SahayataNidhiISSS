@@ -375,24 +375,57 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
         if (userSignature == null)
             throw new ArgumentException("Invalid JanParichay user data");
 
-        _logger.LogInformation("Finding or creating user with JanParichay data: {UserSignature}", userSignature);
 
         var effectiveEmail = string.IsNullOrEmpty(userSignature.Email) ? userSignature.UserId : userSignature.Email;
         if (string.IsNullOrEmpty(effectiveEmail))
             throw new ArgumentException("Invalid JanParichay user data: Missing both Email and UserId");
 
         var existingUser = await dbcontext.Users
-            .FirstOrDefaultAsync(u => u.Email == effectiveEmail || userSignature.UserId!.Contains(u.Username!) || u.Username == userSignature.UserName);
+            .FirstOrDefaultAsync(u => u.Email == effectiveEmail || userSignature.UserId!.Contains(u.Username!) || u.Username == userSignature.UserName || u.Mobilenumber == userSignature.MobileNo);
 
         if (existingUser != null)
         {
-            if (string.IsNullOrWhiteSpace(existingUser.Username))
+            bool updated = false;
+
+            if (existingUser.Name == null)
+            {
+                existingUser.Name = userSignature.FullName;
+                updated = true;
+            }
+
+            if (existingUser.Username == null)
             {
                 existingUser.Username = userSignature.UserName;
+                updated = true;
+            }
+
+            if (existingUser.Name == null)
+            {
+                existingUser.Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim();
+                updated = true;
+            }
+
+            if (existingUser.Email == null)
+            {
+                existingUser.Email = effectiveEmail;
+                updated = true;
+            }
+
+            if (existingUser.Mobilenumber == null)
+            {
+                existingUser.Mobilenumber = userSignature.MobileNo;
+                updated = true;
+            }
+
+            if (updated)
+            {
                 await dbcontext.SaveChangesAsync();
             }
 
-            return existingUser;
+            if (existingUser.Isemailvalid == true)
+                return existingUser;
+            else
+                return null!;
         }
 
         return null!;

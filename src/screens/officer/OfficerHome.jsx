@@ -275,6 +275,20 @@ export default function OfficerHome() {
     [],
   );
 
+  // ✅ NEW: Helper function to check DSC status before sanctioning
+  const checkDSCStatus = async () => {
+    try {
+      const response = await axiosInstance.get("/Officer/GetDSCStatus");
+      return response.data; // Expected: { status: true } or { status: false, reason: "..." }
+    } catch (error) {
+      console.error("Error checking DSC status:", error);
+      return {
+        status: false,
+        reason: "Failed to connect to the server to verify DSC status.",
+      };
+    }
+  };
+
   const textColors = useMemo(
     () => ({
       "Total Applications": "#FFFFFF",
@@ -1232,7 +1246,28 @@ export default function OfficerHome() {
         });
         return;
       }
+
+      // ✅ NEW: Intercept Sanction action to verify DSC status FIRST
+      if (selectedAction === "Sanction") {
+        const dscCheck = await checkDSCStatus();
+
+        if (!dscCheck.status) {
+          // 🛑 BLOCK the action and show the specific reason from the backend
+          toast.error(
+            `Cannot proceed with Sanction: ${dscCheck.reason || "Your DSC is not valid or pending."}`,
+            {
+              position: "top-right",
+              autoClose: 6000, // Longer duration so they can read it
+              theme: "colored",
+            },
+          );
+          return; // Exit the function early, do NOT call processAllIds
+        }
+      }
+
+      // If DSC is valid (or action is not Sanction), proceed as normal
       const ids = selectedRows.map((item) => item.original.referenceNumber);
+
       if (selectedAction === "Reject") {
         setPendingRejectRows(selectedRows);
         setRejectConfirmOpen(true);
@@ -1240,7 +1275,7 @@ export default function OfficerHome() {
         await processAllIds(ids);
       }
     },
-    [selectedAction, processAllIds],
+    [selectedAction, processAllIds], // Dependencies remain the same
   );
 
   const getActionOptions = useMemo(() => {

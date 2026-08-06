@@ -123,6 +123,9 @@ namespace SahayataNidhi.Controllers.User
         public async Task<IActionResult> GetInitiatedApplications(int pageIndex = 0, int pageSize = 10)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            _logger.LogInformation($"User ID from claims: {userIdClaim}");
+
             if (!int.TryParse(userIdClaim, out int userId))
             {
                 return BadRequest("Invalid user ID.");
@@ -146,33 +149,33 @@ namespace SahayataNidhi.Controllers.User
 
             // Define columns
             var columns = new List<dynamic>
-    {
-        new { header = "S.No", accessorKey = "sno" },
-        new { header = "Service Name", accessorKey = "serviceName" },
-        new { header = "Reference Number", accessorKey = "referenceNumber" },
-        new { header = "Applicant Name", accessorKey = "applicantName" },
-        new { header = "Currently With", accessorKey = "currentlyWith" },
-        new { header = "Submission Date", accessorKey = "submissionDate" },
-        new { header = "Status", accessorKey = "status" }
-    };
+            {
+                new { header = "S.No", accessorKey = "sno" },
+                new { header = "Service Name", accessorKey = "serviceName" },
+                new { header = "Reference Number", accessorKey = "referenceNumber" },
+                new { header = "Applicant Name", accessorKey = "applicantName" },
+                new { header = "Currently With", accessorKey = "currentlyWith" },
+                new { header = "Submission Date", accessorKey = "submissionDate" },
+                new { header = "Status", accessorKey = "status" }
+            };
 
             List<dynamic> data = new List<dynamic>();
             int rowIndex = 0;
 
             // Case-insensitive status mapping
             var actionMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-    {
-        {"pending", "Pending"},
-        {"forwarded", "Forwarded"},
-        {"sanctioned", "Sanctioned"},
-        {"returned", "Returned"},
-        {"rejected", "Rejected"},
-        {"returntoedit", "Returned to citizen for correction"},
-        {"Deposited", "Inserted to Bank File"},
-        {"Dispatched", "Payment Under Process"},
-        {"Disbursed", "Payment Disbursed"},
-        {"Failure", "Payment Failed"}
-    };
+            {
+                {"pending", "Pending"},
+                {"forwarded", "Forwarded"},
+                {"sanctioned", "Sanctioned"},
+                {"returned", "Returned"},
+                {"rejected", "Rejected"},
+                {"returntoedit", "Returned to citizen for correction"},
+                {"Deposited", "Inserted to Bank File"},
+                {"Dispatched", "Payment Under Process"},
+                {"Disbursed", "Payment Disbursed"},
+                {"Failure", "Payment Failed"}
+            };
 
             foreach (var application in applications)
             {
@@ -240,7 +243,11 @@ namespace SahayataNidhi.Controllers.User
                 else if (workflowStatus == "sanctioned")
                 {
                     actions.Add(new { tooltip = "View", color = "#F0C38E", actionFunction = "CreateTimeLine" });
-                    actions.Add(new { tooltip = "Download SL", color = "#F0C38E", actionFunction = "DownloadSanctionLetter" });
+                    var ifSanctionedLetter = dbcontext.Userdocuments.FirstOrDefault(sl => sl.Filename == application.Referencenumber + "_SanctionLetter.pdf");
+                    if (ifSanctionedLetter != null)
+                    {
+                        actions.Add(new { tooltip = "Download SL", color = "#F0C38E", actionFunction = "DownloadSanctionLetter" });
+                    }
 
                     int corrigendumIndex = 1;
                     foreach (string id in corrigendumIds)
@@ -391,7 +398,15 @@ namespace SahayataNidhi.Controllers.User
             var players = JsonConvert.DeserializeObject<dynamic>(application!.Workflow!) as JArray;
             int currentPlayerIndex = (int)application.Currentplayer!;
             var currentPlayer = players!.FirstOrDefault(o => (int)o["playerId"]! == currentPlayerIndex);
-            var history = await dbcontext.Actionhistory.Where(ah => ah.Referencenumber == ApplicationId && !ah.Actiontaken.Contains("Withheld")).ToListAsync();
+            var history = (await dbcontext.Actionhistory
+            .Where(ah => ah.Referencenumber == ApplicationId &&
+                        !ah.Actiontaken.Contains("Withheld"))
+            .ToListAsync())
+            .OrderBy(ah => DateTime.ParseExact(
+                ah.Actiontakendate,
+                "dd-MM-yyyy HH:mm:ss",
+                CultureInfo.InvariantCulture))
+            .ToList();
             var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
             int totalRecords = history.Count;
 
@@ -415,9 +430,14 @@ namespace SahayataNidhi.Controllers.User
                     actionTaker = item.Actiontaker != "Citizen" ? item.Actiontaker + " " + officerArea : item.Actiontaker,
                     actionTaken = item.Actiontaken! == "ReturnToCitizen" ? "Returned to citizen for correction" : item.Actiontaken,
                     remarks = item.Remarks,
-                    actionTakenOn = DateTime.TryParse(item.Actiontakendate, out var dt)
-    ? dt.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
-    : ""
+                    actionTakenOn = DateTime.TryParseExact(
+                        item.Actiontakendate,
+                        "dd-MM-yyyy HH:mm:ss",
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.None,
+                        out var dt)
+                            ? dt.ToString("dd MMM yyyy", CultureInfo.InvariantCulture)
+            : ""
                 });
                 index++;
             }

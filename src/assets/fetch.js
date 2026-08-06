@@ -78,7 +78,7 @@ export async function SetServiceId(formData) {
 
 export async function GetServiceContent(ServiceId) {
   try {
-    const response = await axiosInstance.get("/User/GetServiceContent", {
+    const response = await axiosInstance.get("/Base/GetServiceContent", {
       params: { ServiceId },
     });
     return response.data;

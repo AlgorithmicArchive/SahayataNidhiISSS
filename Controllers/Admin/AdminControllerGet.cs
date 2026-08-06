@@ -87,45 +87,109 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { error = "Officer details not found" });
                 }
 
-                // Call PostgreSQL function using SqlQueryRaw
                 var result = dbcontext.Database
-                .SqlQueryRaw<DashboardData>(
-                    @"SELECT 
-                        ""TotalOfficers"" AS ""TotalOfficers"",
-                        ""TotalCitizens"" AS ""TotalCitizens"",
-                        ""TotalApplicationsSubmitted"" AS ""TotalApplicationsSubmitted"",
-                        ""TotalServices"" AS ""TotalServices""
-                    FROM get_count_for_admin({0}, {1}, {2}, {3})",
-                    officer.AccessLevel ?? (object)DBNull.Value,
-                    officer.AccessCode!,
-                    "new",
-                    officer.Department == 0 ? (object)DBNull.Value : officer.Department!)
-                .FirstOrDefault();
+                    .SqlQueryRaw<DashboardData>(
+                        @"SELECT 
+                    ""TotalOfficers"" AS ""TotalOfficers"",
+                    ""TotalCitizens"" AS ""TotalCitizens"",
+                    ""TotalApplicationsSubmitted"" AS ""TotalApplicationsSubmitted"",
+                    ""TotalServices"" AS ""TotalServices""
+                FROM get_count_for_admin({0}, {1}, {2}, {3})",
+                        officer.AccessLevel ?? (object)DBNull.Value,
+                        officer.AccessCode!,
+                        "new",
+                        officer.Department == 0 ? (object)DBNull.Value : officer.Department!)
+                    .FirstOrDefault();
 
                 if (result == null || result.TotalOfficers == -1)
                 {
                     return BadRequest(new { error = "Invalid access level or code" });
                 }
 
+                // NEW: Count pending DSCs for the dashboard card
+                var pendingDscCount = dbcontext.Certificates.Count(c => c.Status == "PENDING");
+
                 return Json(new
                 {
                     totalOfficers = result.TotalOfficers,
                     totalRegisteredUsers = result.TotalCitizens,
                     totalApplicationsSubmitted = result.TotalApplicationsSubmitted,
-                    totalServices = result.TotalServices
+                    totalServices = result.TotalServices,
+                    pendingDscCount = pendingDscCount // NEW
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error fetching dashboard data");
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while fetching dashboard data",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "An error occurred while fetching dashboard data", details = ex.Message });
             }
         }
 
+
+        [HttpGet]
+        public IActionResult GetPendingDSCList(int pageIndex = 0, int pageSize = 10)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                {
+                    return BadRequest(new { error = "Officer details not found" });
+                }
+
+                // Join Certificates with Users to show both names for Admin comparison
+                var query = from c in dbcontext.Certificates
+                            join u in dbcontext.Users on c.Officerid equals u.Userid
+                            where c.Status == "PENDING"
+                            select new
+                            {
+                                CertificateId = c.Uuid,
+                                OfficerName = u.Name,
+                                OfficerEmail = u.Email,
+                                CertSubjectName = c.CertSubjectName,
+                                CertifyingAuthority = c.Certifiyingauthority,
+                                ExpirationDate = c.Expirationdate
+                            };
+
+                var totalRecords = query.Count();
+                var pagedData = query
+                    .OrderByDescending(x => x.CertificateId)
+                    .Skip(pageIndex * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                var columns = new List<object>
+        {
+            new { accessorKey = "officerName", header = "Officer Name (DB)" },
+            new { accessorKey = "officerEmail", header = "Email" },
+            new { accessorKey = "certSubjectName", header = "Certificate Name (DSC)" },
+            new { accessorKey = "certifyingAuthority", header = "Certifying Authority" },
+            new { accessorKey = "expirationDate", header = "Expiration Date" }
+        };
+
+                var data = pagedData.Select(item => new
+                {
+                    certificateId = item.CertificateId,
+                    officerName = item.OfficerName,
+                    officerEmail = item.OfficerEmail,
+                    certSubjectName = item.CertSubjectName,
+                    certifyingAuthority = item.CertifyingAuthority,
+                    expirationDate = item.ExpirationDate?.ToString("dd MMM yyyy"),
+                    customActions = new List<dynamic>
+            {
+                new { type = "Approve", tooltip = "Approve DSC", color = "#4CAF50", actionFunction = "ApproveDSC" },
+                new { type = "Reject", tooltip = "Reject DSC", color = "#F44336", actionFunction = "RejectDSC" }
+            }
+                }).ToList();
+
+                return Json(new { data, columns, totalRecords });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching pending DSC list");
+                return StatusCode(500, new { error = "An error occurred while fetching pending DSCs", details = ex.Message });
+            }
+        }
         public string GetArea(string AccessLevel, int AccessCode)
         {
             if (AccessLevel == "State") return "Jammu & Kashmir";
@@ -905,7 +969,7 @@ namespace SahayataNidhi.Controllers.Admin
 
             return Ok(results);
         }
-        
+
         [HttpGet]
         public async Task<IActionResult> GetDistricts(int? divisionId = null, int? officeType = null)
         {

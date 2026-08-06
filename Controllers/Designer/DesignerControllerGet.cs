@@ -581,6 +581,7 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+
         [HttpGet]
         public async Task<IActionResult> GetServiceConfig([FromQuery] int serviceId)
         {

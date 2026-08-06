@@ -50,8 +50,8 @@ public class SecurityMiddleware
         var imgSrc = "img-src 'self' data: blob: https://fonts.gstatic.com https://www.google.com https://www.gstatic.com https://translate.googleapis.com; ";
 
         var connectSrc = isDev
-            ? $"connect-src 'self' http://localhost:5004 ws://localhost:5004 wss://localhost:5004 https://translate.googleapis.com; "
-            : $"connect-src 'self' http://{stagingHost} https://translate.googleapis.com; ";
+            ? $"connect-src 'self' http://localhost:5004 ws://localhost:5004 wss://localhost:5004 https://translate.googleapis.com https://localhost:8000 http://localhost:8000; "
+            : $"connect-src 'self' http://{stagingHost} https://translate.googleapis.com https://localhost:8000 http://localhost:8000; ";
 
         context.Response.Headers.ContentSecurityPolicy =
             "default-src 'self'; " +

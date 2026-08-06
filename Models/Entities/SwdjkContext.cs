@@ -57,6 +57,8 @@ public partial class SwdjkContext : DbContext
 
     public virtual DbSet<Muncipalitytypes> Muncipalitytypes { get; set; }
 
+    public virtual DbSet<MvDivisionLocations> MvDivisionLocations { get; set; }
+
     public virtual DbSet<Officersdesignations> Officersdesignations { get; set; }
 
     public virtual DbSet<Offices> Offices { get; set; }
@@ -138,9 +140,7 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Referencenumber)
                 .HasMaxLength(30)
                 .HasColumnName("referencenumber");
-            entity.Property(e => e.Remarks)
-                .HasMaxLength(255)
-                .HasColumnName("remarks");
+            entity.Property(e => e.Remarks).HasColumnName("remarks");
         });
 
         modelBuilder.Entity<ApplicationExpirations>(entity =>
@@ -345,6 +345,9 @@ public partial class SwdjkContext : DbContext
             entity.ToTable("certificates");
 
             entity.Property(e => e.Uuid).HasColumnName("uuid");
+            entity.Property(e => e.CertSubjectName)
+                .HasMaxLength(255)
+                .HasColumnName("cert_subject_name");
             entity.Property(e => e.Certifiyingauthority).HasColumnName("certifiyingauthority");
             entity.Property(e => e.Expirationdate)
                 .HasColumnType("timestamp without time zone")
@@ -354,6 +357,10 @@ public partial class SwdjkContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("registereddate");
             entity.Property(e => e.Serialnumber).HasColumnName("serialnumber");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasDefaultValueSql("'PENDING'::character varying")
+                .HasColumnName("status");
         });
 
         modelBuilder.Entity<CitizenApplications>(entity =>
@@ -391,6 +398,10 @@ public partial class SwdjkContext : DbContext
             entity.HasIndex(e => new { e.Status, e.LatestWfStatus }, "idx_status_wf_status");
 
             entity.HasIndex(e => e.Workflow, "idx_workflow_gin").HasMethod("gin");
+
+            entity.HasIndex(e => e.Workflow, "idx_workflow_shifted_gin")
+                .HasMethod("gin")
+                .HasOperators(new[] { "jsonb_path_ops" });
 
             entity.Property(e => e.Referencenumber)
                 .HasMaxLength(50)
@@ -801,6 +812,17 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Typename)
                 .HasMaxLength(255)
                 .HasColumnName("typename");
+        });
+
+        modelBuilder.Entity<MvDivisionLocations>(entity =>
+        {
+            entity
+                .HasNoKey()
+                .ToView("mv_division_locations");
+
+            entity.Property(e => e.DistrictIds).HasColumnName("district_ids");
+            entity.Property(e => e.Division).HasColumnName("division");
+            entity.Property(e => e.TehsilIds).HasColumnName("tehsil_ids");
         });
 
         modelBuilder.Entity<Officersdesignations>(entity =>
