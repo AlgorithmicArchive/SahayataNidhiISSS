@@ -1,4 +1,4 @@
 {
-    "CodeGPT.apiKey": "Huggingface",
+    "CodeGPT.apiKey": "OpenRouter",
     "prettier.trailingComma": "all"
 }
