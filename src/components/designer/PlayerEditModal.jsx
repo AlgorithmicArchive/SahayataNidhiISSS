@@ -54,13 +54,13 @@ const cleanDeclarationData = (fieldData) => {
       isDeclaration: true,
       declaration: fieldData.declaration || "",
       declarationFields: Array.isArray(fieldData.declarationFields)
-        ? fieldData.declarationFields.map(f => ({
-          id: f.id || f.name,
-          name: f.name,
-          label: f.label || f.name,
-          type: f.type || 'text',
-          required: f.required || false
-        }))
+        ? fieldData.declarationFields.map((f) => ({
+            id: f.id || f.name,
+            name: f.name,
+            label: f.label || f.name,
+            type: f.type || "text",
+            required: f.required || false,
+          }))
         : [],
     };
   }
@@ -76,7 +76,9 @@ const sanitizeActionForm = (actionForm) => {
       isConsentCheckbox: field.isConsentCheckbox || false,
       isDeclaration: field.isDeclaration || false,
       declaration: field.declaration || "",
-      declarationFields: Array.isArray(field.declarationFields) ? field.declarationFields : [],
+      declarationFields: Array.isArray(field.declarationFields)
+        ? field.declarationFields
+        : [],
       editable: field.editable ?? true,
     };
 
@@ -89,7 +91,7 @@ const sanitizeActionForm = (actionForm) => {
         Object.entries(field.dependentOptions).map(([key, opts]) => [
           key,
           opts,
-        ])
+        ]),
       );
     }
 
@@ -98,8 +100,8 @@ const sanitizeActionForm = (actionForm) => {
       sanitizedField.additionalFields = Object.fromEntries(
         Object.entries(field.additionalFields).map(([key, fields]) => [
           key,
-          fields.map(f => cleanDeclarationData(f))
-        ])
+          fields.map((f) => cleanDeclarationData(f)),
+        ]),
       );
     }
 
@@ -111,9 +113,9 @@ const sanitizeActionForm = (actionForm) => {
 const formatColumnLabel = (columnName) => {
   if (!columnName) return "";
   return columnName
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/_/g, ' ')
-    .replace(/^./, str => str.toUpperCase())
+    .replace(/([A-Z])/g, " $1")
+    .replace(/_/g, " ")
+    .replace(/^./, (str) => str.toUpperCase())
     .trim();
 };
 
@@ -121,10 +123,18 @@ const shouldSkipField = (fieldName) => {
   if (!fieldName) return true;
   const lowerName = fieldName.toLowerCase();
   const skipPatterns = [
-    'id$', '^created', '^updated', '^deleted',
-    'password', 'token', 'hash', 'salt', 'secret', 'withhold'
+    "id$",
+    "^created",
+    "^updated",
+    "^deleted",
+    "password",
+    "token",
+    "hash",
+    "salt",
+    "secret",
+    "withhold",
   ];
-  return skipPatterns.some(pattern => new RegExp(pattern).test(lowerName));
+  return skipPatterns.some((pattern) => new RegExp(pattern).test(lowerName));
 };
 
 const PlayerEditModal = ({
@@ -143,6 +153,7 @@ const PlayerEditModal = ({
     canHavePool: player.canHavePool || false,
     canManageBankFiles: player.canManageBankFiles || false,
     canWithhold: player.canWithhold || false,
+    canPushToPool: player.canPushToPool || false,
     canValidateAadhaar: player.canValidateAadhaar || false,
     canDirectWithheld: player.canDirectWithheld || false,
     actionForm: sanitizeActionForm(player.actionForm || []),
@@ -165,7 +176,9 @@ const PlayerEditModal = ({
       canReturnToCitizen: saved.canReturnToCitizen ?? player.canReturnToCitizen,
       canReject: saved.canReject ?? player.canReject,
       canWithhold: saved.canWithhold ?? player.canWithhold,
-      canDirectWithheld: saved.canDirectWithheld ?? (player.canDirectWithheld || false),
+      canPushToPool: saved.canPushToPool ?? player.canPushToPool,
+      canDirectWithheld:
+        saved.canDirectWithheld ?? (player.canDirectWithheld || false),
       customPermissions: getCustomPermState(),
     };
   });
@@ -181,7 +194,7 @@ const PlayerEditModal = ({
   const [fieldForAdditionalModal, setFieldForAdditionalModal] = useState(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
   const getServiceInfo = () => {
@@ -247,7 +260,7 @@ const PlayerEditModal = ({
       try {
         setIsFetchingFormFields(true);
         const response = await axiosInstance.get(`/Designer/GetFormElements`, {
-          params: { serviceId }
+          params: { serviceId },
         });
 
         if (response.data.status) {
@@ -256,16 +269,16 @@ const PlayerEditModal = ({
 
           // Extract fields from sections
           if (response.data.sections && Array.isArray(response.data.sections)) {
-            response.data.sections.forEach(section => {
+            response.data.sections.forEach((section) => {
               if (section.fields && Array.isArray(section.fields)) {
-                section.fields.forEach(field => {
+                section.fields.forEach((field) => {
                   if (field.name && field.label) {
                     const fieldData = {
                       id: field.name,
                       name: field.name,
                       label: field.label,
-                      type: field.type || 'text',
-                      source: 'form_designer'
+                      type: field.type || "text",
+                      source: "form_designer",
                     };
 
                     if (!fieldMap.has(field.name)) {
@@ -279,8 +292,11 @@ const PlayerEditModal = ({
           }
 
           // Extract fields from columnNames
-          if (response.data.columnNames && Array.isArray(response.data.columnNames)) {
-            response.data.columnNames.forEach(columnName => {
+          if (
+            response.data.columnNames &&
+            Array.isArray(response.data.columnNames)
+          ) {
+            response.data.columnNames.forEach((columnName) => {
               if (shouldSkipField(columnName)) return;
 
               const label = formatColumnLabel(columnName);
@@ -288,8 +304,8 @@ const PlayerEditModal = ({
                 id: columnName,
                 name: columnName,
                 label: label,
-                type: 'text',
-                source: 'application_table'
+                type: "text",
+                source: "application_table",
               };
 
               if (!fieldMap.has(columnName)) {
@@ -330,7 +346,7 @@ const PlayerEditModal = ({
     try {
       setIsFetchingFormFields(true);
       const response = await axiosInstance.get(`/Designer/GetFormElements`, {
-        params: { serviceId }
+        params: { serviceId },
       });
 
       if (response.data.status) {
@@ -338,16 +354,16 @@ const PlayerEditModal = ({
         const fieldMap = new Map();
 
         if (response.data.sections && Array.isArray(response.data.sections)) {
-          response.data.sections.forEach(section => {
+          response.data.sections.forEach((section) => {
             if (section.fields && Array.isArray(section.fields)) {
-              section.fields.forEach(field => {
+              section.fields.forEach((field) => {
                 if (field.name && field.label) {
                   const fieldData = {
                     id: field.name,
                     name: field.name,
                     label: field.label,
-                    type: field.type || 'text',
-                    source: 'form_designer'
+                    type: field.type || "text",
+                    source: "form_designer",
                   };
 
                   if (!fieldMap.has(field.name)) {
@@ -360,8 +376,11 @@ const PlayerEditModal = ({
           });
         }
 
-        if (response.data.columnNames && Array.isArray(response.data.columnNames)) {
-          response.data.columnNames.forEach(columnName => {
+        if (
+          response.data.columnNames &&
+          Array.isArray(response.data.columnNames)
+        ) {
+          response.data.columnNames.forEach((columnName) => {
             if (shouldSkipField(columnName)) return;
 
             const label = formatColumnLabel(columnName);
@@ -369,8 +388,8 @@ const PlayerEditModal = ({
               id: columnName,
               name: columnName,
               label: label,
-              type: 'text',
-              source: 'application_table'
+              type: "text",
+              source: "application_table",
             };
 
             if (!fieldMap.has(columnName)) {
@@ -395,7 +414,9 @@ const PlayerEditModal = ({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = editedPlayer.actionForm.findIndex((f) => f.id === active.id);
+    const oldIndex = editedPlayer.actionForm.findIndex(
+      (f) => f.id === active.id,
+    );
     const newIndex = editedPlayer.actionForm.findIndex((f) => f.id === over.id);
 
     setEditedPlayer((prev) => ({
@@ -407,28 +428,34 @@ const PlayerEditModal = ({
   const handleChange = (field, value) => {
     if (field === "canCorrigendum" && value) {
       const other = players.find(
-        (p) => p.playerId !== editedPlayer.playerId && p.canCorrigendum
+        (p) => p.playerId !== editedPlayer.playerId && p.canCorrigendum,
       );
       if (other) {
-        toast.error(`Another player (${other.designation}) already has Can Corrigendum authority.`);
+        toast.error(
+          `Another player (${other.designation}) already has Can Corrigendum authority.`,
+        );
         return;
       }
     }
     if (field === "canManageBankFiles" && value) {
       const other = players.find(
-        (p) => p.playerId !== editedPlayer.playerId && p.canManageBankFiles
+        (p) => p.playerId !== editedPlayer.playerId && p.canManageBankFiles,
       );
       if (other) {
-        toast.error(`Another player (${other.designation}) already has Can Manage Bank Files authority.`);
+        toast.error(
+          `Another player (${other.designation}) already has Can Manage Bank Files authority.`,
+        );
         return;
       }
     }
     if (field === "canValidateAadhaar" && value) {
       const other = players.find(
-        (p) => p.playerId !== editedPlayer.playerId && p.canValidateAadhaar
+        (p) => p.playerId !== editedPlayer.playerId && p.canValidateAadhaar,
       );
       if (other) {
-        toast.error(`Another player (${other.designation}) already has Can Validate Aadhaar authority.`);
+        toast.error(
+          `Another player (${other.designation}) already has Can Validate Aadhaar authority.`,
+        );
         return;
       }
     }
@@ -437,7 +464,7 @@ const PlayerEditModal = ({
       setEditedPlayer((prev) => ({
         ...prev,
         customPermissions: prev.customPermissions.map((perm) =>
-          perm.name === field ? { ...perm, enabled: value } : perm
+          perm.name === field ? { ...perm, enabled: value } : perm,
         ),
       }));
       return;
@@ -485,6 +512,7 @@ const PlayerEditModal = ({
       canCorrigendum: true,
       canManageBankFiles: true,
       canWithhold: true,
+      canPushToPool: true,
       canValidateAadhaar: true,
       canDirectWithheld: true,
       customPermissions: (prev.customPermissions || []).map((p) => ({
@@ -507,6 +535,7 @@ const PlayerEditModal = ({
       canCorrigendum: false,
       canManageBankFiles: false,
       canWithhold: false,
+      canPushToPool: false,
       canValidateAadhaar: false,
       canDirectWithheld: false,
       customPermissions: (prev.customPermissions || []).map((p) => ({
@@ -524,6 +553,7 @@ const PlayerEditModal = ({
       canForwardToPlayer: editedPlayer.canForwardToPlayer,
       canReject: editedPlayer.canReject,
       canWithhold: editedPlayer.canWithhold,
+      canPushToPool: editedPlayer.canPushToPool,
       canDirectWithheld: editedPlayer.canDirectWithheld || false,
       customPermissions: (editedPlayer.customPermissions || [])
         .filter((p) => p.enabled)
@@ -539,6 +569,7 @@ const PlayerEditModal = ({
       canForwardToPlayer: false,
       canReject: false,
       canWithhold: false,
+      canPushToPool: false,
       canDirectWithheld: false,
       customPermissions: {},
     });
@@ -592,20 +623,20 @@ const PlayerEditModal = ({
       name: updatedField.name,
       isConsentCheckbox: updatedField.isConsentCheckbox,
       hasDeclaration: !!updatedField.declaration,
-      declarationFields: updatedField.declarationFields?.length
+      declarationFields: updatedField.declarationFields?.length,
     });
 
     // Clean the field data
     const cleanedField = cleanDeclarationData(updatedField);
 
     // Update the field in actionForm
-    const updatedActionForm = editedPlayer.actionForm.map(f =>
-      f.id === cleanedField.id ? cleanedField : f
+    const updatedActionForm = editedPlayer.actionForm.map((f) =>
+      f.id === cleanedField.id ? cleanedField : f,
     );
 
-    setEditedPlayer(prev => ({
+    setEditedPlayer((prev) => ({
       ...prev,
-      actionForm: sanitizeActionForm(updatedActionForm)
+      actionForm: sanitizeActionForm(updatedActionForm),
     }));
 
     toast.success("Field updated successfully");
@@ -626,20 +657,20 @@ const PlayerEditModal = ({
       type: updatedField.type,
       isConsentCheckbox: updatedField.isConsentCheckbox,
       hasDeclaration: !!updatedField.declaration,
-      declarationFields: updatedField.declarationFields?.length
+      declarationFields: updatedField.declarationFields?.length,
     });
 
     // Clean the field data
     const cleanedField = cleanDeclarationData(updatedField);
 
     // Update the field in actionForm
-    const updatedActionForm = editedPlayer.actionForm.map(f =>
-      f.id === cleanedField.id ? cleanedField : f
+    const updatedActionForm = editedPlayer.actionForm.map((f) =>
+      f.id === cleanedField.id ? cleanedField : f,
     );
 
-    setEditedPlayer(prev => ({
+    setEditedPlayer((prev) => ({
       ...prev,
-      actionForm: sanitizeActionForm(updatedActionForm)
+      actionForm: sanitizeActionForm(updatedActionForm),
     }));
 
     setIsFieldModalOpen(false);
@@ -648,16 +679,21 @@ const PlayerEditModal = ({
     console.log("Field updated successfully:", {
       hasDeclaration: !!cleanedField.declaration,
       declarationLength: cleanedField.declaration?.length,
-      fieldsCount: cleanedField.declarationFields?.length
+      fieldsCount: cleanedField.declarationFields?.length,
     });
   };
 
   const generateActionFormOptions = () => {
     const options = [];
-    if (actionFormOptions.canForwardToPlayer && editedPlayer.canForwardToPlayer) {
+    if (
+      actionFormOptions.canForwardToPlayer &&
+      editedPlayer.canForwardToPlayer
+    ) {
       let label = "Forward to Player";
       if (editedPlayer.nextPlayerId !== null) {
-        const next = players.find((p) => p.playerId === editedPlayer.nextPlayerId);
+        const next = players.find(
+          (p) => p.playerId === editedPlayer.nextPlayerId,
+        );
         if (next?.designation) label = `Forward to ${next.designation}`;
       }
       options.push({ value: "Forward", label });
@@ -667,7 +703,9 @@ const PlayerEditModal = ({
     if (actionFormOptions.canReturnToPlayer && editedPlayer.canReturnToPlayer) {
       let label = "Return to Player";
       if (editedPlayer.prevPlayerId !== null) {
-        const prev = players.find((p) => p.playerId === editedPlayer.prevPlayerId);
+        const prev = players.find(
+          (p) => p.playerId === editedPlayer.prevPlayerId,
+        );
         if (prev?.designation) label = `Return to ${prev.designation}`;
       }
       options.push({ value: "ReturnToPlayer", label });
@@ -678,6 +716,8 @@ const PlayerEditModal = ({
       options.push({ value: "Reject", label: "Reject" });
     if (actionFormOptions.canWithhold && editedPlayer.canWithhold)
       options.push({ value: "Withhold", label: "Withhold" });
+    if (actionFormOptions.canPushToPool && editedPlayer.canPushToPool)
+      options.push({ value: "PushToPool", label: "Push to Pool" });
     if (actionFormOptions.canDirectWithheld && editedPlayer.canDirectWithheld)
       options.push({ value: "DirectWithheld", label: "Direct Withheld" });
 
@@ -699,7 +739,7 @@ const PlayerEditModal = ({
     let updatedActionForm = editedPlayer.actionForm.map((field) =>
       field.name === "defaultAction"
         ? { ...field, options: actionOptions, label: "Action" }
-        : field
+        : field,
     );
 
     if (!updatedActionForm.some((f) => f.name === "defaultAction")) {
@@ -741,7 +781,7 @@ const PlayerEditModal = ({
           name: field.name,
           isConsentCheckbox: field.isConsentCheckbox,
           declaration: field.declaration?.substring(0, 50),
-          declarationFields: field.declarationFields?.length
+          declarationFields: field.declarationFields?.length,
         });
       }
     });
@@ -767,7 +807,10 @@ const PlayerEditModal = ({
           borderRadius: 2,
         }}
       >
-        <Typography variant="h5" sx={{ mb: 3, fontWeight: 600, color: "primary.main" }}>
+        <Typography
+          variant="h5"
+          sx={{ mb: 3, fontWeight: 600, color: "primary.main" }}
+        >
           Edit Player
         </Typography>
 
@@ -781,7 +824,8 @@ const PlayerEditModal = ({
             </Typography>
             {hasFetchedFormFields && (
               <Typography variant="body2">
-                <strong>Available Form Fields:</strong> {formFields.length} fields loaded
+                <strong>Available Form Fields:</strong> {formFields.length}{" "}
+                fields loaded
               </Typography>
             )}
           </Alert>
@@ -797,7 +841,9 @@ const PlayerEditModal = ({
               value={editedPlayer.designation || ""}
               onChange={(e) => handleChange("designation", e.target.value)}
             >
-              <MenuItem value=""><em>Select Designation</em></MenuItem>
+              <MenuItem value="">
+                <em>Select Designation</em>
+              </MenuItem>
               {designations.map((des, i) => (
                 <MenuItem key={i} value={des.designation}>
                   {des.designation} ({des.accessLevel})
@@ -810,7 +856,9 @@ const PlayerEditModal = ({
           Access Level: {editedPlayer.accessLevel || "Not selected"}
         </Typography>
 
-        <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>Permissions</Typography>
+        <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
+          Permissions
+        </Typography>
         <Divider sx={{ mb: 2 }} />
         <Grid container spacing={1} sx={{ pl: 2 }}>
           {[
@@ -824,6 +872,7 @@ const PlayerEditModal = ({
             { key: "canCorrigendum", label: "Can Corrigendum" },
             { key: "canManageBankFiles", label: "Can Manage Bank Files" },
             { key: "canWithhold", label: "Can Withhold" },
+            { key: "canPushToPool", label: "Can Push to Pool" },
             { key: "canValidateAadhaar", label: "Can Validate Aadhaar" },
             { key: "canDirectWithheld", label: "Can Direct Withheld" },
           ].map((p) => (
@@ -862,24 +911,61 @@ const PlayerEditModal = ({
           </Button>
         </Box>
 
-        <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>Action Form Options</Typography>
+        <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
+          Action Form Options
+        </Typography>
         <Divider sx={{ mb: 2 }} />
         <Grid container spacing={1} sx={{ pl: 2 }}>
           {[
-            { key: "canSanction", label: "Include Sanction", enabled: editedPlayer.canSanction },
-            { key: "canReturnToPlayer", label: "Include Return to Player", enabled: editedPlayer.canReturnToPlayer },
-            { key: "canReturnToCitizen", label: "Include Return to Citizen", enabled: editedPlayer.canReturnToCitizen },
-            { key: "canForwardToPlayer", label: "Include Forward to Player", enabled: editedPlayer.canForwardToPlayer },
-            { key: "canReject", label: "Include Reject", enabled: editedPlayer.canReject },
-            { key: "canWithhold", label: "Include Withhold", enabled: editedPlayer.canWithhold },
-            { key: "canDirectWithheld", label: "Include Direct Withheld", enabled: editedPlayer.canDirectWithheld },
+            {
+              key: "canSanction",
+              label: "Include Sanction",
+              enabled: editedPlayer.canSanction,
+            },
+            {
+              key: "canReturnToPlayer",
+              label: "Include Return to Player",
+              enabled: editedPlayer.canReturnToPlayer,
+            },
+            {
+              key: "canReturnToCitizen",
+              label: "Include Return to Citizen",
+              enabled: editedPlayer.canReturnToCitizen,
+            },
+            {
+              key: "canForwardToPlayer",
+              label: "Include Forward to Player",
+              enabled: editedPlayer.canForwardToPlayer,
+            },
+            {
+              key: "canReject",
+              label: "Include Reject",
+              enabled: editedPlayer.canReject,
+            },
+            {
+              key: "canWithhold",
+              label: "Include Withhold",
+              enabled: editedPlayer.canWithhold,
+            },
+            {
+              key: "canPushToPool",
+              label: "Include Push to Pool",
+              enabled: editedPlayer.canPushToPool,
+            },
+            {
+              key: "canDirectWithheld",
+              label: "Include Direct Withheld",
+              enabled: editedPlayer.canDirectWithheld,
+            },
           ].map((opt) => (
             <Grid item xs={6} key={opt.key}>
               <FormControlLabel
                 control={
                   <Checkbox
                     checked={!!actionFormOptions[opt.key]}
-                    onChange={(e) => handleActionFormOptionChange(opt.key, e.target.checked)}
+                    onChange={(e) =>
+                      handleActionFormOptionChange(opt.key, e.target.checked)
+                    }
                     disabled={!opt.enabled}
                   />
                 }
@@ -893,7 +979,9 @@ const PlayerEditModal = ({
                 control={
                   <Checkbox
                     checked={!!actionFormOptions.customPermissions?.[perm.name]}
-                    onChange={(e) => handleActionFormOptionChange(perm.name, e.target.checked)}
+                    onChange={(e) =>
+                      handleActionFormOptionChange(perm.name, e.target.checked)
+                    }
                     disabled={!perm.enabled}
                   />
                 }
@@ -911,9 +999,15 @@ const PlayerEditModal = ({
           </Button>
         </Box>
 
-        <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>Action Form Fields</Typography>
+        <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
+          Action Form Fields
+        </Typography>
         <Divider sx={{ mb: 2 }} />
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
           <SortableContext
             items={editedPlayer.actionForm.map((f) => f.id)}
             strategy={verticalListSortingStrategy}
@@ -927,12 +1021,14 @@ const PlayerEditModal = ({
                   sectionId="actionForm"
                   onEditField={handleEditField}
                   onAdditonalModal={handleAdditionalModal}
-                  onFieldChange={() => { }}
+                  onFieldChange={() => {}}
                   onRemoveField={handleRemoveField}
                 />
               ))
             ) : (
-              <Typography color="text.secondary">No fields added yet.</Typography>
+              <Typography color="text.secondary">
+                No fields added yet.
+              </Typography>
             )}
           </SortableContext>
         </DndContext>
@@ -941,7 +1037,9 @@ const PlayerEditModal = ({
           Add Field
         </Button>
 
-        <Box sx={{ mt: 4, display: "flex", justifyContent: "flex-end", gap: 2 }}>
+        <Box
+          sx={{ mt: 4, display: "flex", justifyContent: "flex-end", gap: 2 }}
+        >
           <Button variant="contained" onClick={handleSave}>
             Save
           </Button>

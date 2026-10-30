@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Box,
   Card,
@@ -746,9 +747,14 @@ export default function OfficerAadhaarValidations() {
         }}
       >
         <Container maxWidth="xl">
-          <Typography variant="h4" fontWeight="bold" sx={{ color: "#1e293b" }}>
-            Dashboard
-          </Typography>
+          <GovPageHeader
+            title="Aadhaar Validations Dashboard"
+            hindiTitle="आधार सत्यापन डैशबोर्ड"
+            crumbs={[
+              { label: "Officer", path: "/officer/home" },
+              { label: "Aadhaar Validations", path: "" },
+            ]}
+          />
         </Container>
       </Box>
 

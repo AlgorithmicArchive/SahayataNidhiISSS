@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect, useRef } from "react";
+import React, { useContext, useState, useEffect, useRef, useMemo } from "react";
 import {
   AppBar,
   Toolbar,
@@ -12,19 +12,25 @@ import {
   Popper,
   Menu,
   CircularProgress,
+  Collapse,
+  ClickAwayListener,
+  useMediaQuery,
 } from "@mui/material";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { UserContext } from "../UserContext";
 import TokenTimer from "./TokenTimer";
 import axiosInstance from "../axiosConfig";
 import MenuIcon from "@mui/icons-material/Menu";
+import ArrowDropDownIcon from "@mui/icons-material/ArrowDropDown";
 import { toast } from "react-toastify";
 
 const MyNavbar = () => {
-  const [isSmallScreen, setIsSmallScreen] = useState(false);
+  // Aligns exactly with MUI's `md` breakpoint, which is what the sx props use
+  const isDesktop = useMediaQuery("(min-width: 900px)");
+
   const [mobileMenuAnchor, setMobileMenuAnchor] = useState(null);
   const [openSubmenu, setOpenSubmenu] = useState(null);
-  const [hoveredKey, setHoveredKey] = useState(null);
+  const [openMenu, setOpenMenu] = useState(null);
   const [popperAnchor, setPopperAnchor] = useState(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
@@ -47,17 +53,7 @@ const MyNavbar = () => {
     actualUserType,
   } = useContext(UserContext);
 
-  const API_BASE = window.__CONFIG__?.API_URL || ""; // fallback to empty string
-
-  /* -------------------------------------------------
-     Resize detection
-  ------------------------------------------------- */
-  useEffect(() => {
-    const handle = () => setIsSmallScreen(window.innerWidth < 992);
-    handle();
-    window.addEventListener("resize", handle);
-    return () => window.removeEventListener("resize", handle);
-  }, []);
+  const API_BASE = window.__CONFIG__?.API_URL || "";
 
   useEffect(() => {
     return () => timeoutRef.current && clearTimeout(timeoutRef.current);
@@ -70,15 +66,13 @@ const MyNavbar = () => {
     try {
       const r = await axiosInstance.post(`${API_BASE}/Home/LogOut`);
       if (r.data.sso && r.data.logoutUrl) {
-        // External SSO logout — navigate away
         window.location.href = r.data.logoutUrl;
-        return; // ⬅️ STOP HERE — don't clear state or navigate
+        return;
       }
     } catch {
-      // Silent fail — continue with local logout
+      /* fall through to local logout */
     }
 
-    // Local logout only
     setToken(null);
     setUserType(null);
     setUsername(null);
@@ -86,14 +80,14 @@ const MyNavbar = () => {
     setVerified(false);
     sessionStorage.clear();
     closeAllMenus();
-    navigate("/login");
+    navigate("/");
   };
 
   const closeAllMenus = () => {
     setMobileMenuAnchor(null);
     setPopperAnchor(null);
+    setOpenMenu(null);
     setOpenSubmenu(null);
-    setHoveredKey(null);
   };
 
   const handleNavigate = async (path) => {
@@ -102,7 +96,7 @@ const MyNavbar = () => {
         setLoginLoading(true);
         toast.info("Attempting SSO login...", { autoClose: 2000 });
 
-        const SSO_TIMEOUT = 5000; // 5 seconds
+        const SSO_TIMEOUT = 5000;
         const ssoPromise = fetch(`${API_BASE}/Home/InitiateSSO`, {
           method: "GET",
         });
@@ -119,7 +113,7 @@ const MyNavbar = () => {
         } else {
           toast.warning(d.message || "SSO failed, using manual login");
           setLoginLoading(false);
-          navigate("/login");
+          navigate("/");
         }
       } catch (error) {
         let errorMessage = "Login error";
@@ -130,7 +124,7 @@ const MyNavbar = () => {
         }
         toast.warning(errorMessage);
         setLoginLoading(false);
-        navigate("/login");
+        navigate("/");
       }
     } else {
       navigate(path);
@@ -138,29 +132,29 @@ const MyNavbar = () => {
     }
   };
 
-  const callSSo = async () => {
-    const ssoPromise = fetch(`${API_BASE}/Home/InitiateSSO`, {
-      method: "POST",
-    });
-  };
-
   const handleMobileMenuOpen = (e) => setMobileMenuAnchor(e.currentTarget);
   const handleMobileMenuClose = () => setMobileMenuAnchor(null);
 
   /* -------------------------------------------------
-     Hover (desktop)
+     Hover (desktop) & click (all devices)
   ------------------------------------------------- */
   const handleMouseEnter = (key, el) => {
-    if (!isSmallScreen) {
+    if (isDesktop) {
       clearTimeout(timeoutRef.current);
-      setHoveredKey(key);
+      setOpenMenu(key);
       setPopperAnchor(el);
     }
   };
 
+  const handleClick = (key, el) => {
+    clearTimeout(timeoutRef.current);
+    setOpenMenu((prev) => (prev === key ? null : key));
+    setPopperAnchor(el);
+  };
+
   const handleMouseLeave = () => {
-    if (!isSmallScreen) {
-      timeoutRef.current = setTimeout(() => setHoveredKey(null), 200);
+    if (isDesktop) {
+      timeoutRef.current = setTimeout(() => setOpenMenu(null), 200);
     }
   };
 
@@ -179,22 +173,29 @@ const MyNavbar = () => {
   const getNavItemStyle = (item) => {
     const active = getActivePaths(item).includes(location.pathname);
     return {
-      color: active ? "#FFF" : "#000",
-      fontWeight: active ? 600 : "normal",
-      padding: "5px 15px",
+      color: active ? "#FFF" : "#374151",
+      fontWeight: active ? 600 : 500,
+      padding: "8px 16px",
       transition: "all .3s ease",
       background: active
         ? "linear-gradient(to right, #10B582, #0D9588)"
         : "transparent",
       borderRadius: 2,
+      boxShadow: active ? "0 4px 10px rgba(16, 181, 130, 0.25)" : "none",
+      textTransform: "none",
       "&:hover": {
-        transform: active ? "scale(1.05)" : "none",
+        transform: active ? "none" : "translateY(-1px)",
         color: !active ? "#0FB282" : undefined,
+        backgroundColor: !active ? "rgba(16, 181, 130, 0.08)" : undefined,
       },
       ...(item.isSpecial && {
-        backgroundColor: "#E5620A",
+        background: "linear-gradient(to right, #E5620A, #D97706)",
         color: "#fff",
-        "&:hover": { backgroundColor: "#DE6E08" },
+        boxShadow: "0 4px 10px rgba(229, 98, 10, 0.3)",
+        "&:hover": {
+          background: "linear-gradient(to right, #D97706, #B45309)",
+          transform: "translateY(-2px)",
+        },
         marginLeft: 2,
       }),
       display: "flex",
@@ -206,16 +207,14 @@ const MyNavbar = () => {
   const getMenuItemStyle = (path) => {
     const active = location.pathname === path;
     return {
-      backgroundColor: active
-        ? "linear-gradient(to right, #10B582, #0D9588)"
-        : "transparent",
-      color: active ? "#0D9588" : "#000",
+      backgroundColor: active ? "rgba(16, 181, 130, 0.12)" : "transparent",
+      color: active ? "#0D9588" : "#374151",
       fontWeight: active ? 600 : "normal",
+      borderRadius: 1,
+      mb: 0.5,
       "&:hover": {
-        backgroundColor: active
-          ? "linear-gradient(to right, #10B582, #0D9588)"
-          : "#f0f0f0",
-        color: active ? "#0D9588" : "#10B582",
+        backgroundColor: active ? "rgba(16, 181, 130, 0.18)" : "#f3f4f6",
+        color: "#0FB282",
       },
     };
   };
@@ -225,7 +224,6 @@ const MyNavbar = () => {
   ------------------------------------------------- */
   const getMenuConfig = () => {
     const m = [];
-    // ---- unauthenticated ----
     if (!userType && !verified) {
       m.push(
         { name: "Home", path: "/", key: "home" },
@@ -238,7 +236,6 @@ const MyNavbar = () => {
         },
       );
     }
-    // ---- Citizen ----
     if (userType === "Citizen" && verified) {
       m.push(
         { name: "Home", path: "/user/home", key: "citizen-home" },
@@ -257,7 +254,6 @@ const MyNavbar = () => {
         },
       );
     }
-    // ---- Officer ----
     if (userType === "Officer" && verified) {
       m.push(
         { name: "Dashboard", path: "/officer/home", key: "officer-home" },
@@ -291,11 +287,6 @@ const MyNavbar = () => {
         officerAuthorities?.canDirectWithheld
       )
         upd.push({ name: "Withheld Application", path: "/officer/withheld" });
-      // if (officerAuthorities?.canValidateAadhaar)
-      //   upd.push({
-      //     name: "Validate Aadhaar",
-      //     path: "/officer/validateaadhaar",
-      //   });
       if (upd.length)
         m.push({
           name: "Applications Updations",
@@ -306,21 +297,12 @@ const MyNavbar = () => {
         name: "View Applications",
         key: "view-apps",
         subItems: [
-          // { name: "Aadhaar Validations", path: "/officer/aadhaarvalidations" },
           { name: "Search Application", path: "/officer/searchapplication" },
         ],
       });
     }
-    // ---- Viewer, Admin, Designer ----
     if (userType === "Viewer" && verified) {
-      m.push(
-        { name: "Dashboard", path: "/viewer/home", key: "viewer-home" },
-        // {
-        //   name: "Aadhaar Validations",
-        //   path: "/viewer/aadhaarvalidations",
-        //   key: "viewer-aadhaar",
-        // },
-      );
+      m.push({ name: "Dashboard", path: "/viewer/home", key: "viewer-home" });
     }
     if (userType === "Admin" && verified) {
       m.push(
@@ -345,9 +327,14 @@ const MyNavbar = () => {
           key: "admin-validate",
         },
         {
-          name: "View Feedbacks",
-          path: "/admin/viewFeedbacks",
-          key: "admin-feedback",
+          name: "Webservice Logs",
+          path: "/admin/webservicelogs",
+          key: "admin-webservicelogs",
+        },
+        {
+          name: "Eligibility Criteria",
+          path: "/admin/manageEligibilityCriteria",
+          key: "admin-eligibility-criteria",
         },
       );
     }
@@ -373,7 +360,8 @@ const MyNavbar = () => {
             { name: "Letter Pdf", path: "/designer/createletterpdf" },
             { name: "Web Service", path: "/designer/createwebservice" },
             { name: "Create Reports", path: "/designer/createreports" },
-            { name: "Email", path: "/designer/emailsettings" },
+            { name: "Notifications", path: "/designer/emailsettings" },
+            { name: "Expiration Types", path: "/designer/expirations" },
             {
               name: "Submission Limitations",
               path: "/designer/submissionlimitations",
@@ -387,27 +375,14 @@ const MyNavbar = () => {
 
   const menuConfig = getMenuConfig();
 
-  /* -------------------------------------------------
-     Mobile menu – adds profile submenu with switch
-  ------------------------------------------------- */
-  const mobileMenuItems = React.useMemo(() => {
+  const mobileMenuItems = useMemo(() => {
     if (!userType || !verified) return menuConfig;
-
-    const profileSub = [{ name: "Settings", path: "/settings" }];
-    // Uncomment if you re-enable role switching
-    // if (actualUserType !== "Citizen") {
-    //   profileSub.push({
-    //     name: userType === "Citizen" ? "Switch to Officer" : "Switch to Citizen",
-    //     action: handleToggleRole,
-    //   });
-    // }
-    profileSub.push({ name: "Logout", action: handleLogout });
-
+    const profileSub = [{ name: "Logout", action: handleLogout }];
     return [
       ...menuConfig,
-      { name: "Feedback", path: "/feedback", key: "feedback" },
       { name: "Profile", key: "profile", subItems: profileSub },
     ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menuConfig, userType, verified, actualUserType]);
 
   /* -------------------------------------------------
@@ -444,34 +419,52 @@ const MyNavbar = () => {
         onMouseEnter={(e) => handleMouseEnter(item.key, e.currentTarget)}
         onMouseLeave={handleMouseLeave}
       >
-        <Button sx={getNavItemStyle(item)}>
+        <Button
+          sx={getNavItemStyle(item)}
+          onClick={(e) => handleClick(item.key, e.currentTarget)}
+        >
           {item.name}
-          <Box component="span" sx={{ fontSize: 12 }}>
-            ▼
-          </Box>
+          <ArrowDropDownIcon
+            sx={{
+              fontSize: 20,
+              transition: "transform 0.2s",
+              transform: openMenu === item.key ? "rotate(180deg)" : "none",
+            }}
+          />
         </Button>
         <Popper
-          open={hoveredKey === item.key}
+          open={openMenu === item.key}
           anchorEl={popperAnchor}
           placement="bottom-start"
           disablePortal={false}
+          modifiers={[{ name: "offset", options: { offset: [0, -6] } }]}
+          sx={{ zIndex: 1300 }}
         >
-          <Paper
+          <Box
             onMouseEnter={handleMenuMouseEnter}
             onMouseLeave={handleMenuMouseLeave}
+            sx={{ pt: "6px" }}
           >
-            <MenuList>
-              {item.subItems.map((sub, i) => (
-                <MenuItem
-                  key={i}
-                  sx={getMenuItemStyle(sub.path)}
-                  onClick={() => handleNavigate(sub.path)}
-                >
-                  {sub.name}
-                </MenuItem>
-              ))}
-            </MenuList>
-          </Paper>
+            <Paper
+              sx={{
+                boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+                borderRadius: 2,
+                minWidth: 200,
+              }}
+            >
+              <MenuList sx={{ py: 1 }}>
+                {item.subItems.map((sub, i) => (
+                  <MenuItem
+                    key={i}
+                    sx={{ mx: 1, px: 2, ...getMenuItemStyle(sub.path) }}
+                    onClick={() => handleNavigate(sub.path)}
+                  >
+                    {sub.name}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </Paper>
+          </Box>
         </Popper>
       </Box>
     );
@@ -485,8 +478,11 @@ const MyNavbar = () => {
       return (
         <MenuItem
           key={idx}
-          onClick={() => handleNavigate(item.path)}
-          sx={getMenuItemStyle(item.path)}
+          onClick={() => {
+            handleMobileMenuClose();
+            handleNavigate(item.path);
+          }}
+          sx={{ py: 1.5, ...getMenuItemStyle(item.path) }}
         >
           {item.path === "/login" && loginLoading ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -507,23 +503,39 @@ const MyNavbar = () => {
           sx={{
             fontWeight: 600,
             justifyContent: "space-between",
+            py: 1.5,
+            color: open ? "#0FB282" : "text.primary",
             "&:hover": { backgroundColor: "#f0f0f0", color: "#10B582" },
           }}
         >
-          {item.name} <Box>{open ? "−" : "→"}</Box>
+          {item.name}
+          <ArrowDropDownIcon
+            sx={{
+              transition: "transform 0.3s",
+              transform: open ? "rotate(180deg)" : "none",
+            }}
+          />
         </MenuItem>
-        {open &&
-          item.subItems.map((sub, i) => (
-            <MenuItem
-              key={i}
-              sx={{ pl: 4, ...getMenuItemStyle(sub.path) }}
-              onClick={() =>
-                sub.action ? sub.action() : handleNavigate(sub.path)
-              }
-            >
-              {sub.name}
-            </MenuItem>
-          ))}
+        <Collapse in={open} timeout="auto" unmountOnExit>
+          <Box sx={{ pl: 3, borderLeft: "2px solid #E5E7EB", ml: 3, mb: 1 }}>
+            {item.subItems.map((sub, i) => (
+              <MenuItem
+                key={i}
+                sx={{ py: 1, ...getMenuItemStyle(sub.path) }}
+                onClick={() => {
+                  if (sub.action) {
+                    sub.action();
+                  } else {
+                    handleMobileMenuClose();
+                    handleNavigate(sub.path);
+                  }
+                }}
+              >
+                {sub.name}
+              </MenuItem>
+            ))}
+          </Box>
+        </Collapse>
       </React.Fragment>
     );
   };
@@ -532,133 +544,192 @@ const MyNavbar = () => {
      JSX
   ------------------------------------------------- */
   return (
-    <AppBar position="static" sx={{ backgroundColor: "#fff" }}>
-      <Toolbar>
+    <AppBar
+      position="sticky"
+      sx={{
+        top: 0,
+        backgroundColor: "#fff",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+        zIndex: 1100,
+      }}
+    >
+      <Toolbar sx={{ justifyContent: "space-between" }}>
         {/* Logo */}
-        <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            flexGrow: { xs: 1, md: 0 },
+          }}
+        >
           <img
-            src={`${API_BASE}/assets/images/logo.png`}
+            src={`/assets/images/logo.png`}
             alt="Logo"
             style={{
-              height: 50,
-              width: 50,
+              height: 45,
+              width: 45,
               borderRadius: "50%",
               objectFit: "cover",
             }}
             onError={(e) => {
-              e.currentTarget.src = `${API_BASE}/assets/images/fallback-logo.png`; // optional fallback
+              e.currentTarget.src = `/assets/images/fallback-logo.png`;
             }}
           />
-          <Box sx={{ ml: 2 }}>
-            <Typography variant="h6" sx={{ color: "#333", fontWeight: "bold" }}>
+          <Box sx={{ ml: 1.5, display: { xs: "none", sm: "block" } }}>
+            <Typography
+              variant="h6"
+              sx={{
+                color: "#111827",
+                fontWeight: 800,
+                lineHeight: 1.2,
+                fontSize: "1.1rem",
+              }}
+            >
               ISSS Pension
             </Typography>
-            <Typography variant="body2" sx={{ color: "#666" }}>
+            <Typography
+              variant="caption"
+              sx={{ color: "#6B7280", fontWeight: 500 }}
+            >
               Social Welfare Department
             </Typography>
           </Box>
         </Box>
 
-        {/* Mobile hamburger */}
-        <IconButton
-          edge="end"
-          color="inherit"
-          onClick={handleMobileMenuOpen}
-          sx={{ display: { xs: "block", md: "none" } }}
-        >
-          <MenuIcon />
-        </IconButton>
-
-        {/* Desktop menu */}
-        <Box
-          sx={{
-            display: { xs: "none", md: "flex" },
-            alignItems: "center",
-            gap: 1,
-            backgroundColor: "#F3F4F6",
-            borderRadius: 5,
-            p: 1,
-          }}
-        >
-          {menuConfig.map(renderDesktopItem)}
-
-          {userType && verified && (
-            <Button
-              component={Link}
-              to="/feedback"
-              sx={getNavItemStyle({ key: "feedback", path: "/feedback" })}
-              onClick={() => handleNavigate("/feedback")}
+        {/* ─────────── MOBILE: hamburger + Menu (no ClickAwayListener) ─────────── */}
+        {!isDesktop && (
+          <>
+            <IconButton
+              edge="end"
+              color="inherit"
+              onClick={handleMobileMenuOpen}
+              sx={{ color: "#374151" }}
             >
-              Feedback
-            </Button>
-          )}
+              <MenuIcon />
+            </IconButton>
 
-          {/* Profile (desktop) */}
-          {userType && verified && (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 2, ml: 2 }}>
-              <Typography sx={{ color: "#333", fontWeight: "bold" }}>
-                {username}
-              </Typography>
-              <TokenTimer />
-              <Box
-                onMouseEnter={(e) =>
-                  handleMouseEnter("profile", e.currentTarget)
-                }
-                onMouseLeave={handleMouseLeave}
-                sx={{ position: "relative" }}
-              >
-                <IconButton sx={{ p: 0 }}>
-                  <img
-                    src={`${API_BASE}/Base/DisplayFile?fileName=${profile}`}
-                    alt="Profile"
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                    }}
-                    onError={(e) =>
-                      (e.currentTarget.src = `${API_BASE}/assets/images/profile.jpg`)
-                    }
-                  />
-                </IconButton>
-                <Popper
-                  open={hoveredKey === "profile"}
-                  anchorEl={popperAnchor}
-                  placement="bottom-end"
-                  disablePortal={false}
+            <Menu
+              anchorEl={mobileMenuAnchor}
+              open={Boolean(mobileMenuAnchor)}
+              onClose={handleMobileMenuClose}
+              sx={{
+                "& .MuiPaper-root": {
+                  width: "85vw",
+                  maxWidth: 340,
+                  mt: 1,
+                  borderRadius: 2,
+                  boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
+                },
+              }}
+            >
+              <Box sx={{ py: 1 }}>{mobileMenuItems.map(renderMobileItem)}</Box>
+            </Menu>
+          </>
+        )}
+
+        {/* ─────────── DESKTOP: ClickAwayListener wraps the whole menu ─────────── */}
+        {isDesktop && (
+          <ClickAwayListener onClickAway={closeAllMenus}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.5,
+                backgroundColor: "#F9FAFB",
+                borderRadius: 5,
+                p: 0.5,
+                border: "1px solid #E5E7EB",
+              }}
+            >
+              {menuConfig.map(renderDesktopItem)}
+
+              {userType && verified && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.5,
+                    ml: 1,
+                    pl: 1.5,
+                    borderLeft: "1px solid #E5E7EB",
+                  }}
                 >
-                  <Paper
-                    onMouseEnter={handleMenuMouseEnter}
-                    onMouseLeave={handleMenuMouseLeave}
+                  <TokenTimer />
+                  <Typography
+                    sx={{
+                      color: "#374151",
+                      fontWeight: 600,
+                      fontSize: "0.9rem",
+                      display: { xs: "none", lg: "block" },
+                    }}
                   >
-                    <MenuItem onClick={() => navigate("/settings")}>
-                      Settings
-                    </MenuItem>
-                    <MenuList>
-                      {/* Uncomment when role switching is implemented */}
-                      {/* {actualUserType !== "Citizen" && (
-                        <MenuItem onClick={handleToggleRole}>
-                          {userType === "Citizen" ? "Switch to Officer" : "Switch to Citizen"}
-                        </MenuItem>
-                      )} */}
-                      <MenuItem onClick={handleLogout}>Logout</MenuItem>
-                    </MenuList>
-                  </Paper>
-                </Popper>
-              </Box>
+                    {username}
+                  </Typography>
+                  <Box
+                    onMouseEnter={(e) =>
+                      handleMouseEnter("profile", e.currentTarget)
+                    }
+                    onMouseLeave={handleMouseLeave}
+                    sx={{ position: "relative" }}
+                  >
+                    <IconButton
+                      sx={{ p: 0 }}
+                      onClick={(e) => handleClick("profile", e.currentTarget)}
+                    >
+                      <img
+                        src={`/Base/DisplayFile?fileName=${profile}`}
+                        alt="Profile"
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          border: "2px solid #10B582",
+                        }}
+                        onError={(e) =>
+                          (e.currentTarget.src = `/assets/images/profile.jpg`)
+                        }
+                      />
+                    </IconButton>
+                    <Popper
+                      open={openMenu === "profile"}
+                      anchorEl={popperAnchor}
+                      placement="bottom-end"
+                      disablePortal={false}
+                      modifiers={[
+                        { name: "offset", options: { offset: [0, -6] } },
+                      ]}
+                      sx={{ zIndex: 1300 }}
+                    >
+                      <Box
+                        onMouseEnter={handleMenuMouseEnter}
+                        onMouseLeave={handleMenuMouseLeave}
+                        sx={{ pt: "6px" }}
+                      >
+                        <Paper
+                          sx={{
+                            boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+                            borderRadius: 2,
+                            minWidth: 160,
+                          }}
+                        >
+                          <MenuList sx={{ py: 1 }}>
+                            <MenuItem
+                              sx={{ mx: 1, px: 2, color: "#DC2626" }}
+                              onClick={handleLogout}
+                            >
+                              Logout
+                            </MenuItem>
+                          </MenuList>
+                        </Paper>
+                      </Box>
+                    </Popper>
+                  </Box>
+                </Box>
+              )}
             </Box>
-          )}
-        </Box>
-
-        {/* Mobile menu */}
-        <Menu
-          anchorEl={mobileMenuAnchor}
-          open={Boolean(mobileMenuAnchor) && isSmallScreen}
-          onClose={handleMobileMenuClose}
-        >
-          {mobileMenuItems.map(renderMobileItem)}
-        </Menu>
+          </ClickAwayListener>
+        )}
       </Toolbar>
     </AppBar>
   );

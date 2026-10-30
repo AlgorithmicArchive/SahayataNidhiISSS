@@ -359,7 +359,7 @@ export default function ForgotPassword() {
 
       if (data.status) {
         setSuccess(data.message || "Password reset successfully!");
-        setTimeout(() => navigate("/login"), 1500);
+        setTimeout(() => navigate("/"), 1500);
       } else {
         setError(data.message || "Invalid OTP or reset failed.");
       }
@@ -622,6 +622,35 @@ export default function ForgotPassword() {
                 onClick={resetForm}
                 fullWidth
                 sx={{ mt: 1.5, textTransform: "none" }}
+                aria-label="Back to start"
+              >
+                Back to Start
+              </Button>
+            </Box>
+          )}
+
+          {step === 4 && mode === "username" && (
+            <Box>
+              <Alert
+                severity="success"
+                icon={<CheckCircleIcon />}
+                sx={{ mb: 3, borderRadius: 2 }}
+              >
+                <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                  {success || "Username retrieved successfully!"}
+                </Typography>
+                <Typography variant="body1" sx={{ mt: 1, fontWeight: 500 }}>
+                  Your username{username.includes(",") ? "s" : ""}:{" "}
+                  <strong>{username}</strong>
+                </Typography>
+              </Alert>
+
+              <Button
+                startIcon={<ArrowBackIcon />}
+                onClick={resetForm}
+                fullWidth
+                variant="outlined"
+                sx={{ mt: 2, textTransform: "none" }}
                 aria-label="Back to start"
               >
                 Back to Start

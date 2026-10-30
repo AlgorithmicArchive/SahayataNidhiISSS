@@ -18,22 +18,19 @@ namespace SahayataNidhi.Controllers
 {
     public partial class BaseController
     {
-
-
-
         public class Report
         {
             [Key]
             public int Id { get; set; }
             public string? Name { get; set; }
             public string? Description { get; set; }
-            public string? TableName { get; set; }  // The main table to query
+            public string? TableName { get; set; }
 
             [Column(TypeName = "jsonb")]
-            public string? Columns { get; set; }     // JSON array of ReportColumn
+            public string? Columns { get; set; }
 
             [Column(TypeName = "jsonb")]
-            public string? Filters { get; set; }     // JSON array of ReportFilter (nullable)
+            public string? Filters { get; set; }
 
             public DateTime CreatedAt { get; set; }
             public string? CreatedBy { get; set; }
@@ -41,88 +38,170 @@ namespace SahayataNidhi.Controllers
 
         public class ReportColumn
         {
-            public string? Name { get; set; }          // Database column name
-            public string? JsonPath { get; set; }      // Optional JSON path (e.g., "address.city")
-            public string? Display { get; set; }        // Column header
-            public string? Type { get; set; }           // e.g., "string", "int", "date"
+            public string? Name { get; set; }
+            public string? JsonPath { get; set; }
+            public string? Display { get; set; }
+            public string? Type { get; set; }
         }
 
         public class ReportFilter
         {
-            public string? Field { get; set; }          // Database column name
-            public string? JsonPath { get; set; }       // Optional JSON path
-            public string? Operator { get; set; }       // "eq", "neq", "gt", "lt", "contains"
-            public object? Value { get; set; }          // Filter value
+            public string? Field { get; set; }
+            public string? JsonPath { get; set; }
+            public string? Operator { get; set; }
+            public object? Value { get; set; }
         }
-        public string GetOfficerAreaForHistory(string accessLevel, int? accessCode)
+
+        public string GetOfficerAreaForHistory(string accessLevel, int? accessCode) => _referenceData.GetOfficerAreaForHistory(accessLevel, accessCode);
+
+        public string GetOfficerArea(string accessLevel, dynamic formDetails) => _referenceData.GetOfficerArea(accessLevel, formDetails);
+
+        private static DateTime? SafeParseDate(string? dateString)
         {
-            switch (accessLevel)
+            if (string.IsNullOrWhiteSpace(dateString))
+                return null;
+
+            dateString = dateString.Trim();
+
+            var formats = new[]
             {
-                case "Tehsil":
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
+                "dd MMM yyyy hh:mm:ss tt",
+                "dd-MM-yyyy HH:mm:ss",
+                "dd-MM-yyyy hh:mm:ss tt",
+                "dd/MM/yyyy HH:mm:ss",
+                "yyyy-MM-dd HH:mm:ss",
+                "dd MMM yyyy HH:mm:ss",
+            };
 
-                case "District":
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    if (districtForDivision == null)
-                        return string.Empty;
-                    return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
+            if (DateTime.TryParseExact(
+                    dateString,
+                    formats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateTime parsed))
+            {
+                return parsed;
             }
+
+            if (DateTime.TryParse(dateString, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+            {
+                return parsed;
+            }
+
+            return null;
         }
 
-        public string GetOfficerArea(string accessLevel, dynamic formDetails)
+        private class ServiceLocationFields
         {
-            int accessCode;
-
-            switch (accessLevel)
-            {
-                case "Tehsil":
-                    accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
-
-                case "District":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    if (districtForDivision == null)
-                        return string.Empty;
-                    return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
-            }
+            public bool HasDistrict { get; set; }
+            public bool HasChildLocation { get; set; }
+            public string ChildLocationHeader { get; set; } = "Tehsil Name";
         }
+
+        private ServiceLocationFields ResolveServiceLocationFields(string? formElementJson)
+        {
+            var result = new ServiceLocationFields();
+
+            if (string.IsNullOrWhiteSpace(formElementJson))
+                return result;
+
+            try
+            {
+                var sections = JArray.Parse(formElementJson);
+
+                // Only examine the Location section — address sections (Present/Permanent
+                // Address) also contain Tehsil/Block fields that reflect the *applicant's*
+                // address, not the officer's operational area level.
+                var locationSection = sections.FirstOrDefault(s =>
+                    (s["section"]?.ToString() ?? "").Equals("Location", StringComparison.OrdinalIgnoreCase));
+
+                var fields = locationSection?["fields"] as JArray;
+                if (fields == null)
+                    return result;
+
+                foreach (var field in fields)
+                {
+                    var type = field?["type"]?.ToString();
+                    if (type != "select")
+                        continue;
+
+                    var name = field?["name"]?.ToString() ?? "";
+                    var label = field?["label"]?.ToString() ?? "";
+                    var valueDependentOn = field?["valueDependentOn"]?.ToString() ?? "";
+                    var dependentOn = field?["dependentOn"]?.ToString() ?? "";
+
+                    bool isDistrict = name.Equals("District", StringComparison.OrdinalIgnoreCase)
+                                      || name.IndexOf("District", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    bool dependsOnDistrict = valueDependentOn.Equals("District", StringComparison.OrdinalIgnoreCase)
+                                             || dependentOn.Equals("District", StringComparison.OrdinalIgnoreCase);
+
+                    bool isChildLocation = !isDistrict && dependsOnDistrict;
+
+                    if (isDistrict)
+                        result.HasDistrict = true;
+
+                    if (isChildLocation)
+                    {
+                        result.HasChildLocation = true;
+                        result.ChildLocationHeader = BuildChildLocationHeader(name, label);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resolve service location fields from form element.");
+            }
+
+            return result;
+        }
+
+
+        private static string BuildChildLocationHeader(string name, string label)
+        {
+            // Prefer the field's own label (e.g. "Tehsil Social Welfare Office (TSWO)")
+            // trimmed of office-like suffixes, otherwise derive from the field name.
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                // Use the base location word for a clean column header.
+                foreach (var token in new[] { "Tehsil", "Block", "Muncipality", "Municipality", "Halqa", "Ward", "Village" })
+                {
+                    if (label.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return token + " Name";
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                foreach (var token in new[] { "Tehsil", "Block", "Muncipality", "Municipality", "Halqa", "Ward", "Village" })
+                {
+                    if (name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return token + " Name";
+                }
+            }
+            return "Tehsil Name";
+        }
+
+
 
         public string GetApplications(string? scope, string? columnOrder, string? columnVisibility, int Serviceid, string? type, int pageIndex = 0, int pageSize = 10, string dataType = "new")
         {
             var officerDetails = GetOfficerDetails();
 
-            // Prepare parameters for PostgreSQL function
-            var roleParam = new NpgsqlParameter("p_role", officerDetails!.Role);
-            var accessLevelParam = new NpgsqlParameter("p_access_level", officerDetails.AccessLevel);
-            var accessCodeParam = new NpgsqlParameter("p_access_code", officerDetails.AccessCode);
-            var applicationStatusParam = type != null ? new NpgsqlParameter("p_application_status", type) : new NpgsqlParameter("p_application_status", DBNull.Value);
-            var serviceIdParam = new NpgsqlParameter("p_service_id", Serviceid);
-            var pageIndexParam = new NpgsqlParameter("p_page_index", pageIndex);
-            var pageSizeParam = new NpgsqlParameter("p_page_size", pageSize);
-            var isPaginatedParam = new NpgsqlParameter("p_is_paginated", scope == "InView");
-            var dataTypeParam = dataType != "new" ? new NpgsqlParameter("p_data_type", dataType) : new NpgsqlParameter("p_data_type", DBNull.Value);
+            var roleParam = new NpgsqlParameter("@role", officerDetails!.Role);
+            var accessLevelParam = new NpgsqlParameter("@accesslevel", officerDetails.AccessLevel);
+            var accessCodeParam = new NpgsqlParameter("@accesscode", officerDetails.AccessCode ?? (object)DBNull.Value);
+            var applicationStatusParam = new NpgsqlParameter("@applicationstatus", (object?)type ?? DBNull.Value);
+            var serviceIdParam = new NpgsqlParameter("@serviceid", Serviceid);
+            var pageIndexParam = new NpgsqlParameter("@pageindex", pageIndex);
+            var pageSizeParam = new NpgsqlParameter("@pagesize", pageSize);
+            var isPaginatedParam = new NpgsqlParameter("@ispaginated", scope == "InView");
+            var dataTypeParam = new NpgsqlParameter("@datatype", dataType != "new" ? dataType : (object)DBNull.Value);
+            var divisionCodeParam = new NpgsqlParameter("@division_code",
+                officerDetails.AccessLevel == "Division"
+                    ? officerDetails.AccessCode ?? (object)DBNull.Value
+                    : (object)DBNull.Value);
 
-            List<CitizenApplications> response;
+            List<OfficerApplicationDto> response;
 
             var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == Serviceid);
             if (service == null) return JsonConvert.SerializeObject(new { data = new List<dynamic>(), columns = new List<dynamic>(), poolData = new List<dynamic>(), totalRecords = 0 });
@@ -130,64 +209,122 @@ namespace SahayataNidhi.Controllers
             var workflow = JsonConvert.DeserializeObject<List<dynamic>>(service.Officereditablefield!);
             dynamic authorities = workflow!.FirstOrDefault(p => p.designation == officerDetails.Role)!;
 
+            // ================= SERVICE LOCATION / FORM FLAGS =================
+            var serviceLocation = ResolveServiceLocationFields(service.Formelement);
+            bool serviceHasDistrict = serviceLocation.HasDistrict;
+            bool serviceHasChildLocation = serviceLocation.HasChildLocation;
+            string childLocationHeader = serviceLocation.ChildLocationHeader;
+
+            bool serviceHasRationCard = !string.IsNullOrWhiteSpace(service.Formelement)
+                && service.Formelement.Contains("RationCardNumber", StringComparison.OrdinalIgnoreCase);
+
+            // ================= FETCH =================
             if (type == "shifted")
             {
-                // For shifted applications - we'll need a separate PostgreSQL function or handle differently
-                // For now, we'll use direct query as fallback
-                response = dbcontext.CitizenApplications
-                    .Where(ca => ca.Serviceid == Serviceid)
-                    .ToList()
-                    .Where(ca =>
-                    {
-                        var wf = JsonConvert.DeserializeObject<JArray>(ca.Workflow!);
-                        var currentPlayer = wf?.FirstOrDefault(o => (int)o["playerId"]! == ca.Currentplayer!);
-                        return currentPlayer != null && (string)currentPlayer["status"]! == "shifted";
-                    })
+                var shiftedParameters = new[]
+                {
+            roleParam,
+            accessLevelParam,
+            accessCodeParam,
+            serviceIdParam
+        };
+
+                response = dbcontext.Database
+                    .SqlQueryRaw<OfficerApplicationDto>(
+                        "SELECT * FROM get_shifted_applications(@role, @accesslevel, @accesscode, @serviceid)",
+                        shiftedParameters)
                     .ToList();
             }
             else
             {
-                // Call PostgreSQL function
-                response = dbcontext.CitizenApplications
-                    .FromSqlRaw(
-                        "SELECT * FROM get_applications_for_officer({0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8})",
-                        roleParam.Value, accessLevelParam.Value, accessCodeParam.Value,
-                        applicationStatusParam.Value, serviceIdParam.Value, pageIndexParam.Value,
-                        pageSizeParam.Value, isPaginatedParam.Value, dataTypeParam.Value)
+                var parameters = new[]
+                {
+            roleParam,
+            accessLevelParam,
+            accessCodeParam,
+            applicationStatusParam,
+            serviceIdParam,
+            pageIndexParam,
+            pageSizeParam,
+            isPaginatedParam,
+            dataTypeParam,
+            divisionCodeParam
+        };
+
+                response = dbcontext.Database
+                    .SqlQueryRaw<OfficerApplicationDto>(
+                        "SELECT * FROM get_applications_for_officer(@role, @accesslevel, @accesscode, @applicationstatus, @serviceid, @pageindex, @pagesize, @ispaginated, @datatype, @division_code)",
+                        parameters)
                     .ToList();
             }
 
-            // Calculate total records for pagination
             int totalRecords = type == "shifted" ? response.Count : 0;
             if (type != "shifted" && scope == "InView")
             {
-                // For paginated results, we need to get total count separately
-                totalRecords = dbcontext.CitizenApplications
-                    .FromSqlRaw(
-                        "SELECT * FROM get_applications_for_officer({0}, {1}, {2}, {3}, {4}, 0, 1000000, false, {5})",
-                        roleParam.Value, accessLevelParam.Value, accessCodeParam.Value,
-                        applicationStatusParam.Value, serviceIdParam.Value, dataTypeParam.Value)
+                var countParams = new[]
+                {
+            roleParam,
+            accessLevelParam,
+            accessCodeParam,
+            applicationStatusParam,
+            serviceIdParam,
+            new NpgsqlParameter("@pageindex", (object)0),
+            new NpgsqlParameter("@pagesize", 1000000),
+            new NpgsqlParameter("@ispaginated", false),
+            dataTypeParam,
+            divisionCodeParam
+        };
+
+                totalRecords = dbcontext.Database
+                    .SqlQueryRaw<OfficerApplicationDto>(
+                        "SELECT * FROM get_applications_for_officer(@role, @accesslevel, @accesscode, @applicationstatus, @serviceid, @pageindex, @pagesize, @ispaginated, @datatype, @division_code)",
+                        countParams)
                     .Count();
             }
 
-            // Deserialize column order and visibility
             var orderedColumns = JsonConvert.DeserializeObject<List<string>>(columnOrder ?? "[]")!;
             var visibility = JsonConvert.DeserializeObject<Dictionary<string, bool>>(columnVisibility ?? "{}")!;
 
-            // Base columns
+            // ================= BASE COLUMNS (mirrors File 1) =================
             List<dynamic> baseColumns = new List<dynamic>
-            {
-                new { accessorKey = "sno", header = "S.No" },
-                new { accessorKey = "referenceNumber", header = "Reference Number" },
-                new { accessorKey = "applicantName", header = "Applicant Name" },
-                new { accessorKey = "serviceName", header = "Service Name" },
-                new { accessorKey = "status", header = "Application Status" },
-                new { accessorKey = "submissionDate", header = "Citizen Submission Date" },
-                new { accessorKey = "actionTakenOn", header = "Action Taken On" },
-                new { accessorKey = "customActions", header = "Actions" }
-            };
+    {
+        new { accessorKey = "sno",             header = "S.No" },
+        new { accessorKey = "referenceNumber", header = "Reference Number" },
+        new { accessorKey = "applicantName",   header = "Applicant Name" },
+        new { accessorKey = "mobileNumber",    header = "Mobile Number" }
+    };
 
-            // Apply ordering and visibility
+            if (serviceHasRationCard)
+                baseColumns.Add(new { accessorKey = "rationCardNumber", header = "Ration Card Number" });
+
+            baseColumns.Add(new { accessorKey = "serviceName", header = "Service Name" });
+            baseColumns.Add(new { accessorKey = "currentlyWith", header = "Currently With" });
+            baseColumns.Add(new { accessorKey = "status", header = "Application Status" });
+            baseColumns.Add(new { accessorKey = "officerRemarks", header = "Officer Remarks" });
+            baseColumns.Add(new { accessorKey = "submissionDate", header = "Citizen Submission Date" });
+            baseColumns.Add(new { accessorKey = "actionTakenOn", header = "Received On" });
+            baseColumns.Add(new { accessorKey = "customActions", header = "Actions" });
+
+            if (officerDetails.AccessLevel == "State")
+            {
+                baseColumns.Insert(1, new { accessorKey = "divisionName", header = "Division Name" });
+                if (serviceHasDistrict)
+                    baseColumns.Insert(2, new { accessorKey = "districtName", header = "District Name" });
+            }
+            else if (officerDetails.AccessLevel == "Division")
+            {
+                if (serviceHasDistrict)
+                    baseColumns.Insert(1, new { accessorKey = "districtName", header = "District Name" });
+                if (serviceHasChildLocation)
+                    baseColumns.Insert(2, new { accessorKey = "tehsilName", header = childLocationHeader });
+            }
+            else if (officerDetails.AccessLevel == "District")
+            {
+                if (serviceHasChildLocation)
+                    baseColumns.Insert(1, new { accessorKey = "tehsilName", header = childLocationHeader });
+            }
+
+            // ================= COLUMN FILTERING =================
             List<dynamic> filteredColumns = new List<dynamic>();
             if (orderedColumns.Count > 0)
             {
@@ -202,7 +339,6 @@ namespace SahayataNidhi.Controllers
             }
             else
             {
-                // Filter columns based on visibility
                 filteredColumns = baseColumns
                     .Where(c => !visibility.TryGetValue(c.accessorKey, out bool isVisible) || isVisible)
                     .ToList();
@@ -225,21 +361,66 @@ namespace SahayataNidhi.Controllers
 
             foreach (var details in response)
             {
-                var formDetails = JsonConvert.DeserializeObject<dynamic>(details.Formdetails!);
-                var officers = JsonConvert.DeserializeObject<JArray>(details.Workflow!);
-                var currentPlayer = details.Currentplayer;
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails ?? "{}");
+                var officers = JsonConvert.DeserializeObject<JArray>(details.WorkFlow ?? "[]");
+                var currentPlayer = details.CurrentPlayer ?? 0;
 
                 var latestHistory = dbcontext.Actionhistory
-                    .Where(h => h.Referencenumber == details.Referencenumber)
+                    .Where(h => h.Referencenumber == details.ReferenceNumber)
                     .AsEnumerable()
-                    .OrderByDescending(h => DateTime.ParseExact(h.Actiontakendate, "dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture))
+                    .OrderByDescending(h => SafeParseDate(h.Actiontakendate) ?? DateTime.MinValue)
                     .FirstOrDefault();
 
                 var parsedDate = latestHistory != null
-                    ? DateTime.ParseExact(latestHistory.Actiontakendate, "dd MMM yyyy hh:mm:ss tt", CultureInfo.InvariantCulture)
+                    ? SafeParseDate(latestHistory.Actiontakendate) ?? DateTime.MinValue
                     : DateTime.MinValue;
 
-                // Custom Actions logic (simplified)
+                // ---------- DERIVE CURRENT OFFICER (mirrors File 1) ----------
+                string officerDesignation = "Unknown";
+                string officerAccessLevel = "Unknown";
+                string officerStatus = "Unknown";
+                string officerArea = "Unknown";
+
+                if (officers != null && officers.Count > 0)
+                {
+                    var currentOfficerObj = currentPlayer >= 0 && currentPlayer < officers.Count
+                        ? officers[currentPlayer]
+                        : officers[0];
+
+                    if (currentOfficerObj != null)
+                    {
+                        officerDesignation = currentOfficerObj["designation"]?.ToString() ?? "Unknown";
+                        officerAccessLevel = currentOfficerObj["accessLevel"]?.ToString() ?? "Unknown";
+                        officerStatus = currentOfficerObj["status"]?.ToString() ?? "Unknown";
+                    }
+                    officerArea = GetOfficerArea(officerAccessLevel, formDetails);
+                }
+
+                // ---------- RATION CARD ----------
+                string rationCardNumber = string.Empty;
+                if (serviceHasRationCard)
+                {
+                    try
+                    {
+                        var rcStr = GetFieldValue("RationCardNumber", formDetails)?.ToString();
+                        if (!string.IsNullOrWhiteSpace(rcStr)) rationCardNumber = rcStr!;
+                    }
+                    catch { /* field missing on this row */ }
+                }
+
+                // ---------- DERIVED STATUS ----------
+                var excludedStatuses = new[] { "Rejected", "Sanctioned", "Initiated" };
+                bool IsError = excludedStatuses.Contains(details.Status ?? "");
+
+                string Status = IsError
+                    ? (officerStatus == "returntoedit"
+                        ? "Pending With Citizen"
+                        : (!string.IsNullOrEmpty(officerStatus)
+                            ? char.ToUpper(officerStatus[0]) + officerStatus.Substring(1)
+                            : "Unknown"))
+                    : details.Status ?? "Unknown";
+
+                // ---------- CUSTOM ACTIONS (unchanged from File 2) ----------
                 var customActions = new List<dynamic>();
                 if (type == "forwarded" || type == "returned" || type == "returntoedit")
                 {
@@ -257,20 +438,32 @@ namespace SahayataNidhi.Controllers
                     switch ((string)col.accessorKey)
                     {
                         case "sno": item["sno"] = snoCounter++; break;
-                        case "referenceNumber": item["referenceNumber"] = details.Referencenumber; break;
+                        case "referenceNumber": item["referenceNumber"] = details.ReferenceNumber; break;
                         case "applicantName": item["applicantName"] = GetFieldValue("ApplicantName", formDetails); break;
-                        case "serviceName": item["serviceName"] = dbcontext.Services.FirstOrDefault(s => s.Serviceid == details.Serviceid)?.Servicename; break;
-                        case "status": item["status"] = details.Status; break;
-                        case "submissionDate": item["submissionDate"] = details.CreatedAt; break;
+                        case "mobileNumber": item["mobileNumber"] = GetFieldValue("MobileNumber", formDetails); break;
+                        case "rationCardNumber": item["rationCardNumber"] = rationCardNumber; break;
+                        case "serviceName": item["serviceName"] = dbcontext.Services.FirstOrDefault(s => s.Serviceid == details.ServiceId)?.Servicename; break;
+                        case "currentlyWith":
+                            item["currentlyWith"] = officerStatus == "returntoedit"
+                                                                            ? "Citizen"
+                                                                            : $"{officerDesignation} ({officerArea})"; break;
+                        case "status": item["status"] = Status; break;
+                        case "officerRemarks": item["officerRemarks"] = latestHistory?.Remarks ?? string.Empty; break;
+                        case "submissionDate": item["submissionDate"] = details.Created_at ?? "N/A"; break;
                         case "actionTakenOn": item["actionTakenOn"] = parsedDate == DateTime.MinValue ? null : parsedDate.ToString("dd MMM yyyy hh:mm:ss tt"); break;
                         case "customActions": item["customActions"] = customActions; break;
+
+                        // Access-level location fields — now from DTO
+                        case "divisionName": item["divisionName"] = details.DivisionName ?? "N/A"; break;
+                        case "districtName": item["districtName"] = details.DistrictName ?? "N/A"; break;
+                        case "tehsilName": item["tehsilName"] = details.TehsilName ?? "N/A"; break;
                     }
                 }
 
                 if (type == "shifted")
                     data.Add(item);
                 else
-                    (pool!.Contains(details.Referencenumber) && type == "pending" ? poolData : data).Add(item);
+                    (pool!.Contains(details.ReferenceNumber!) && type == "pending" ? poolData : data).Add(item);
             }
 
             var result = Json(new
@@ -284,7 +477,6 @@ namespace SahayataNidhi.Controllers
 
             return JsonConvert.SerializeObject(result);
         }
-
         public async Task<string> GetApplicationHistory(string? scope, string? columnOrder, string? columnVisibility, string ApplicationId, int page, int size)
         {
             var application = await dbcontext.CitizenApplications.FirstOrDefaultAsync(ca => ca.Referencenumber == ApplicationId);
@@ -298,12 +490,10 @@ namespace SahayataNidhi.Controllers
                 .Where(ah => ah.Referencenumber == ApplicationId)
                 .ToListAsync();
 
-            // Apply scope-based filtering
             var history = (scope == "InView")
                 ? fullHistory.Skip(page * size).Take(size).ToList()
                 : fullHistory;
 
-            // Define full columns
             List<dynamic> columns =
             [
                 new { accessorKey = "sno", header = "S.No" },
@@ -386,13 +576,11 @@ namespace SahayataNidhi.Controllers
                 return JsonConvert.SerializeObject(new { data = new List<dynamic>(), columns = new List<dynamic>(), totalRecords = 0 });
             }
 
-            // Call PostgreSQL function
             var applications = dbcontext.CitizenApplications
                 .FromSqlRaw("SELECT * FROM get_initiated_applications({0}, {1}, {2}, {3})",
                     userId, pageIndex, pageSize, scope == "InView")
                 .ToList();
 
-            // Get total count for pagination
             int totalRecords = 0;
             if (scope == "InView")
             {
@@ -405,8 +593,7 @@ namespace SahayataNidhi.Controllers
                 totalRecords = applications.Count;
             }
 
-            var sortedApplications = applications
-                .ToList();
+            var sortedApplications = applications.ToList();
 
             var pagedApplications = (scope == "InView")
                 ? [.. sortedApplications.Skip(pageIndex * pageSize).Take(pageSize)]
@@ -510,6 +697,471 @@ namespace SahayataNidhi.Controllers
             return JsonConvert.SerializeObject(result);
         }
 
+        // ═══════════════════════════════════════════════════════════════════════
+        //  Grid backing "Corrigendum" and "Correction" cards.
+        //  Ported from OfficerController.GetCorrigendumApplications so ExportData
+        //  can invoke it via the same URL-last-segment dispatch used by
+        //  GetApplications / GetInitiatedApplications.
+        //
+        //  Returns PLAIN JSON (no JsonResult wrapper) — ExportData reads
+        //  result.data / result.columns directly.
+        //
+        //  NOTE 1: when scope == "All" the JSX does not send pageIndex/pageSize,
+        //  so they arrive as 0 here. Take(0) would silently return an empty
+        //  list → "No data to export." All-scope skips pagination entirely.
+        //
+        //  NOTE 2: pagedData MUST stay List<Corrigendum> (typed). Casting it
+        //  to dynamic breaks the `out var` / `is JObject` patterns and the
+        //  LINQ lambdas downstream (CS8197, CS0165, CS1977).
+        // ═══════════════════════════════════════════════════════════════════════
+        public string GetCorrigendumApplications(string? scope, string? columnOrder, string? columnVisibility, string type, string applicationType, string Serviceid, int pageIndex = 0, int pageSize = 10)
+        {
+            var officer = GetOfficerDetails();
+            if (officer == null)
+                return JsonConvert.SerializeObject(new
+                {
+                    data = new List<dynamic>(),
+                    columns = new List<dynamic>(),
+                    poolData = new List<dynamic>(),
+                    totalRecords = 0
+                });
+
+            _logger.LogInformation(
+                "----- GetCorrigendumApplications | Officer: {Officer} | Type: {Type} | Scope: {Scope} -----",
+                officer.Role, applicationType, scope);
+
+            var parameters = new[]
+            {
+                new NpgsqlParameter("@officeraccesslevel", officer.AccessLevel),
+                new NpgsqlParameter("@officeraccesscode",  officer.AccessCode),
+                new NpgsqlParameter("@referencenumber",    DBNull.Value),
+                new NpgsqlParameter("@status",             type),
+                new NpgsqlParameter("@corrigendumid",      DBNull.Value),
+                new NpgsqlParameter("@type",               applicationType),
+                new NpgsqlParameter("@officerrole",        officer.Role)
+            };
+
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == Convert.ToInt32(Serviceid));
+            if (service == null)
+                return JsonConvert.SerializeObject(new
+                {
+                    data = new List<dynamic>(),
+                    columns = new List<dynamic>(),
+                    poolData = new List<dynamic>(),
+                    totalRecords = 0
+                });
+
+            List<dynamic> workflow;
+            try
+            {
+                workflow = JsonConvert.DeserializeObject<List<dynamic>>(service.Officereditablefield!) ?? new();
+            }
+            catch (JsonException ex)
+            {
+                return JsonConvert.SerializeObject(new { error = $"Error parsing workflow: {ex.Message}" });
+            }
+
+            if (workflow.Count == 0)
+                return JsonConvert.SerializeObject(new
+                {
+                    data = new List<dynamic>(),
+                    columns = new List<dynamic>(),
+                    poolData = new List<dynamic>(),
+                    totalRecords = 0
+                });
+
+            dynamic authorities = workflow.FirstOrDefault(p => p.designation == officer.Role)!;
+
+            var applications = dbcontext.Corrigendum
+                .FromSqlRaw("SELECT * FROM get_corrigendum_by_location_access(@officeraccesslevel, @officeraccesscode, @referencenumber, @status, @corrigendumid, @type, @officerrole)", parameters)
+                .ToList();
+
+            var applicationReferenceNumbers = applications.Select(c => c.Referencenumber).ToList();
+            var citizenApplications = dbcontext.CitizenApplications
+                .Where(ca => applicationReferenceNumbers.Contains(ca.Referencenumber))
+                .ToDictionary(ca => ca.Referencenumber!, ca => ca);
+
+            var sortedData = applications.OrderBy(a =>
+            {
+                var parts = a.Corrigendumid!.Split('/');
+                var numberPart = parts.Last();
+                return int.TryParse(numberPart, out int num) ? num : 0;
+            }).ToList();
+
+            var totalRecords = sortedData.Count;
+
+            // ── Pagination: "All" scope skips it entirely. ─────────────────────
+            // pagedData is List<Corrigendum> — NOT List<dynamic>. The foreach
+            // body depends on typed member access and lambdas.
+            List<Corrigendum> pagedData;
+            if (string.Equals(scope, "All", StringComparison.OrdinalIgnoreCase))
+            {
+                pagedData = sortedData;
+            }
+            else
+            {
+                pagedData = sortedData
+                    .Skip(pageIndex * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+            }
+
+            List<dynamic> data = new();
+
+            foreach (var application in pagedData)
+            {
+                if (!citizenApplications.TryGetValue(application.Referencenumber!, out var citizenApp))
+                    continue;
+
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(citizenApp.Formdetails!);
+                var workFlow = JsonConvert.DeserializeObject<JArray>(application.Workflow!) ?? new JArray();
+                var history = JArray.Parse(application.History!) ?? new JArray();
+
+                string creationOfficerDesignation = "Legacy Data";
+                string creationOfficerAccessLevel = "State";
+                if (workFlow.Count > 0 && workFlow[0] is JObject firstEntry)
+                {
+                    creationOfficerDesignation = (string?)firstEntry["designation"] ?? "Legacy Data";
+                    creationOfficerAccessLevel = (string?)firstEntry["accessLevel"] ?? "State";
+                }
+
+                int currentPlayer = application.Currentplayer;
+                string officerDesignation = "N/A";
+                string offierAccessLevel = "N/A";
+
+                if (currentPlayer >= 0 && currentPlayer < workFlow.Count && workFlow[currentPlayer] is JObject currentEntry)
+                {
+                    officerDesignation = (string?)currentEntry["designation"] ?? "N/A";
+                    offierAccessLevel = (string?)currentEntry["accessLevel"] ?? "N/A";
+                }
+                else if (workFlow.Count > 0)
+                {
+                    var lastEntry = workFlow[workFlow.Count - 1] as JObject;
+                    officerDesignation = (string?)lastEntry?["designation"] ?? "N/A";
+                    offierAccessLevel = (string?)lastEntry?["accessLevel"] ?? "N/A";
+                }
+
+                var officerWithApplication = workFlow
+                    .OfType<JObject>()
+                    .FirstOrDefault(o => o["playerId"]?.Type == JTokenType.Integer
+                                         && (int)o["playerId"]! == application.Currentplayer);
+
+                string? CurrentStatus = officerWithApplication != null
+                    ? (string?)officerWithApplication["status"]
+                    : (workFlow.Count > 0 ? (string?)workFlow[workFlow.Count - 1]?["status"] : "Legacy Data");
+
+                var firstAction = history.Count > 0 ? history[0] : null;
+                string actionTaker = firstAction != null ? (string?)firstAction["actionTaker"] ?? "System" : "System";
+
+                string currentOfficerArea = GetOfficerArea(offierAccessLevel, formDetails);
+                string officerArea = GetOfficerArea(creationOfficerAccessLevel, JObject.Parse(citizenApp.Formdetails!));
+
+                var customActions = new List<dynamic>();
+
+                var currentOfficer = workFlow
+                    .OfType<JObject>()
+                    .FirstOrDefault(o => o["designation"]?.Type == JTokenType.String
+                                         && (string)o["designation"]! == officer.Role);
+
+                bool canPull = currentOfficer?["canPull"]?.Type == JTokenType.Boolean
+                            && (bool)currentOfficer["canPull"]!;
+
+                if ((type == "forwarded" || type == "returned") && canPull)
+                {
+                    customActions.Add(new
+                    {
+                        type = "Pull",
+                        tooltip = "Pull",
+                        color = "#F0C38E",
+                        actionFunction = "pullCorrigendum"
+                    });
+                }
+                else
+                {
+                    var matchedItem = workFlow
+                        .OfType<JObject>()
+                        .FirstOrDefault(item => item["designation"]?.Type == JTokenType.String
+                                                && (string)item["designation"]! == officer.Role);
+
+                    bool isToEdit = matchedItem != null
+                        && (string?)matchedItem["status"] == "pending"
+                        && matchedItem["playerId"]?.Type == JTokenType.Integer
+                        && (int?)matchedItem["playerId"] == application.Currentplayer
+                        && authorities != null
+                        && (bool?)authorities!.canCorrigendum == true
+                        && actionTaker != "Citizen";
+
+                    string actionFunction = isToEdit
+                        ? "handleEditCorrigendumApplication"
+                        : application.Status == "Sanctioned"
+                            ? "handleViewPdf"
+                            : "handleViewCorrigendumApplication";
+
+                    customActions.Add(new
+                    {
+                        type = application.Status?.ToLower() == "sanctioned" ? "View" : "handleViewCorrigendumApplication",
+                        tooltip = "View",
+                        corrigendumId = application.Corrigendumid,
+                        color = "#F0C38E",
+                        actionFunction,
+                    });
+                }
+
+                data.Add(new
+                {
+                    referenceNumber = application.Referencenumber,
+                    applicationId = application.Corrigendumid,
+                    createdBy = actionTaker == "Citizen"
+                                        ? "Citizen"
+                                        : creationOfficerDesignation + " " + officerArea,
+                    applicantName = GetFieldValue("ApplicantName", formDetails),
+                    currentlyWith = officerDesignation + " " + currentOfficerArea,
+                    currentStatus = CurrentStatus?.ToLower() == "sanctioned" ? "Issued" : CurrentStatus,
+                    creationDate = application.Createdat.ToString("dd MMM yyyy hh:mm:ss tt"),
+                    applicationType,
+                    serviceId = citizenApp.Serviceid,
+                    customActions
+                });
+            }
+
+            List<dynamic> columns = new()
+            {
+                new { accessorKey = "referenceNumber", header = "Reference Number" },
+                new { accessorKey = "applicationId",   header = applicationType + " Id" },
+                new { accessorKey = "createdBy",       header = "Creation Officer" },
+                new { accessorKey = "applicantName",   header = "Applicant Name" },
+                new { accessorKey = "currentlyWith",   header = "Currently With" },
+                new { accessorKey = "currentStatus",   header = "Current Status" },
+                new { accessorKey = "creationDate",    header = applicationType + " Creation Date" },
+                new { accessorKey = "applicationType", header = "Application Type" }
+            };
+
+            return JsonConvert.SerializeObject(new
+            {
+                data,
+                columns,
+                poolData = new List<dynamic>(),
+                totalRecords
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        //  Grid backing "PCP Applications" and "PCP-UDID Expires in 3 Months".
+        //  Ported from OfficerController.GetTemporaryDisability.
+        //
+        //  Returns PLAIN JSON (no JsonResult wrapper) — ExportData reads
+        //  result.data / result.columns directly.
+        //
+        //  NOTE: for scope="All" the JSX omits pageIndex/pageSize, so they
+        //  arrive as 0. We force a wide fetch so the SQL function returns
+        //  everything in one call.
+        // ═══════════════════════════════════════════════════════════════════════
+        public async Task<string> GetTemporaryDisability(string? scope, string? columnOrder, string? columnVisibility, string? Serviceid, string type, int pageIndex = 0, int pageSize = 10)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return JsonConvert.SerializeObject(new
+                    {
+                        data = new List<dynamic>(),
+                        columns = new List<dynamic>(),
+                        totalRecords = 0
+                    });
+
+                int serviceId;
+                try { serviceId = Convert.ToInt32(Serviceid); }
+                catch { return JsonConvert.SerializeObject(new { error = "Invalid Serviceid" }); }
+
+                string accessLevel = officer.AccessLevel!;
+                int? accessCode = officer.AccessCode;
+                string takenBy = officer.Role!;
+
+                int? divisionCode = null;
+                if (accessLevel == "Division" && accessCode.HasValue)
+                {
+                    var district = await dbcontext.District
+                        .FirstOrDefaultAsync(d => d.Districtid == accessCode.Value);
+                    divisionCode = district?.Division ?? accessCode.Value;
+                }
+
+                string resultType = type == "totalpcpapplication"
+                    ? "totalpcpapplication"
+                    : "expiringeligibility";
+
+                // ── Pagination: "All" scope skips it entirely. ─────────────────
+                if (string.Equals(scope, "All", StringComparison.OrdinalIgnoreCase))
+                {
+                    pageIndex = 0;
+                    pageSize = 1_000_000;   // effectively "no pagination"
+                }
+                else
+                {
+                    if (pageIndex < 0) pageIndex = 0;
+                    if (pageSize < 1) pageSize = 10;
+                }
+                int pageNumber = pageIndex + 1;
+
+                var parameters = new[]
+                {
+                    new NpgsqlParameter("@accesslevel",  accessLevel),
+                    new NpgsqlParameter("@accesscode",   accessCode ?? (object)DBNull.Value),
+                    new NpgsqlParameter("@serviceid",    serviceId),
+                    new NpgsqlParameter("@takenby",      takenBy),
+                    new NpgsqlParameter("@divisioncode", divisionCode ?? (object)DBNull.Value),
+                    new NpgsqlParameter("@resulttype",   resultType),
+                    new NpgsqlParameter("@pagenumber",   pageNumber),
+                    new NpgsqlParameter("@pagesize",     pageSize)
+                };
+
+                var applications = await dbcontext.CitizenApplications
+                    .FromSqlRaw("SELECT * FROM get_disability_applications(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @resulttype, @pagenumber, @pagesize)", parameters)
+                    .ToListAsync();
+
+                int totalRecords = 0;
+                try
+                {
+                    var countParameters = new[]
+                    {
+                        new NpgsqlParameter("@accesslevel",  accessLevel),
+                        new NpgsqlParameter("@accesscode",   accessCode ?? (object)DBNull.Value),
+                        new NpgsqlParameter("@serviceid",    serviceId),
+                        new NpgsqlParameter("@takenby",      takenBy),
+                        new NpgsqlParameter("@divisioncode", divisionCode ?? (object)DBNull.Value),
+                        new NpgsqlParameter("@resulttype",   resultType),
+                        new NpgsqlParameter("@pagenumber",   1),
+                        new NpgsqlParameter("@pagesize",     1000000)
+                    };
+
+                    var countQuery = await dbcontext.CitizenApplications
+                        .FromSqlRaw("SELECT * FROM get_disability_applications(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @resulttype, @pagenumber, @pagesize)", countParameters)
+                        .ToListAsync();
+
+                    totalRecords = countQuery.Count;
+                }
+                catch
+                {
+                    totalRecords = applications.Count;
+                }
+
+                var serviceName = await dbcontext.Services
+                    .Where(s => s.Serviceid == serviceId)
+                    .Select(s => s.Servicename)
+                    .FirstOrDefaultAsync() ?? "Unknown Service";
+
+                List<dynamic> data = new();
+                List<dynamic> columns = new()
+                {
+                    new { accessorKey = "sno",             header = "S.No" },
+                    new { accessorKey = "referenceNumber", header = "Reference Number" },
+                    new { accessorKey = "applicantName",   header = "Applicant Name" },
+                    new { accessorKey = "serviceName",     header = "Service Name" },
+                };
+
+                if (type == "totalpcpapplication")
+                {
+                    columns.Add(new { accessorKey = "applicationType", header = "UDID Card Type" });
+                    columns.Add(new { accessorKey = "expiryDate", header = "UDID Card Expiry Date" });
+                }
+                else
+                {
+                    columns.Add(new { accessorKey = "expiryDate", header = "UDID Card Expiry Date" });
+                    columns.Add(new { accessorKey = "noOfMailSent", header = "No. Of Reminder Mails Sent to Citizen" });
+                }
+
+                int snoCounter = (pageIndex * pageSize) + 1;
+
+                foreach (var application in applications)
+                {
+                    try
+                    {
+                        var formDetailsObj = JToken.Parse(application.Formdetails ?? "{}");
+                        string applicantName = GetFieldValue("ApplicantName", formDetailsObj) ?? "Unknown Applicant";
+
+                        dynamic applicationObject = new ExpandoObject();
+                        applicationObject.sno = snoCounter++;
+                        applicationObject.referenceNumber = application.Referencenumber;
+                        applicationObject.applicantName = applicantName;
+                        applicationObject.serviceName = serviceName;
+
+                        string expiryDisplay = "No Expiry Data";
+                        if (!string.IsNullOrWhiteSpace(application.FormdetailsFlat))
+                        {
+                            try
+                            {
+                                var flatObj = JToken.Parse(application.FormdetailsFlat);
+                                var rawDate = flatObj["IfTemporaryDisabilityUdidCardValidUpto"]?.ToString();
+
+                                if (!string.IsNullOrWhiteSpace(rawDate) && DateTime.TryParse(rawDate, out DateTime expDate))
+                                {
+                                    int daysLeft = (expDate.Date - DateTime.Today).Days;
+                                    expiryDisplay = expDate.ToString("dd MMM yyyy")
+                                        + (daysLeft >= 0 ? $" ({daysLeft} days left)" : " (Expired)");
+                                }
+                            }
+                            catch { /* ignore */ }
+                        }
+
+                        applicationObject.expiryDate = expiryDisplay;
+
+                        if (type == "totalpcpapplication")
+                        {
+                            var disabilityTypeField = FormJsonHelper.FindFieldRecursively(formDetailsObj, "KindOfDisability");
+                            applicationObject.applicationType = disabilityTypeField?["value"]?.ToString() ?? "N/A";
+                        }
+                        else
+                        {
+                            applicationObject.noOfMailSent = 0;
+                            applicationObject.customActions = new List<dynamic>
+                            {
+                                new
+                                {
+                                    type = "SendEmail",
+                                    tooltip = "Send Reminder Email",
+                                    tooltipText = "Send Reminder Mail to Citizen",
+                                    color = "#F0C38E",
+                                    actionFunction = "sendExpirationEmail"
+                                }
+                            };
+                        }
+
+                        data.Add(applicationObject);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, $"Error processing {application.Referencenumber}: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    data,
+                    columns,
+                    totalRecords,
+                    pageIndex,
+                    pageSize,
+                    totalPages = pageSize > 0
+                        ? (int)Math.Ceiling((double)totalRecords / pageSize)
+                        : 0
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in GetTemporaryDisability: {ex.Message}");
+                return JsonConvert.SerializeObject(new
+                {
+                    data = new List<dynamic>(),
+                    columns = new List<dynamic>(),
+                    totalRecords = 0,
+                    pageIndex = 0,
+                    pageSize = 10,
+                    totalPages = 0,
+                    error = ex.Message
+                });
+            }
+        }
+
         public class AgeWiseReportDto
         {
             public string? Age_range { get; set; }
@@ -535,10 +1187,56 @@ namespace SahayataNidhi.Controllers
             public string? Gender { get; set; }
             public long Countofapplicants { get; set; }
         }
-        // DetailedApplicationsReportDto.cs
+
         public class DetailedApplicationsReportDto
         {
-            // Existing fields
+            [Column("districtname")] public string? DistrictName { get; set; }
+            [Column("tswofficename")] public string? Tswofficename { get; set; }
+            [Column("application_status")] public string? ApplicationStatus { get; set; }
+            [Column("application_pending_with")] public string? ApplicationPendingWith { get; set; }
+            [Column("referencenumber")] public string? ReferenceNumber { get; set; }
+            [Column("applicant_name")] public string? ApplicantName { get; set; }
+            [Column("parentage")] public string? Parentage { get; set; }
+            [Column("date_of_birth")] public string? DateOfBirth { get; set; }
+            [Column("mobile_number")] public string? MobileNumber { get; set; }
+            [Column("account_number")] public string? AccountNumber { get; set; }
+            [Column("ifsc_code")] public string? IfscCode { get; set; }
+            [Column("bank_name")] public string? BankName { get; set; }
+            [Column("branch_name")] public string? BranchName { get; set; }
+            [Column("present_address")] public string? PresentAddress { get; set; }
+            [Column("present_district")] public string? PresentDistrict { get; set; }
+            [Column("present_tehsil")] public string? PresentTehsil { get; set; }
+            [Column("permanent_address")] public string? PermanentAddress { get; set; }
+            [Column("permanent_district")] public string? PermanentDistrict { get; set; }
+            [Column("permanent_tehsil")] public string? PermanentTehsil { get; set; }
+            [Column("pension_type")] public string? PensionType { get; set; }
+            [Column("udid_card_number")] public string? UdidCardNumber { get; set; }
+            [Column("type_of_disability")] public string? TypeOfDisability { get; set; }
+            [Column("kind_of_disability")] public string? KindOfDisability { get; set; }
+            [Column("percentage_of_disability")] public string? PercentageOfDisability { get; set; }
+            [Column("disability_others")] public string? DisabilityOthers { get; set; }
+            [Column("temporary_disability_valid_upto")] public string? TemporaryDisabilityValidUpto { get; set; }
+            [Column("civil_condition")] public string? CivilCondition { get; set; }
+            [Column("last_action_taken")] public string? LastActionTaken { get; set; }
+            [Column("remarks")] public string? Remarks { get; set; }
+            [Column("ActionTakenOn")] public string? ActionTakenOn { get; set; }
+            [Column("totalcount")] public long Totalcount { get; set; }
+            [Column("submission_date")] public string? SubmissionDate { get; set; }
+            [Column("sanctioned_date")] public string? SanctionedDate { get; set; }
+        }
+
+        public class WithheldApplicationResult
+        {
+            public long Sno { get; set; }
+            public string? Referencenumber { get; set; }
+            public string? ApplicantName { get; set; }
+            public string? WithheldType { get; set; }
+            public string? WithheldReason { get; set; }
+            public int? TotalRecords { get; set; }
+        }
+
+        public class WithheldDetailedReportDto
+        {
             public string? Districtname { get; set; }
             public string? Tswofficename { get; set; }
             public string? Application_status { get; set; }
@@ -546,44 +1244,33 @@ namespace SahayataNidhi.Controllers
             public string? Referencenumber { get; set; }
             public string? Applicant_name { get; set; }
             public string? Parentage { get; set; }
+            public string? Mobile_number { get; set; }
             public string? Account_number { get; set; }
             public string? Ifsc_code { get; set; }
             public string? Bank_name { get; set; }
             public string? Branch_name { get; set; }
-
-            // === NEW FIELDS ADDED ===
-
-            // Present Address Fields
-            public string? Present_address { get; set; }
-            public string? Present_district { get; set; }
-            public string? Present_tehsil { get; set; }
-
-            // Permanent Address Fields
-            public string? Permanent_address { get; set; }
-            public string? Permanent_district { get; set; }
-            public string? Permanent_tehsil { get; set; }
-
-            // Pension & Disability Fields
-            public string? Pension_type { get; set; }
-            public string? Type_of_disability { get; set; }
-            public string? Kind_of_disability { get; set; }
-            public string? Percentage_of_disability { get; set; }
-            public string? Disability_others { get; set; }
-            public string? Temporary_disability_valid_upto { get; set; }
-            public string? Civil_condition { get; set; }
-            public string? Udid_card_number { get; set; }
-
-            // Total count (kept at the end)
+            public string? ActionTakenOn { get; set; }
+            public string? Iswithheld { get; set; }
+            public string? Withheldtype { get; set; }
+            public string? Withheldreason { get; set; }
             public long Totalcount { get; set; }
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetApplicationsForReport(int accessCode, int serviceId, string accessLevel, string? dataType = null, string reportType = "TehsilWise", string? statusType = null, string? ageRanges = null, int pageIndex = 0, int pageSize = 10, bool isPaginated = true)  // Add this parameter
+        public async Task<IActionResult> GetApplicationsForReport(int accessCode, int serviceId, string accessLevel, string? dataType = null, string reportType = "TehsilWise", string? statusType = null, string? ageRanges = null, int pageIndex = 0, int pageSize = 10, bool isPaginated = true, DateTime? fromDate = null, DateTime? toDate = null, DateTime? sanctionFromDate = null, DateTime? sanctionToDate = null)
         {
             try
             {
                 var officer = GetOfficerDetails();
-                _logger.LogInformation($"GetApplicationsForReport - AccessCode: {accessCode}, ServiceId: {serviceId}, AccessLevel: {accessLevel}, DataType: {dataType}, ReportType: {reportType}, StatusType: {statusType}, PageIndex: {pageIndex}, PageSize: {pageSize}, IsPaginated: {isPaginated}");
+                _logger.LogInformation(
+                    $"GetApplicationsForReport - AccessCode: {accessCode}, ServiceId: {serviceId}, " +
+                    $"AccessLevel: {accessLevel}, DataType: {dataType}, ReportType: {reportType}, " +
+                    $"StatusType: {statusType}, PageIndex: {pageIndex}, PageSize: {pageSize}, " +
+                    $"IsPaginated: {isPaginated}, " +
+                    $"FromDate: {fromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"ToDate: {toDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"SanctionFrom: {sanctionFromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"SanctionTo: {sanctionToDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
 
                 List<dynamic> data;
                 List<dynamic> columns;
@@ -601,7 +1288,7 @@ namespace SahayataNidhi.Controllers
                         };
 
                         var tehsilResults = dbcontext.Database
-                            .SqlQueryRaw<TehsilWiseReportDto>(
+                            .SqlQueryRaw<SummaryReports>(
                                 "SELECT * FROM get_applications_for_report(@p_access_code, @p_service_id, @p_access_level, @p_data_type)",
                                 tehsilParameters)
                             .ToList();
@@ -731,47 +1418,132 @@ namespace SahayataNidhi.Controllers
                             new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
                             new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = isPaginated },
                             new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value }
+                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value },
+                            new NpgsqlParameter("@p_startdate",          NpgsqlDbType.Timestamp) { Value = fromDate.HasValue         ? (object)fromDate.Value.Date         : DBNull.Value },
+                            new NpgsqlParameter("@p_enddate",            NpgsqlDbType.Timestamp) { Value = toDate.HasValue           ? (object)toDate.Value.Date           : DBNull.Value },
+                            new NpgsqlParameter("@p_sanction_startdate", NpgsqlDbType.Timestamp) { Value = sanctionFromDate.HasValue ? (object)sanctionFromDate.Value.Date : DBNull.Value },
+                            new NpgsqlParameter("@p_sanction_enddate",   NpgsqlDbType.Timestamp) { Value = sanctionToDate.HasValue   ? (object)sanctionToDate.Value.Date   : DBNull.Value }
                         };
 
                         var detailedResults = dbcontext.Database
                             .SqlQueryRaw<DetailedApplicationsReportDto>(
-                                "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
+                                "SELECT * FROM get_applications_for_officer_report(" +
+                                "@p_role, @p_access_level, @p_access_code, @p_application_status, " +
+                                "@p_service_id, @p_page_index, @p_page_size, @p_is_paginated, " +
+                                "@p_data_type, @p_division_code, @p_startdate, @p_enddate, " +
+                                "@p_sanction_startdate, @p_sanction_enddate)",
                                 detailedParameters)
                             .ToList();
 
-                        // Get the total count from the first record
                         totalRecords = (int)(detailedResults.FirstOrDefault()?.Totalcount ?? 0);
                         data = detailedResults.Cast<dynamic>().ToList();
 
                         columns = new List<dynamic>
                         {
-                            new { accessorKey = "districtname", header = "District" },
-                            new { accessorKey = "tswofficename", header = "TSWO Office" },
-                            new { accessorKey = "application_status", header = "Application Status" },
-                            new { accessorKey = "application_pending_with", header = "Application Pending With" },
-                            new { accessorKey = "referencenumber", header = "Reference Number" },
-                            new { accessorKey = "applicant_name", header = "Applicant Name" },
-                            new { accessorKey = "parentage", header = "Parentage" },
-                            new { accessorKey = "account_number", header = "Account Number" },
-                            new { accessorKey = "ifsc_code", header = "IFSC Code" },
-                            new { accessorKey = "bank_name", header = "Bank Name" },
-                            new { accessorKey = "branch_name", header = "Branch Name" },
-                            new { accessorKey = "present_address", header = "Present Address" },
-                            new { accessorKey = "present_district", header = "Present District" },
-                            new { accessorKey = "present_tehsil", header = "Present Tehsil" },
-                            new { accessorKey = "permanent_address", header = "Permanent Address" },
-                            new { accessorKey = "permanent_district", header = "Permanent District" },
-                            new { accessorKey = "permanent_tehsil", header = "Permanent Tehsil" },
-                            new { accessorKey = "pension_type", header = "Pension Type" },
-                            new { accessorKey = "udid_card_number", header = "UDID Card Number" },
-                            new { accessorKey = "type_of_disability", header = "Type of Disability" },
-                            new { accessorKey = "kind_of_disability", header = "Kind of Disability" },
-                            new { accessorKey = "percentage_of_disability", header = "Percentage of Disability" },
-                            new { accessorKey = "disability_others", header = "Disability (If Others)" },
-                            new { accessorKey = "temporary_disability_valid_upto", header = "Temporary Disability Valid Upto" },
-                            new { accessorKey = "civil_condition", header = "Civil Condition" }
+                            new { accessorKey = "districtName",                     header = "District" },
+                            new { accessorKey = "tswofficename",                    header = "TSWO Office" },
+                            new { accessorKey = "applicationStatus",                header = "Application Status" },
+                            new { accessorKey = "applicationPendingWith",           header = "Application Pending With" },
+                            new { accessorKey = "referenceNumber",                  header = "Reference Number" },
+                            new { accessorKey = "applicantName",                    header = "Applicant Name" },
+                            new { accessorKey = "submissionDate",                   header = "Submission Date" },
+                            new { accessorKey = "parentage",                        header = "Parentage" },
+                            new { accessorKey = "dateOfBirth",                      header = "Date of Birth" },
+                            new { accessorKey = "mobileNumber",                     header = "Mobile Number" },
+                            new { accessorKey = "accountNumber",                    header = "Account Number" },
+                            new { accessorKey = "ifscCode",                         header = "IFSC Code" },
+                            new { accessorKey = "bankName",                         header = "Bank Name" },
+                            new { accessorKey = "branchName",                       header = "Branch Name" },
+                            new { accessorKey = "presentAddress",                   header = "Present Address" },
+                            new { accessorKey = "presentDistrict",                  header = "Present District" },
+                            new { accessorKey = "presentTehsil",                    header = "Present Tehsil" },
+                            new { accessorKey = "permanentAddress",                 header = "Permanent Address" },
+                            new { accessorKey = "permanentDistrict",                header = "Permanent District" },
+                            new { accessorKey = "permanentTehsil",                  header = "Permanent Tehsil" },
+                            new { accessorKey = "pensionType",                      header = "Pension Type" },
+                            new { accessorKey = "udidCardNumber",                   header = "UDID Card Number" },
+                            new { accessorKey = "typeOfDisability",                 header = "Type of Disability" },
+                            new { accessorKey = "kindOfDisability",                 header = "Kind of Disability" },
+                            new { accessorKey = "percentageOfDisability",           header = "Percentage of Disability" },
+                            new { accessorKey = "disabilityOthers",                 header = "Disability (If Others)" },
+                            new { accessorKey = "temporaryDisabilityValidUpto",     header = "Temporary Disability Valid Upto" },
+                            new { accessorKey = "civilCondition",                   header = "Civil Condition" },
+                            new { accessorKey = "lastActionTaken",                  header = "Last Action Taken" },
+                            new { accessorKey = "remarks",                          header = "Remarks" },
+                            new { accessorKey = "actionTakenOn",                    header = "Action Taken On" },
+                            new { accessorKey = "sanctionedDate",                   header = "Sanctioned Date" }
                         };
+                        break;
+
+                    case "WithheldApplications":
+                        {
+                            int? divisionCode = null;
+                            if (string.Equals(accessLevel, "Division", StringComparison.OrdinalIgnoreCase))
+                            {
+                                divisionCode = accessCode;
+                            }
+                            else if (string.Equals(accessLevel, "District", StringComparison.OrdinalIgnoreCase))
+                            {
+                                divisionCode = dbcontext.District
+                                    .Where(d => d.Districtid == accessCode)
+                                    .Select(d => (int?)d.Division)
+                                    .FirstOrDefault();
+                            }
+                            else if (string.Equals(accessLevel, "Tehsil", StringComparison.OrdinalIgnoreCase))
+                            {
+                                divisionCode = dbcontext.Tswotehsil
+                                    .Where(t => t.Tehsilid == accessCode)
+                                    .Select(t => (int?)t.Divisioncode)
+                                    .FirstOrDefault();
+                            }
+
+                            var withheldParameters = new[]
+                            {
+                                new NpgsqlParameter("@p_role",           NpgsqlDbType.Varchar)   { Value = officer?.Role        ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_access_level",   NpgsqlDbType.Varchar)   { Value = accessLevel          ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_access_code",    NpgsqlDbType.Integer)   { Value = accessCode },
+                                new NpgsqlParameter("@p_service_id",     NpgsqlDbType.Integer)   { Value = serviceId },
+                                new NpgsqlParameter("@p_page_index",     NpgsqlDbType.Integer)   { Value = pageIndex },
+                                new NpgsqlParameter("@p_page_size",      NpgsqlDbType.Integer)   { Value = pageSize },
+                                new NpgsqlParameter("@p_is_paginated",   NpgsqlDbType.Boolean)   { Value = isPaginated },
+                                new NpgsqlParameter("@p_data_type",      NpgsqlDbType.Varchar)   { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                                new NpgsqlParameter("@p_division_code",  NpgsqlDbType.Integer)   { Value = divisionCode ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_startdate",      NpgsqlDbType.Timestamp) { Value = fromDate.HasValue ? (object)fromDate.Value.Date : DBNull.Value },
+                                new NpgsqlParameter("@p_enddate",        NpgsqlDbType.Timestamp) { Value = toDate.HasValue   ? (object)toDate.Value.Date   : DBNull.Value }
+                            };
+
+                            var withheldData = dbcontext.Database
+                                .SqlQueryRaw<WithheldDetailedReportDto>(
+                                    "SELECT * FROM get_withheld_applications_report(" +
+                                    "@p_role, @p_access_level, @p_access_code, @p_service_id, " +
+                                    "@p_page_index, @p_page_size, @p_is_paginated, " +
+                                    "@p_data_type, @p_division_code, @p_startdate, @p_enddate)",
+                                    withheldParameters)
+                                .ToList();
+
+                            totalRecords = (int)(withheldData.FirstOrDefault()?.Totalcount ?? 0);
+                            data = withheldData.Cast<dynamic>().ToList();
+
+                            columns = new List<dynamic>
+                            {
+                                new { accessorKey = "districtname",             header = "District" },
+                                new { accessorKey = "tswofficename",            header = "TSWO Office" },
+                                new { accessorKey = "application_status",       header = "Application Status" },
+                                new { accessorKey = "application_pending_with", header = "Application Pending With" },
+                                new { accessorKey = "referencenumber",          header = "Reference Number" },
+                                new { accessorKey = "applicant_name",           header = "Applicant Name" },
+                                new { accessorKey = "parentage",                header = "Parentage" },
+                                new { accessorKey = "mobile_number",            header = "Mobile Number" },
+                                new { accessorKey = "account_number",           header = "Account Number" },
+                                new { accessorKey = "ifsc_code",                header = "IFSC Code" },
+                                new { accessorKey = "bank_name",                header = "Bank Name" },
+                                new { accessorKey = "branch_name",              header = "Branch Name" },
+                                new { accessorKey = "actionTakenOn",            header = "Action Taken On" },
+                                new { accessorKey = "iswithheld",               header = "Is Withheld" },
+                                new { accessorKey = "withheldtype",             header = "Withheld Type" },
+                                new { accessorKey = "withheldreason",           header = "Withheld Reason" }
+                            };
+                        }
                         break;
 
                     default:
@@ -796,6 +1568,60 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+        private static string NormalizeColumnKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return string.Empty;
+            return key.Replace("_", string.Empty)
+                      .Replace("-", string.Empty)
+                      .Replace(" ", string.Empty)
+                      .ToLowerInvariant();
+        }
+
+        private static List<Dictionary<string, object>> AlignDataKeysToColumns(
+            List<Dictionary<string, object>> rows,
+            List<Dictionary<string, string>> columns)
+        {
+            if (rows == null || rows.Count == 0) return rows ?? new List<Dictionary<string, object>>();
+            if (columns == null || columns.Count == 0) return rows;
+
+            var accessorByNormalized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var col in columns)
+            {
+                if (col.TryGetValue("accessorKey", out var ak) && !string.IsNullOrWhiteSpace(ak))
+                    accessorByNormalized[NormalizeColumnKey(ak)] = ak;
+            }
+            if (accessorByNormalized.Count == 0) return rows;
+
+            var alignedRows = new List<Dictionary<string, object>>(rows.Count);
+            foreach (var row in rows)
+            {
+                var newRow = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var kvp in row)
+                {
+                    var norm = NormalizeColumnKey(kvp.Key);
+                    if (accessorByNormalized.TryGetValue(norm, out var targetKey))
+                        newRow[targetKey] = kvp.Value;
+                    else
+                        newRow[kvp.Key] = kvp.Value;
+                }
+
+                foreach (var col in columns)
+                {
+                    if (col.TryGetValue("accessorKey", out var ak) &&
+                        !string.IsNullOrWhiteSpace(ak) &&
+                        !newRow.ContainsKey(ak))
+                    {
+                        newRow[ak] = null!;
+                    }
+                }
+
+                alignedRows.Add(newRow);
+            }
+
+            return alignedRows;
+        }
+
         [HttpPost]
         public async Task<IActionResult> ExportData([FromForm] IFormCollection form)
         {
@@ -812,13 +1638,20 @@ namespace SahayataNidhi.Controllers
                 List<Dictionary<string, object>> dataList = new List<Dictionary<string, object>>();
                 List<Dictionary<string, string>> columnList = new List<Dictionary<string, string>>();
 
+                // ----------------------------------------------------------------
                 // Handle different function types
+                // ----------------------------------------------------------------
                 if (function == "GetApplications")
                 {
                     int Serviceid = Convert.ToInt32(form["Serviceid"]);
                     string? type = form["type"];
+                    string? dataType = form["dataType"];
+
                     var result = JsonConvert.DeserializeObject<dynamic>(
-                        GetApplications(scope, columnOrder, columnVisibility, Serviceid, type, pageIndex, pageSize)
+                        GetApplications(
+                            scope, columnOrder, columnVisibility,
+                            Serviceid, type, pageIndex, pageSize,
+                            string.IsNullOrWhiteSpace(dataType) ? "new" : dataType)
                     );
 
                     if (result != null)
@@ -843,9 +1676,53 @@ namespace SahayataNidhi.Controllers
                         columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columns.ToString());
                     }
                 }
+                // ── Corrigendum / Correction grid ──
+                // Returns PLAIN JSON (no JsonResult wrapper), so read result.data
+                // / result.columns directly.
+                else if (function == "GetCorrigendumApplications")
+                {
+                    string type = form["type"].ToString();
+                    string applicationType = form["applicationType"].ToString();
+                    string serviceIdStr = form["ServiceId"].ToString();
+
+                    var json = GetCorrigendumApplications(
+                        scope, columnOrder, columnVisibility,
+                        type, applicationType, serviceIdStr,
+                        pageIndex, pageSize);
+
+                    var result = JsonConvert.DeserializeObject<dynamic>(json);
+                    if (result != null)
+                    {
+                        var data = result.data;
+                        var columns = result.columns;
+
+                        dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(data.ToString());
+                        columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columns.ToString());
+                    }
+                }
+                // ── PCP / Temporary Disability grid ──
+                else if (function == "GetTemporaryDisability")
+                {
+                    string type = form["type"].ToString();
+                    string serviceIdStr = form["ServiceId"].ToString();
+
+                    var json = await GetTemporaryDisability(
+                        scope, columnOrder, columnVisibility,
+                        serviceIdStr, type,
+                        pageIndex, pageSize);
+
+                    var result = JsonConvert.DeserializeObject<dynamic>(json);
+                    if (result != null)
+                    {
+                        var data = result.data;
+                        var columns = result.columns;
+
+                        dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(data.ToString());
+                        columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columns.ToString());
+                    }
+                }
                 else if (function == "GetApplicationsForReport")
                 {
-                    // Extract report parameters
                     int accessCode = Convert.ToInt32(form["accessCode"]);
                     int serviceId = Convert.ToInt32(form["serviceId"]);
                     string accessLevel = form["accessLevel"].ToString();
@@ -855,7 +1732,25 @@ namespace SahayataNidhi.Controllers
                     string? ageRanges = form["ageRanges"].ToString();
                     bool isPaginated = scope == "InView";
 
-                    // For "All" scope, fetch all records
+                    string? fromDateRaw = form["fromDate"];
+                    string? toDateRaw = form["toDate"];
+                    string? sanctionFromRaw = form["sanctionFromDate"];
+                    string? sanctionToRaw = form["sanctionToDate"];
+
+                    DateTime? fromDate = null;
+                    DateTime? toDate = null;
+                    DateTime? sanctionFromDate = null;
+                    DateTime? sanctionToDate = null;
+
+                    if (!string.IsNullOrWhiteSpace(fromDateRaw) && DateTime.TryParse(fromDateRaw, out var fd))
+                        fromDate = fd.Date;
+                    if (!string.IsNullOrWhiteSpace(toDateRaw) && DateTime.TryParse(toDateRaw, out var td))
+                        toDate = td.Date;
+                    if (!string.IsNullOrWhiteSpace(sanctionFromRaw) && DateTime.TryParse(sanctionFromRaw, out var sf))
+                        sanctionFromDate = sf.Date;
+                    if (!string.IsNullOrWhiteSpace(sanctionToRaw) && DateTime.TryParse(sanctionToRaw, out var st))
+                        sanctionToDate = st.Date;
+
                     int fetchPageIndex = pageIndex;
                     int fetchPageSize = pageSize;
 
@@ -866,16 +1761,25 @@ namespace SahayataNidhi.Controllers
                         isPaginated = false;
                     }
 
-                    // Call the GetApplicationsForReport endpoint directly
                     var reportResult = await GetApplicationsForReport(
-                        accessCode, serviceId, accessLevel, dataType, reportType,
-                        statusType, ageRanges, fetchPageIndex, fetchPageSize, isPaginated);
+                        accessCode,
+                        serviceId,
+                        accessLevel,
+                        dataType,
+                        reportType,
+                        statusType,
+                        ageRanges,
+                        fetchPageIndex,
+                        fetchPageSize,
+                        isPaginated,
+                        fromDate,
+                        toDate,
+                        sanctionFromDate,
+                        sanctionToDate);
 
-                    // Extract the data from the response
                     var okResult = reportResult as OkObjectResult;
                     if (okResult?.Value != null)
                     {
-                        // The value should be an anonymous object with status, data, columns, etc.
                         dynamic result = okResult.Value;
 
                         if (result.status == true)
@@ -883,13 +1787,12 @@ namespace SahayataNidhi.Controllers
                             var data = result.data;
                             var columns = result.columns;
 
-                            // Serialize the objects to JSON, then deserialize to the expected format
                             string dataJson = JsonConvert.SerializeObject(data);
                             string columnsJson = JsonConvert.SerializeObject(columns);
 
                             dataList = JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(dataJson)!
-                            .Select(dict => new Dictionary<string, object>(dict, StringComparer.OrdinalIgnoreCase))
-                            .ToList();
+                                .Select(dict => new Dictionary<string, object>(dict, StringComparer.OrdinalIgnoreCase))
+                                .ToList();
                             columnList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(columnsJson)!;
                         }
                         else
@@ -903,13 +1806,124 @@ namespace SahayataNidhi.Controllers
                         return Json(new { status = false, error = "No data available." });
                     }
                 }
+                else if (function == "GetWithheldApplications")
+                {
+                    int withheldServiceId = int.TryParse(form["ServiceId"], out var wsid) ? wsid : 0;
+                    string withheldType = form["type"].FirstOrDefault() ?? "withheld_total";
+
+                    if (withheldServiceId == 0)
+                        return Json(new { status = false, error = "ServiceId is required." });
+
+                    var officer = GetOfficerDetails();
+                    if (officer == null)
+                        return Json(new { status = false, error = "Officer authentication failed." });
+
+                    string accessLevel = officer.AccessLevel ?? "State";
+                    int? accessCode = officer.AccessCode;
+                    int? divisionCode = null;
+                    string officerRole = officer.Role ?? "";
+
+                    if (string.Equals(accessLevel, "Division", StringComparison.OrdinalIgnoreCase))
+                    {
+                        divisionCode = officer.AccessCode;
+                    }
+                    else if (string.Equals(accessLevel, "District", StringComparison.OrdinalIgnoreCase)
+                             && officer.AccessCode.HasValue)
+                    {
+                        divisionCode = dbcontext.District
+                            .Where(d => d.Districtid == officer.AccessCode.Value)
+                            .Select(d => (int?)d.Division)
+                            .FirstOrDefault();
+                    }
+                    else if (string.Equals(accessLevel, "Tehsil", StringComparison.OrdinalIgnoreCase)
+                             && officer.AccessCode.HasValue)
+                    {
+                        divisionCode = dbcontext.Tswotehsil
+                            .Where(t => t.Tehsilid == officer.AccessCode.Value)
+                            .Select(t => (int?)t.Divisioncode)
+                            .FirstOrDefault();
+                    }
+
+                    int fetchPageIndex = 0;
+                    int fetchPageSize = (scope == "All") ? int.MaxValue : Math.Max(pageSize, 1);
+                    if (scope != "All")
+                        fetchPageIndex = pageIndex;
+
+                    var withheldParams = new[]
+                    {
+                        new NpgsqlParameter("@p_service_id",    NpgsqlDbType.Integer) { Value = withheldServiceId },
+                        new NpgsqlParameter("@p_type",          NpgsqlDbType.Varchar) { Value = withheldType },
+                        new NpgsqlParameter("@p_officer_role",  NpgsqlDbType.Varchar) { Value = (object?)officerRole ?? DBNull.Value },
+                        new NpgsqlParameter("@p_page_index",    NpgsqlDbType.Integer) { Value = fetchPageIndex },
+                        new NpgsqlParameter("@p_page_size",     NpgsqlDbType.Integer) { Value = fetchPageSize },
+                        new NpgsqlParameter("@p_access_level",  NpgsqlDbType.Varchar) { Value = (object?)accessLevel ?? DBNull.Value },
+                        new NpgsqlParameter("@p_access_code",   NpgsqlDbType.Integer) { Value = (object?)accessCode ?? DBNull.Value },
+                        new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = (object?)divisionCode ?? DBNull.Value }
+                    };
+
+                    var withheldResults = await dbcontext.Database
+                        .SqlQueryRaw<WithheldApplicationResult>(
+                            "SELECT * FROM get_withheld_applications(" +
+                            "@p_service_id, @p_type, @p_officer_role, " +
+                            "@p_page_index, @p_page_size, " +
+                            "@p_access_level, @p_access_code, @p_division_code)",
+                            withheldParams)
+                        .ToListAsync();
+
+                    var allWithheldColumns = new List<Dictionary<string, string>>
+                    {
+                        new() { ["accessorKey"] = "sno",             ["header"] = "S.No" },
+                        new() { ["accessorKey"] = "referenceNumber", ["header"] = "Reference Number" },
+                        new() { ["accessorKey"] = "applicantName",   ["header"] = "Applicant Name" },
+                        new() { ["accessorKey"] = "withheldType",    ["header"] = "Withheld Type" },
+                        new() { ["accessorKey"] = "withheldReason",  ["header"] = "Withheld Reason" }
+                    };
+
+                    var orderedKeys = JsonConvert.DeserializeObject<List<string>>(columnOrder ?? "[]") ?? new List<string>();
+                    var visibility = JsonConvert.DeserializeObject<Dictionary<string, bool>>(columnVisibility ?? "{}")
+                                      ?? new Dictionary<string, bool>();
+
+                    var keySet = allWithheldColumns.Select(c => c["accessorKey"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    if (orderedKeys.Count > 0)
+                    {
+                        columnList = orderedKeys
+                            .Where(k => keySet.Contains(k))
+                            .Where(k => !visibility.TryGetValue(k, out var v) || v)
+                            .Select(k => allWithheldColumns.First(c => string.Equals(c["accessorKey"], k, StringComparison.OrdinalIgnoreCase)))
+                            .ToList();
+                    }
+                    else
+                    {
+                        columnList = allWithheldColumns
+                            .Where(c => !visibility.TryGetValue(c["accessorKey"], out var v) || v)
+                            .ToList();
+                    }
+
+                    dataList = withheldResults.Select(r =>
+                    {
+                        var dict = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["sno"] = r.Sno,
+                            ["referenceNumber"] = r.Referencenumber ?? "",
+                            ["applicantName"] = r.ApplicantName ?? "N/A",
+                            ["withheldType"] = r.WithheldType ?? "",
+                            ["withheldReason"] = r.WithheldReason ?? ""
+                        };
+                        return dict;
+                    }).ToList();
+                }
 
                 if (dataList == null || !dataList.Any())
                 {
                     return Json(new { status = false, error = "No data to export." });
                 }
 
+                dataList = AlignDataKeysToColumns(dataList, columnList);
+
+                // ----------------------------------------------------------------
                 // Generate file based on format
+                // ----------------------------------------------------------------
                 string fileName = $"{function}_{scope}_{DateTime.Now:yyyyMMdd_HHmmss}";
                 byte[] fileBytes;
                 string contentType;
@@ -944,6 +1958,5 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, error = $"Error generating file: {ex.Message}" });
             }
         }
-
     }
 }

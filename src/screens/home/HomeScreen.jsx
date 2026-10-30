@@ -1,7 +1,7 @@
-import { Box, Typography } from "@mui/material";
+import { Box, Typography, Container, Grid, Button, Chip } from "@mui/material";
 import React, { useEffect, useRef } from "react";
-import { Col, Container, Row } from "react-bootstrap";
 import CustomCard from "../../components/CustomCard";
+import SchemeFlowchart, { FLOWS } from "../../components/SchemeFlowchart";
 import { useNavigate } from "react-router-dom";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -9,6 +9,8 @@ import {
   GirlSharp,
   FavoriteBorderOutlined,
   AccountBalanceSharp,
+  ArrowForward,
+  CheckCircleOutline,
 } from "@mui/icons-material";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -16,173 +18,154 @@ gsap.registerPlugin(ScrollTrigger);
 export default function HomeScreen() {
   const navigate = useNavigate();
   const section1Ref = useRef(null);
+  const heroImageRef = useRef(null);
   const card1Ref = useRef(null);
   const card2Ref = useRef(null);
   const card3Ref = useRef(null);
 
-  const API_BASE = window.__CONFIG__?.API_URL || ""; // fallback to empty string if undefined
+  const API_BASE = window.__CONFIG__?.API_URL || "";
 
   useEffect(() => {
-    const section1 = section1Ref.current;
     const cards = [card1Ref.current, card2Ref.current, card3Ref.current].filter(
-      (ref) => ref !== null
+      Boolean,
     );
 
-    if (section1) {
-      gsap.fromTo(
-        section1,
-        { opacity: 1 },
-        {
-          opacity: 1,
-          duration: 1,
-          scrollTrigger: {
-            trigger: section1,
-            start: "bottom 90%",
-            scrub: true,
-            toggleActions: "restart none none none",
-          },
-        }
-      );
+    // 1. Subtle floating animation for the hero image
+    if (heroImageRef.current) {
+      gsap.to(heroImageRef.current, {
+        y: -15,
+        duration: 3,
+        ease: "sine.inOut",
+        yoyo: true,
+        repeat: -1,
+      });
     }
 
+    // 2. Card reveal animation (Fixed: 'once: true' prevents them from vanishing when scrolling back up)
     if (cards.length > 0) {
       gsap.fromTo(
         cards,
-        { x: -200, opacity: 0 },
+        { y: 60, opacity: 0 },
         {
-          x: 0,
+          y: 0,
           opacity: 1,
-          duration: 1,
-          delay: 0.2,
-          stagger: 0.2,
-          ease: "power2.out",
+          duration: 0.8,
+          stagger: 0.15,
+          ease: "power3.out",
           scrollTrigger: {
-            trigger: card1Ref.current,
-            start: "top 80%",
-            end: "bottom 20%",
-            toggleActions: "play reverse play reverse",
+            trigger: cards[0],
+            start: "top 85%",
+            once: true, // 🔥 Crucial UX fix
           },
-        }
+        },
       );
     }
 
-    // Cleanup
     return () => {
       ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
     };
   }, []);
 
   return (
-    <Box sx={{ width: "100%", overflowX: "hidden" }}>
-      {/* Section 1 */}
+    <Box sx={{ width: "100%", overflowX: "hidden", bgcolor: "#FAFAFA" }}>
+      {/* ================= SECTION 1: HERO ================= */}
       <Box
         ref={section1Ref}
         sx={{
-          minHeight: { xs: "100vh", sm: "80vh", md: "70vh" },
+          position: "relative",
+          minHeight: { xs: "auto", md: "85vh" },
           width: "100%",
           display: "flex",
           alignItems: "center",
-          py: { xs: 4, sm: 6, md: 8 },
-          background: "linear-gradient(to bottom right, #F4F9FF 0%, #F9F3EC 100%)",
+          py: { xs: 8, md: 12 },
+          background: "linear-gradient(135deg, #F4F9FF 0%, #F9F3EC 100%)",
+          overflow: "hidden",
         }}
       >
-        <Container>
-          <Row style={{ width: "100%", alignItems: "center" }}>
-            <Col xs={12} md={6}>
+        {/* Subtle Dot Pattern Background */}
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            opacity: 0.4,
+            backgroundImage: `radial-gradient(circle at 1px 1px, #2562E9 1px, transparent 0)`,
+            backgroundSize: "32px 32px",
+            pointerEvents: "none",
+          }}
+        />
+
+        <Container maxWidth="xl" sx={{ position: "relative", zIndex: 2 }}>
+          <Grid container spacing={{ xs: 4, md: 8 }} alignItems="center">
+            {/* Left Content */}
+            <Grid item xs={12} md={6}>
               <Box
                 sx={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: { xs: 3, sm: 4, md: 5 },
-                  px: { xs: 2, sm: 3 },
+                  gap: 3,
+                  maxWidth: 600,
                 }}
               >
-                <Box
+                {/* Eyebrow Badge */}
+                <Chip
+                  icon={<CheckCircleOutline sx={{ fontSize: 18 }} />}
+                  label="Government of Jammu & Kashmir Initiative"
+                  color="primary"
+                  variant="outlined"
                   sx={{
-                    display: "flex",
-                    flexDirection: "column",
-                    wordBreak: "break-word",
-                    maxWidth: { xs: "100%", md: "500px" },
-                    fontFamily:
-                      "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif",
+                    alignSelf: "flex-start",
+                    fontWeight: 600,
+                    bgcolor: "rgba(37, 98, 233, 0.08)",
+                    borderColor: "rgba(37, 98, 233, 0.3)",
+                    color: "#1F43B5",
                   }}
-                >
+                />
+
+                {/* Main Headings */}
+                <Box>
                   <Typography
                     sx={{
-                      fontWeight: 700,
-                      fontSize: {
-                        xs: "clamp(2.5rem, 6vw, 4.5rem)",
-                        sm: "clamp(3rem, 7vw, 5.5rem)",
-                        md: "72px",
-                      },
-                      color: "#F67015",
-                      m: 0,
-                      lineHeight: 1,
+                      fontWeight: 800,
+                      fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
+                      lineHeight: 1.1,
+                      letterSpacing: "-1px",
                     }}
                   >
-                    Facilitating
-                  </Typography>
-                  <Typography
-                    sx={{
-                      fontWeight: 700,
-                      fontSize: {
-                        xs: "clamp(2.5rem, 6vw, 4.5rem)",
-                        sm: "clamp(3rem, 7vw, 5.5rem)",
-                        md: "72px",
-                      },
-                      color: "#235BDE",
-                      m: 0,
-                      lineHeight: 1,
-                    }}
-                  >
-                    Financial
-                  </Typography>
-                  <Typography
-                    sx={{
-                      fontWeight: 700,
-                      fontSize: {
-                        xs: "clamp(2.5rem, 6vw, 4.5rem)",
-                        sm: "clamp(3rem, 7vw, 5.5rem)",
-                        md: "72px",
-                      },
-                      color: "#0FB282",
-                      m: 0,
-                      lineHeight: 1,
-                    }}
-                  >
-                    Assistance
+                    <Box component="span" sx={{ color: "#F67015" }}>
+                      Facilitating
+                    </Box>{" "}
+                    <Box component="span" sx={{ color: "#235BDE" }}>
+                      Financial
+                    </Box>{" "}
+                    <Box component="span" sx={{ color: "#0FB282" }}>
+                      Assistance
+                    </Box>
                   </Typography>
                   <Typography
                     sx={{
                       fontWeight: 600,
-                      fontSize: {
-                        xs: "clamp(1.5rem, 5vw, 2rem)",
-                        sm: "clamp(1.75rem, 5vw, 2.5rem)",
-                        md: "2.5rem",
-                      },
-                      m: 1,
-                      lineHeight: 1.5,
+                      fontSize: { xs: "1.5rem", md: "2rem" },
+                      color: "text.secondary",
+                      mt: 1,
                     }}
                   >
                     for Every Citizen
                   </Typography>
                 </Box>
 
+                {/* Description Box */}
                 <Typography
-                  variant="subtitle1"
+                  variant="body1"
                   sx={{
-                    backgroundColor: "#fff",
+                    bgcolor: "rgba(255,255,255,0.7)",
+                    backdropFilter: "blur(8px)",
                     borderRadius: 3,
                     p: 3,
-                    color: "#1e1e1eff",
-                    maxWidth: { xs: "100%", md: "800px" },
-                    wordBreak: "break-word",
-                    fontSize: {
-                      xs: "clamp(0.9rem, 3vw, 1rem)",
-                      sm: "clamp(1rem, 2.5vw, 1.1rem)",
-                      md: "clamp(1.1rem, 2vw, 1.2rem)",
-                    },
-                    boxShadow: 3,
+                    color: "text.primary",
+                    fontSize: "1.1rem",
+                    lineHeight: 1.7,
+                    border: "1px solid rgba(0,0,0,0.05)",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
                   }}
                 >
                   Submit your application for welfare schemes through a
@@ -191,167 +174,197 @@ export default function HomeScreen() {
                   approval and sanction.
                 </Typography>
 
-                <Box
-                  component="button"
-                  sx={{
-                    border: "none",
-                    background: "linear-gradient(to bottom, #2562E9 0%, #1F43B5 100%)",
-                    padding: { xs: "0.5rem 1rem", sm: "0.75rem 1.5rem" },
-                    width: { xs: "100%", sm: "50%", md: "30%" },
-                    color: "#FDF6F0",
-                    fontWeight: "bold",
-                    borderRadius: 3,
-                    padding: 2,
-                    fontSize: {
-                      xs: "clamp(0.9rem, 3vw, 1rem)",
-                      sm: "clamp(1rem, 2.5vw, 1.1rem)",
-                    },
-                    "&:hover": {
-                      backgroundColor: "primary.dark",
-                    },
-                  }}
-                  onClick={() => navigate("/login")}
-                >
-                  Get Started
+                {/* CTA Button */}
+                <Box>
+                  <Button
+                    variant="contained"
+                    size="large"
+                    endIcon={<ArrowForward />}
+                    onClick={() => navigate("/login")}
+                    sx={{
+                      background: "linear-gradient(to right, #2562E9, #1F43B5)",
+                      color: "#fff",
+                      fontWeight: "bold",
+                      fontSize: "1.1rem",
+                      py: 2,
+                      px: 5,
+                      borderRadius: 2,
+                      boxShadow: "0 8px 24px rgba(37, 98, 233, 0.25)",
+                      textTransform: "none",
+                      "&:hover": {
+                        background:
+                          "linear-gradient(to right, #1F43B5, #183590)",
+                        transform: "translateY(-3px)",
+                        boxShadow: "0 12px 28px rgba(37, 98, 233, 0.4)",
+                      },
+                      transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
+                    }}
+                  >
+                    Get Started
+                  </Button>
                 </Box>
               </Box>
-            </Col>
+            </Grid>
 
-            <Col xs={12} md={6}>
+            {/* Right Image */}
+            <Grid item xs={12} md={6}>
               <Box
                 sx={{
                   display: "flex",
-                  justifyContent: { xs: "center", md: "end" },
-                  mt: { xs: 4, sm: 0 },
+                  justifyContent: "center",
+                  alignItems: "center",
                 }}
               >
                 <Box
+                  ref={heroImageRef}
                   component="img"
-                  src={`${API_BASE}/assets/images/socialwelfare.png`}
+                  src={`/assets/images/socialwelfare.png`}
                   alt="Social Welfare"
                   sx={{
-                    width: {
-                      xs: "min(80vw, 200px)",
-                      sm: "min(60vw, 300px)",
-                      md: "min(50vw, 500px)",
-                    },
-                    maxWidth: "100%",
+                    width: "100%",
+                    maxWidth: 550,
                     borderRadius: 5,
                     objectFit: "contain",
+                    filter: "drop-shadow(0 20px 40px rgba(37, 99, 235, 0.15))",
                   }}
                 />
               </Box>
-            </Col>
-          </Row>
+            </Grid>
+          </Grid>
         </Container>
       </Box>
 
-      {/* Section 2 */}
+      {/* ================= SECTION 2: SERVICES ================= */}
       <Box
         sx={{
-          minHeight: { xs: "auto", sm: "80vh", md: "90vh" },
           width: "100%",
-          background: "linear-gradient(to bottom right, #F0F7FE 0%, #FDF7F0 100%)",
-          py: { xs: 4, sm: 6, md: 8 },
+          background: "linear-gradient(180deg, #FAFAFA 0%, #F0F7FE 100%)",
+          py: { xs: 8, md: 12 },
         }}
       >
-        <Container>
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              gap: { xs: 4, sm: 6, md: 8 },
-              px: { xs: 2, sm: 3 },
-            }}
-          >
-            <Row>
-              <Col xs={12}>
-                <Typography
-                  sx={{
-                    textAlign: "center",
-                    fontSize: { xs: "clamp(3rem, 5vw, 3rem)" },
-                    lineHeight: 1.4,
-                    fontWeight: "bold",
-                  }}
-                >
-                  <Box
-                    component="span"
-                    sx={{
-                      background: "linear-gradient(to bottom right, #2561E8, #1F43B4)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                      mr: 1,
-                    }}
-                  >
-                    Services
-                  </Box>
-                  <Box
-                    component="span"
-                    sx={{
-                      background: "linear-gradient(to bottom right, #E4630A, #F9A825)",
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                    }}
-                  >
-                    Provided
-                  </Box>
-                </Typography>
+        <Container maxWidth="xl">
+          <Box sx={{ textAlign: "center", mb: 8, maxWidth: 800, mx: "auto" }}>
+            {/* Section Badge */}
+            <Typography
+              sx={{
+                color: "#E4630A",
+                fontWeight: 700,
+                fontSize: "0.9rem",
+                textTransform: "uppercase",
+                letterSpacing: "2px",
+                mb: 2,
+              }}
+            >
+              What We Offer
+            </Typography>
 
-                <Typography
-                  sx={{
-                    textAlign: "center",
-                    color: "text.secondary",
-                    wordBreak: "break-word",
-                    px: { xs: 0, sm: 3, md: 5 },
-                    fontSize: {
-                      xs: "clamp(0.8rem, 2.5vw, 0.9rem)",
-                      sm: "clamp(0.9rem, 2vw, 1rem)",
-                      md: "clamp(1rem, 1.5vw, 1.1rem)",
-                    },
-                    mt: 2,
-                  }}
-                >
-                  Government-backed financial assistance services for
-                  economically and socially vulnerable citizens.
-                </Typography>
-              </Col>
-            </Row>
+            {/* Main Title */}
+            <Typography
+              variant="h3"
+              sx={{
+                fontWeight: 800,
+                fontSize: { xs: "2rem", md: "3rem" },
+                lineHeight: 1.2,
+                mb: 2,
+              }}
+            >
+              <Box
+                component="span"
+                sx={{
+                  background: "linear-gradient(to right, #2561E8, #1F43B4)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                Services Provided
+              </Box>
+            </Typography>
 
-            <Row className="g-4">
-              <Col xs={12} sm={6} md={4} style={{ display: "flex" }}>
-                <CustomCard
-                  ref={card1Ref}
-                  heading="Ladli Beti"
-                  description="Aimed at promoting the education and well-being of the girl child, this scheme provides financial support to families for the upbringing and education of daughters. Eligible beneficiaries receive structured monetary assistance at different stages of the child's development to reduce gender disparity and encourage empowerment."
-                  gradient="linear-gradient(to bottom right, #F44336, #E91E63)"
-                  icon={<GirlSharp fontSize="large" />}
-                  flowchartSrc={`${API_BASE}/assets/images/LadliBeti_Flowchart.png`}
-                />
-              </Col>
-
-              <Col xs={12} sm={6} md={4} style={{ display: "flex" }}>
-                <CustomCard
-                  ref={card2Ref}
-                  heading="Marriage Assistance"
-                  description="This scheme extends financial assistance to economically disadvantaged women at the time of their marriage. It is intended to support families facing financial constraints, ensuring dignity and reducing the economic burden associated with marriage expenses."
-                  gradient="linear-gradient(to bottom right, #4CAF50, #81C784)"
-                  icon={<FavoriteBorderOutlined fontSize="large" />}
-                  flowchartSrc={`${API_BASE}/assets/images/MAS_Flowchart.png`}
-                />
-              </Col>
-
-              <Col xs={12} sm={6} md={4} style={{ display: "flex" }}>
-                <CustomCard
-                  ref={card3Ref}
-                  heading="JK-ISSS Pension"
-                  description="This comprehensive pension program offers financial security to senior citizens, persons with disabilities, women in distress, and transgender individuals. Monthly pension support ensures dignity, inclusion, and sustenance for those in need, contributing to social justice and welfare."
-                  gradient="linear-gradient(to bottom right, #2561E8, #1F43B4)"
-                  icon={<AccountBalanceSharp fontSize="large" />}
-                  flowchartSrc={`${API_BASE}/assets/images/JK_ISSS_Flowchart.png`}
-                />
-              </Col>
-            </Row>
+            <Typography
+              variant="body1"
+              sx={{
+                color: "text.secondary",
+                fontSize: "1.1rem",
+                lineHeight: 1.6,
+              }}
+            >
+              Government-backed financial assistance services designed
+              specifically for economically and socially vulnerable citizens of
+              Jammu & Kashmir.
+            </Typography>
           </Box>
+
+          {/* Cards & Flowcharts Grid */}
+          <Grid container spacing={4}>
+            {/* Card 1 */}
+            {/* <Grid item xs={12} md={4}>
+              <Box
+                ref={card1Ref}
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  height: "100%",
+                }}
+              >
+                <CustomCard
+                  heading="Ladli Beti"
+                  description="Aimed at promoting the education and well-being of the girl child, this scheme provides financial support to families for the upbringing and education of daughters."
+                  gradient="linear-gradient(135deg, #F44336 0%, #E91E63 100%)"
+                  icon={<GirlSharp sx={{ fontSize: 40 }} />}
+                />
+                <Box sx={{ mt: "auto", pt: 2 }}>
+                  <SchemeFlowchart flow={FLOWS.ladliBeti} accent="#E91E63" />
+                </Box>
+              </Box>
+            </Grid> */}
+
+            {/* Card 2 */}
+            <Grid item xs={12} md={6}>
+              <Box
+                ref={card2Ref}
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  height: "100%",
+                }}
+              >
+                <CustomCard
+                  heading="Marriage Assistance"
+                  description="This scheme extends financial assistance to economically disadvantaged women at the time of their marriage, ensuring dignity and reducing economic burden."
+                  gradient="linear-gradient(135deg, #4CAF50 0%, #81C784 100%)"
+                  icon={<FavoriteBorderOutlined sx={{ fontSize: 40 }} />}
+                />
+                <Box sx={{ mt: "auto", pt: 2 }}>
+                  <SchemeFlowchart flow={FLOWS.mas} accent="#4CAF50" />
+                </Box>
+              </Box>
+            </Grid>
+
+            {/* Card 3 */}
+            <Grid item xs={12} md={6}>
+              <Box
+                ref={card3Ref}
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                  height: "100%",
+                }}
+              >
+                <CustomCard
+                  heading="JK-ISSS Pension"
+                  description="Comprehensive pension program offering financial security to senior citizens, persons with disabilities, women in distress, and transgender individuals."
+                  gradient="linear-gradient(135deg, #2561E8 0%, #1F43B4 100%)"
+                  icon={<AccountBalanceSharp sx={{ fontSize: 40 }} />}
+                />
+                <Box sx={{ mt: "auto", pt: 2 }}>
+                  <SchemeFlowchart flow={FLOWS.isss} accent="#1F43B4" />
+                </Box>
+              </Box>
+            </Grid>
+          </Grid>
         </Container>
       </Box>
     </Box>

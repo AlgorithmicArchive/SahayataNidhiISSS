@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useMemo } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Box,
   styled,
@@ -289,6 +290,14 @@ export default function ValidateAadhaar() {
   return (
     <MainContainer>
       <TableCard>
+        <GovPageHeader
+          title="Aadhaar Validation"
+          hindiTitle="आधार सत्यापन"
+          crumbs={[
+            { label: "Officer", path: "/officer/home" },
+            { label: "Aadhaar Validation", path: "" },
+          ]}
+        />
         <Tabs
           value={activeTab}
           onChange={handleTabChange}

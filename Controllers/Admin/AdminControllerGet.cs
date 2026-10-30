@@ -5,7 +5,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Npgsql;
 using System.Data;
+using SahayataNidhi.Models;
 using SahayataNidhi.Models.Entities;
+using System.Text.Json;
 
 namespace SahayataNidhi.Controllers.Admin
 {
@@ -27,7 +29,7 @@ namespace SahayataNidhi.Controllers.Admin
 
                 // Call PostgreSQL function using FromSqlRaw
                 var response = dbcontext.Database
-                    .SqlQueryRaw<TehsilWiseReportDto>(
+                    .SqlQueryRaw<SummaryReports>(
                         "SELECT * FROM get_applications_for_report({0}, {1}, {2}, {3})",
                         AccessCode, ServiceId, "District", "new")
                     .ToList();
@@ -94,7 +96,7 @@ namespace SahayataNidhi.Controllers.Admin
                     ""TotalCitizens"" AS ""TotalCitizens"",
                     ""TotalApplicationsSubmitted"" AS ""TotalApplicationsSubmitted"",
                     ""TotalServices"" AS ""TotalServices""
-                FROM get_count_for_admin({0}, {1}, {2}, {3})",
+                          FROM get_count_for_admin({0}, {1}, {2}, {3})",
                         officer.AccessLevel ?? (object)DBNull.Value,
                         officer.AccessCode!,
                         "new",
@@ -107,7 +109,7 @@ namespace SahayataNidhi.Controllers.Admin
                 }
 
                 // NEW: Count pending DSCs for the dashboard card
-                var pendingDscCount = dbcontext.Certificates.Count(c => c.Status == "PENDING");
+                var pendingDscCount = dbcontext.Certificates.ToList();
 
                 return Json(new
                 {
@@ -115,7 +117,7 @@ namespace SahayataNidhi.Controllers.Admin
                     totalRegisteredUsers = result.TotalCitizens,
                     totalApplicationsSubmitted = result.TotalApplicationsSubmitted,
                     totalServices = result.TotalServices,
-                    pendingDscCount = pendingDscCount // NEW
+                    pendingDscCount = pendingDscCount.Count // NEW
                 });
             }
             catch (Exception ex)
@@ -137,57 +139,182 @@ namespace SahayataNidhi.Controllers.Admin
                     return BadRequest(new { error = "Officer details not found" });
                 }
 
-                // Join Certificates with Users to show both names for Admin comparison
+                // ── Base query: ALL certificates (pending, approved, rejected) ────
                 var query = from c in dbcontext.Certificates
                             join u in dbcontext.Users on c.Officerid equals u.Userid
-                            where c.Status == "PENDING"
                             select new
                             {
                                 CertificateId = c.Uuid,
+                                OfficerId = u.Userid,
                                 OfficerName = u.Name,
                                 OfficerEmail = u.Email,
+                                AdditionalDetails = u.Additionaldetails, // JSON text
                                 CertSubjectName = c.CertSubjectName,
                                 CertifyingAuthority = c.Certifiyingauthority,
-                                ExpirationDate = c.Expirationdate
+                                ExpirationDate = c.Expirationdate,
+                                Status = c.Status
                             };
 
+                // ── Total count BEFORE paging (now includes every row) ────────────
                 var totalRecords = query.Count();
+
+                // ── Paged data (still includes raw JSON) ──────────────────────────
                 var pagedData = query
                     .OrderByDescending(x => x.CertificateId)
                     .Skip(pageIndex * pageSize)
                     .Take(pageSize)
                     .ToList();
 
-                var columns = new List<object>
-        {
-            new { accessorKey = "officerName", header = "Officer Name (DB)" },
-            new { accessorKey = "officerEmail", header = "Email" },
-            new { accessorKey = "certSubjectName", header = "Certificate Name (DSC)" },
-            new { accessorKey = "certifyingAuthority", header = "Certifying Authority" },
-            new { accessorKey = "expirationDate", header = "Expiration Date" }
-        };
+                // ── District lookup once ──────────────────────────────────────────
+                var districts = dbcontext.District
+                    .ToDictionary(d => d.Districtid, d => d.Districtname);
 
-                var data = pagedData.Select(item => new
+                // ── Columns shown in the grid ─────────────────────────────────────
+                var columns = new List<object>
+                    {
+                        new { accessorKey = "officerName",        header = "Officer Name (DB)" },
+                        new { accessorKey = "officerEmail",       header = "Email" },
+                        new { accessorKey = "accessLevel",        header = "Access Level" },
+                        new { accessorKey = "areaCode",           header = "Area" },
+                        new { accessorKey = "certSubjectName",    header = "Certificate Name (DSC)" },
+                        new { accessorKey = "certifyingAuthority",header = "Certifying Authority" },
+                        new { accessorKey = "expirationDate",     header = "Expiration Date" },
+                        new { accessorKey = "status",             header = "Status" }
+                    };
+
+                // ── Shape output + parse JSON for AccessLevel / AreaCode ──────────
+                var data = pagedData.Select(item =>
                 {
-                    certificateId = item.CertificateId,
-                    officerName = item.OfficerName,
-                    officerEmail = item.OfficerEmail,
-                    certSubjectName = item.CertSubjectName,
-                    certifyingAuthority = item.CertifyingAuthority,
-                    expirationDate = item.ExpirationDate?.ToString("dd MMM yyyy"),
-                    customActions = new List<dynamic>
-            {
-                new { type = "Approve", tooltip = "Approve DSC", color = "#4CAF50", actionFunction = "ApproveDSC" },
-                new { type = "Reject", tooltip = "Reject DSC", color = "#F44336", actionFunction = "RejectDSC" }
-            }
+                    string? accessLevel = null;
+                    int? accessCode = null;
+
+                    if (!string.IsNullOrWhiteSpace(item.AdditionalDetails))
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(item.AdditionalDetails);
+                            var root = doc.RootElement;
+
+                            if (root.TryGetProperty("AccessLevel", out var al) &&
+                                al.ValueKind == JsonValueKind.String)
+                            {
+                                accessLevel = al.GetString();
+                            }
+
+                            if (root.TryGetProperty("AccessCode", out var ac))
+                            {
+                                if (ac.ValueKind == JsonValueKind.Number)
+                                    accessCode = ac.GetInt32();
+                                else if (ac.ValueKind == JsonValueKind.String &&
+                                         int.TryParse(ac.GetString(), out var parsed))
+                                    accessCode = parsed;
+                            }
+
+                            // Fallback for DSWO rows that only carry DistrictId
+                            if (accessCode == null &&
+                                root.TryGetProperty("DistrictId", out var did))
+                            {
+                                if (did.ValueKind == JsonValueKind.Number)
+                                    accessCode = did.GetInt32();
+                                else if (did.ValueKind == JsonValueKind.String &&
+                                         int.TryParse(did.GetString(), out var didParsed))
+                                    accessCode = didParsed;
+                            }
+                        }
+                        catch (System.Text.Json.JsonException ex)
+                        {
+                            _logger.LogWarning(ex,
+                                "Failed to parse AdditionalDetails for officer {OfficerId}",
+                                item.OfficerId);
+                        }
+                    }
+
+                    // ── Human-readable AreaCode ───────────────────────────────────
+                    string? areaCode = accessLevel switch
+                    {
+                        "District" =>
+                            accessCode.HasValue &&
+                            districts.TryGetValue(accessCode.Value, out var districtName)
+                                ? $"District {districtName}"
+                                : null,
+
+                        "Division" or "Director" => accessCode switch
+                        {
+                            1 => "Director Jammu",
+                            2 => "Director Kashmir",
+                            _ => null
+                        },
+
+                        _ => null
+                    };
+
+                    // ── Conditional actions based on status ───────────────────────
+                    string status = (item.Status ?? "").Trim().ToUpperInvariant();
+                    var customActions = new List<dynamic>();
+
+                    if (status == "PENDING")
+                    {
+                        customActions.Add(new
+                        {
+                            type = "Approve",
+                            tooltip = "Approve DSC",
+                            color = "#4CAF50",
+                            actionFunction = "ApproveDSC"
+                        });
+                        customActions.Add(new
+                        {
+                            type = "Reject",
+                            tooltip = "Reject DSC",
+                            color = "#F44336",
+                            actionFunction = "RejectDSC"
+                        });
+                    }
+                    else if (status == "APPROVED")
+                    {
+                        customActions.Add(new
+                        {
+                            type = "View",
+                            tooltip = "Already Approved",
+                            color = "#94A3B8",
+                            actionFunction = "Noop"
+                        });
+                    }
+                    else if (status == "REJECTED")
+                    {
+                        customActions.Add(new
+                        {
+                            type = "View",
+                            tooltip = "Already Rejected",
+                            color = "#94A3B8",
+                            actionFunction = "Noop"
+                        });
+                    }
+
+                    return new
+                    {
+                        certificateId = item.CertificateId,
+                        officerName = item.OfficerName,
+                        officerEmail = item.OfficerEmail,
+                        accessLevel = accessLevel,
+                        areaCode = areaCode,
+                        certSubjectName = item.CertSubjectName,
+                        certifyingAuthority = item.CertifyingAuthority,
+                        expirationDate = item.ExpirationDate?.ToString("dd MMM yyyy"),
+                        status = item.Status,
+                        customActions = customActions
+                    };
                 }).ToList();
 
                 return Json(new { data, columns, totalRecords });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching pending DSC list");
-                return StatusCode(500, new { error = "An error occurred while fetching pending DSCs", details = ex.Message });
+                _logger.LogError(ex, "Error fetching DSC list");
+                return StatusCode(500, new
+                {
+                    error = "An error occurred while fetching DSCs",
+                    details = ex.Message
+                });
             }
         }
         public string GetArea(string AccessLevel, int AccessCode)
@@ -801,12 +928,12 @@ namespace SahayataNidhi.Controllers.Admin
                     .ToListAsync();
 
                 var columns = new List<object>
-        {
-            new { accessorKey = "officeId", header = "ID" },
-            new { accessorKey = "officeName", header = "Office Name" },
-            new { accessorKey = "officeNameShort", header = "Short Name" },
-            new { accessorKey = "accessLevel", header = "Access Level" }
-        };
+                {
+                    new { accessorKey = "officeId", header = "ID" },
+                    new { accessorKey = "officeName", header = "Office Name" },
+                    new { accessorKey = "officeNameShort", header = "Short Name" },
+                    new { accessorKey = "accessLevel", header = "Access Level" }
+                };
 
                 var data = pagedData.Select(o => new
                 {
@@ -1018,6 +1145,138 @@ namespace SahayataNidhi.Controllers.Admin
         //             })
         //             .ToListAsync();
 
+        //         return Json(blocks);
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         _logger.LogError(ex, "Error fetching blocks");
+        //         return StatusCode(500, new { error = "Error fetching blocks", details = ex.Message });
+        //     }
+        // }
+
+
+        #region Eligibility Criteria Management
+
+        /// <summary>
+        /// Get all expiration type rules (the "eligibility criteria" managed here) optionally filtered by serviceId.
+        /// Backed by the existing expiration_types table.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetEligibilityCriteria(int? serviceId = null)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return Unauthorized(new { status = false, message = "Session expired. Please log in again." });
+
+                var criteria = await dbcontext.ExpirationTypes
+                    .Where(c => c.IsActive == true)
+                    .Where(c => serviceId == null || c.ServiceId == serviceId)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.ServiceId,
+                        c.TypeCode,
+                        c.ExpirationName,
+                        c.Description,
+                        c.BasedOnField,
+                        c.ConditionField,
+                        c.ValueField,
+                        c.ValidityPeriod,
+                        c.ReminderBefore,
+                        c.StopPaymentOnExpiry,
+                        c.StopPaymentGracePeriod,
+                        c.MessageTemplate,
+                        c.IsActive,
+                        c.CreatedAt
+                    })
+                    .ToListAsync();
+
+                // Attach service name for display
+                var services = await dbcontext.Services
+                    .Select(s => new { s.Serviceid, s.Servicename })
+                    .ToListAsync();
+
+                var result = criteria.Select(c => new
+                {
+                    c.Id,
+                    c.ServiceId,
+                    serviceName = services.FirstOrDefault(s => s.Serviceid == c.ServiceId)?.Servicename ?? "N/A",
+                    criterionName = c.ExpirationName,
+                    typeCode = c.TypeCode,
+                    c.Description,
+                    c.BasedOnField,
+                    c.ConditionField,
+                    c.ValueField,
+                    c.ValidityPeriod,
+                    c.ReminderBefore,
+                    c.StopPaymentOnExpiry,
+                    c.StopPaymentGracePeriod,
+                    c.MessageTemplate,
+                    c.IsActive,
+                    c.CreatedAt
+                }).ToList();
+
+                return Ok(new { status = true, data = result });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching eligibility criteria");
+                return StatusCode(500, new { status = false, message = "Error fetching eligibility criteria: " + ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Get a single expiration type rule by ID
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetEligibilityCriteriaById(int id)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return Unauthorized(new { status = false, message = "Session expired. Please log in again." });
+
+                var criterion = await dbcontext.ExpirationTypes
+                    .Where(c => c.Id == id)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.ServiceId,
+                        c.TypeCode,
+                        c.ExpirationName,
+                        c.Description,
+                        c.BasedOnField,
+                        c.ConditionField,
+                        c.ValueField,
+                        c.ValidityPeriod,
+                        c.ReminderBefore,
+                        c.StopPaymentOnExpiry,
+                        c.StopPaymentGracePeriod,
+                        c.MessageTemplate,
+                        c.IsActive,
+                        c.CreatedAt
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (criterion == null)
+                    return NotFound(new { status = false, message = "Criterion not found" });
+
+                return Ok(new { status = true, data = criterion });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching eligibility criterion {Id}", id);
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        #endregion
+
+
         //         // Blocks – same logic
         //         var blocks = await dbcontext.Blocks
         //             .Where(b => !districtId.HasValue || b.Districtid == districtId.Value)
@@ -1120,6 +1379,294 @@ namespace SahayataNidhi.Controllers.Admin
         //         return StatusCode(500, new { error = "Error fetching blocks", details = ex.Message });
         //     }
         // }
+
+        /// <summary>
+        /// Get the available form field paths for a service.
+        /// Parses the service's Formelement schema (which describes sections + fields + additionalFields)
+        /// and returns one entry per field with { path, name, section, type, isAdditional }.
+        /// Falls back to extracting leaf paths from a Sanctioned application if Formelement is missing.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> GetServiceFormFields(int serviceId)
+        {
+            try
+            {
+                var fields = new List<object>();
+
+                // 1. Prefer the service's Formelement schema (authoritative form definition)
+                var formElement = await dbcontext.Services
+                    .Where(s => s.Serviceid == serviceId)
+                    .Select(s => s.Formelement)
+                    .FirstOrDefaultAsync();
+
+                if (!string.IsNullOrEmpty(formElement))
+                {
+                    try
+                    {
+                        var token = JToken.Parse(formElement);
+                        ExtractFieldsFromSchema(token, fields);
+                    }
+                    catch
+                    {
+                        // ignore parsing errors and fall through
+                    }
+                }
+
+                // 2. If the schema produced nothing, fall back to a sample Sanctioned application's
+                //    Formdetails to extract leaf field paths heuristically.
+                if (fields.Count == 0)
+                {
+                    var sample = await dbcontext.CitizenApplications
+                        .Where(ca => ca.Serviceid == serviceId && ca.Status == "Sanctioned")
+                        .OrderByDescending(ca => ca.Referencenumber)
+                        .Select(ca => ca.Formdetails)
+                        .FirstOrDefaultAsync();
+
+                    if (!string.IsNullOrEmpty(sample))
+                    {
+                        try
+                        {
+                            var json = JObject.Parse(sample);
+                            ExtractFieldPaths(json, "", fields, maxDepth: 6);
+                        }
+                        catch
+                        {
+                            // ignore parsing errors
+                        }
+                    }
+                }
+
+                return Ok(new { status = true, fields });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching form fields for service {ServiceId}", serviceId);
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Walk a Formelement schema token (outer array containing a "sections" array)
+        /// and produce one entry per field. Recurses into each field's "additionalFields"
+        /// (an object of { key: { name, type, ... } } entries) with isAdditional = true.
+        /// </summary>
+        private void ExtractFieldsFromSchema(JToken token, List<object> fields)
+        {
+            if (token == null) return;
+
+            // Real Formelement shape: [ { "section": "...", "fields": [ ... ] }, ... ]
+            // Tolerate wrapped shape too: [ { "sections": [ ... ] } ]
+            JArray? sections = null;
+
+            if (token is JArray outer && outer.Count > 0)
+            {
+                var first = outer[0];
+                if (first is JObject o && o["sections"] is JArray wrapped)
+                    sections = wrapped;
+                else
+                    sections = outer; // each element IS a section object
+            }
+            else if (token is JObject rootObj && rootObj["sections"] is JArray s)
+            {
+                sections = s;
+            }
+
+            if (sections == null) return;
+
+            foreach (var sectionToken in sections)
+            {
+                if (sectionToken is not JObject sectionObj) continue;
+
+                var sectionName = sectionObj.Value<string>("section") ?? "Unknown";
+                var sectionKey = NormalizeSectionKey(sectionName);
+
+                if (sectionObj["fields"] is not JArray sectionFields) continue;
+
+                foreach (var fieldToken in sectionFields)
+                {
+                    if (fieldToken is not JObject fieldObj) continue;
+
+                    var fieldName = fieldObj.Value<string>("name");
+                    if (string.IsNullOrEmpty(fieldName)) continue;
+
+                    var fieldType = fieldObj.Value<string>("type") ?? "text";
+
+                    fields.Add(new
+                    {
+                        path = $"{sectionKey}.{fieldName}",
+                        name = fieldName,
+                        section = sectionName,
+                        type = fieldType
+                    });
+
+                    // Recurse into additionalFields — an object keyed by option value whose values
+                    // are ARRAYS of field objects. May nest further (KindOfDisability -> TEMPORARY -> date).
+                    if (fieldObj["additionalFields"] is JObject addlObj && addlObj.Count > 0)
+                    {
+                        ExtractAdditionalFields(addlObj, sectionKey, sectionName, fieldName + ".", fields);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Walk an "additionalFields" object. In the real Formelement this is keyed by the parent
+        /// select's option value (e.g. "PHYSICALLY CHALLENGED PERSON") and each value is an ARRAY
+        /// of field objects. The same shape can nest deeper. We flatten every nested field into the
+        /// returned list with a dot-notated path under the parent section.
+        /// </summary>
+        private void ExtractAdditionalFields(JObject addlObj, string sectionKey, string sectionLabel, string pathPrefix, List<object> fields)
+        {
+            foreach (var prop in addlObj.Properties())
+            {
+                // Each value may be an array of field objects, or a single field object
+                JArray? children = prop.Value switch
+                {
+                    JArray arr => arr,
+                    JObject single => new JArray(single),
+                    _ => null
+                };
+                if (children == null) continue;
+
+                foreach (var child in children)
+                {
+                    if (child is not JObject fieldObj) continue;
+
+                    var fieldName = fieldObj.Value<string>("name");
+                    if (string.IsNullOrEmpty(fieldName)) continue;
+
+                    var fieldType = fieldObj.Value<string>("type") ?? "text";
+
+                    fields.Add(new
+                    {
+                        path = $"{sectionKey}.{pathPrefix}{fieldName}",
+                        name = fieldName,
+                        section = sectionLabel,
+                        type = fieldType
+                    });
+
+                    if (fieldObj["additionalFields"] is JObject nested && nested.Count > 0)
+                    {
+                        ExtractAdditionalFields(nested, sectionKey, sectionLabel, pathPrefix + fieldName + ".", fields);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Convert a human-readable section label into a camelCase key matching how the
+        /// field is nested in FormDetails (e.g. "Applicant Details" -> "applicantDetails").
+        /// </summary>
+        private static string NormalizeSectionKey(string section)
+        {
+            if (string.IsNullOrEmpty(section)) return "root";
+
+            var words = section
+                .Replace("&", "and")
+                .Split(new[] { ' ', '-', '_', '.', '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            if (words.Length == 0) return section.ToLowerInvariant();
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append(words[0].ToLowerInvariant());
+            for (int i = 1; i < words.Length; i++)
+            {
+                var w = words[i];
+                if (w.Length == 0) continue;
+                sb.Append(char.ToUpperInvariant(w[0]));
+                if (w.Length > 1) sb.Append(w.Substring(1).ToLowerInvariant());
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Recursively extract field paths from a JObject. Captures leaf scalars and date-like values.
+        /// </summary>
+        private void ExtractFieldPaths(JToken token, string currentPath, List<object> fields, int maxDepth, int depth = 0)
+        {
+            if (depth > maxDepth || token == null) return;
+
+            switch (token.Type)
+            {
+                case JTokenType.Object:
+                    foreach (var prop in ((JObject)token).Properties())
+                    {
+                        var nextPath = string.IsNullOrEmpty(currentPath) ? prop.Name : currentPath + "." + prop.Name;
+                        ExtractFieldPaths(prop.Value, nextPath, fields, maxDepth, depth + 1);
+                    }
+                    break;
+
+                case JTokenType.Array:
+                    foreach (var item in (JArray)token)
+                    {
+                        ExtractFieldPaths(item, currentPath, fields, maxDepth, depth + 1);
+                    }
+                    break;
+
+                case JTokenType.String:
+                case JTokenType.Integer:
+                case JTokenType.Float:
+                case JTokenType.Boolean:
+                case JTokenType.Date:
+                    var value = token.ToString();
+                    var type = token.Type.ToString();
+                    var isDate = type == "Date" || (token.Type == JTokenType.String && DateTime.TryParse(value, out _));
+                    fields.Add(new { path = currentPath, value, type = isDate ? "date" : type.ToLower() });
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Preview applications that currently have an active expiration record
+        /// computed for the given expiration type rule.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> PreviewEligibilityCriteria(int serviceId, int criteriaId, int? accessCode = null)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return Unauthorized(new { status = false, message = "Session expired. Please log in again." });
+
+                var expType = await dbcontext.ExpirationTypes
+                    .Where(t => t.Id == criteriaId && t.ServiceId == serviceId)
+                    .FirstOrDefaultAsync();
+
+                if (expType == null)
+                    return NotFound(new { status = false, message = "Criterion not found" });
+
+                var records = await dbcontext.ApplicationExpirations
+                    .Where(e => e.ServiceId == serviceId)
+                    .Where(e => e.ExpirationTypeId == criteriaId)
+                    .Where(e => e.IsActive == true)
+                    .OrderBy(e => e.ExpirationDate)
+                    .ToListAsync();
+
+                var today = DateOnly.FromDateTime(DateTime.Today);
+
+                var results = records.Select(e => new
+                {
+                    applicationId = e.Id,
+                    referenceNumber = e.Referencenumber,
+                    criteriaId = e.ExpirationTypeId,
+                    criteriaName = expType.ExpirationName,
+                    matchingFieldValue = e.SourceValue,
+                    expirationDate = e.ExpirationDate,
+                    baseDate = e.BaseDate,
+                    daysUntilExpiry = e.ExpirationDate.DayNumber - today.DayNumber
+                }).ToList();
+
+                return Ok(new { status = true, data = results, total = results.Count });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error previewing eligibility criteria");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+
 
 
     }

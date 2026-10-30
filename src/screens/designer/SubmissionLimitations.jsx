@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Container,
   Typography,
@@ -28,14 +29,39 @@ import { UserContext } from "../../UserContext";
 
 const LIMIT_TYPES = ["All Time", "Yearly", "Monthly", "Weekly", "Daily"];
 
+// Pool sanction batch limit defaults and bounds
+const DEFAULT_POOL_LIMIT = 5;
+const MIN_POOL_LIMIT = 1;
+const MAX_POOL_LIMIT = 50;
+
+const buildDefaultConfig = () => ({
+  isLimited: false,
+  limits: [],
+  poolSanctionBatchLimit: DEFAULT_POOL_LIMIT,
+});
+
+/**
+ * Normalize the pool sanction batch limit coming from the backend so that
+ * the input always reflects the value stored in the database.
+ *
+ * - Uses the DB value whenever it is a usable number (even outside the
+ *   writable range), so the UI shows reality.
+ * - Only falls back to the default when the field is genuinely absent,
+ *   null, or non-numeric.
+ */
+const normalizePoolLimit = (raw) => {
+  if (raw === null || raw === undefined || raw === "") {
+    return DEFAULT_POOL_LIMIT;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : DEFAULT_POOL_LIMIT;
+};
+
 export default function SubmissionLimitations() {
   const { userType, officerAuthorities } = useContext(UserContext);
   const [services, setServices] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState("");
-  const [config, setConfig] = useState({
-    isLimited: false,
-    limits: [],
-  });
+  const [config, setConfig] = useState(buildDefaultConfig());
   const [isFetchingServices, setIsFetchingServices] = useState(false);
   const [isFetchingConfig, setIsFetchingConfig] = useState(false);
   const [fetchError, setFetchError] = useState("");
@@ -72,7 +98,7 @@ export default function SubmissionLimitations() {
   // Fetch config when service selected
   useEffect(() => {
     if (!selectedServiceId) {
-      setConfig({ isLimited: false, limits: [] });
+      setConfig(buildDefaultConfig());
       setFetchError("");
       return;
     }
@@ -85,20 +111,23 @@ export default function SubmissionLimitations() {
           params: { serviceId: selectedServiceId },
         });
         if (response.data.status && response.data.config) {
-          // Ensure limits array exists
+          const incoming = response.data.config;
           const loadedConfig = {
-            isLimited: response.data.config.isLimited ?? false,
-            limits: response.data.config.limits || [],
+            isLimited: incoming.isLimited ?? false,
+            limits: incoming.limits || [],
+            poolSanctionBatchLimit: normalizePoolLimit(
+              incoming.poolSanctionBatchLimit,
+            ),
           };
           setConfig(loadedConfig);
           toast.success("Configuration loaded successfully.");
         } else {
-          setConfig({ isLimited: false, limits: [] });
+          setConfig(buildDefaultConfig());
           toast.info("No existing configuration found for this service.");
         }
       } catch (error) {
         console.error("Error fetching configuration:", error);
-        setConfig({ isLimited: false, limits: [] });
+        setConfig(buildDefaultConfig());
         setFetchError("Failed to load configuration.");
         toast.error("Failed to load configuration.");
       } finally {
@@ -112,7 +141,7 @@ export default function SubmissionLimitations() {
   const handleToggleLimited = (checked) => {
     setConfig((prev) => {
       if (!checked) {
-        return { isLimited: false, limits: [] };
+        return { ...prev, isLimited: false, limits: [] };
       }
       return { ...prev, isLimited: true };
     });
@@ -148,6 +177,15 @@ export default function SubmissionLimitations() {
     }));
   };
 
+  const handlePoolLimitChange = (raw) => {
+    // Accept the raw string from the input so the user can clear and retype.
+    const parsed = raw === "" ? "" : parseInt(raw, 10);
+    setConfig((prev) => ({
+      ...prev,
+      poolSanctionBatchLimit: parsed,
+    }));
+  };
+
   const getAvailableTypesForRule = (currentIndex) => {
     const usedTypes = config.limits
       .filter((_, i) => i !== currentIndex)
@@ -166,7 +204,7 @@ export default function SubmissionLimitations() {
       return;
     }
 
-    // Client-side validation
+    // Client-side validation for submission limits
     for (const rule of config.limits) {
       if (!rule.limitType) {
         toast.error("Please select a limit type for all rules.");
@@ -178,6 +216,19 @@ export default function SubmissionLimitations() {
         );
         return;
       }
+    }
+
+    // Client-side validation for pool sanction batch limit
+    const poolLimit = Number(config.poolSanctionBatchLimit);
+    if (
+      !Number.isInteger(poolLimit) ||
+      poolLimit < MIN_POOL_LIMIT ||
+      poolLimit > MAX_POOL_LIMIT
+    ) {
+      toast.error(
+        `Pool sanction batch limit must be a whole number between ${MIN_POOL_LIMIT} and ${MAX_POOL_LIMIT}.`,
+      );
+      return;
     }
 
     setIsSaving(true);
@@ -220,12 +271,10 @@ export default function SubmissionLimitations() {
           p: 4,
         }}
       >
-        <Typography
-          variant="h4"
-          sx={{ color: "grey.800", mb: 4, fontWeight: "bold" }}
-        >
-          Configure Submission Limits
-        </Typography>
+        <GovPageHeader
+          title="Configure Submission Limits"
+          hindiTitle="प्रस्तुति सीमाएँ कॉन्फ़िगर करें"
+        />
 
         {/* Service Selection */}
         {isFetchingServices ? (
@@ -286,7 +335,12 @@ export default function SubmissionLimitations() {
                   </Alert>
                 )}
 
-                {/* Enable Limits Toggle */}
+                {/* ────────────── Submission Limits Section ────────────── */}
+                <Typography variant="h6" sx={{ fontWeight: "medium", mb: 1 }}>
+                  Citizen Submission Limits
+                </Typography>
+                <Divider sx={{ mb: 2 }} />
+
                 <FormControlLabel
                   control={
                     <Checkbox
@@ -299,7 +353,6 @@ export default function SubmissionLimitations() {
                   sx={{ mb: 2 }}
                 />
 
-                {/* Limit Rules */}
                 {config.isLimited && (
                   <Box sx={{ mb: 3 }}>
                     <Box
@@ -310,7 +363,10 @@ export default function SubmissionLimitations() {
                         mb: 2,
                       }}
                     >
-                      <Typography variant="h6" sx={{ fontWeight: "medium" }}>
+                      <Typography
+                        variant="subtitle1"
+                        sx={{ fontWeight: "medium" }}
+                      >
                         Limit Rules
                       </Typography>
                       <Button
@@ -415,7 +471,6 @@ export default function SubmissionLimitations() {
                       </Paper>
                     ))}
 
-                    {/* Summary */}
                     {config.limits.length > 0 && (
                       <Alert severity="success" sx={{ mt: 2 }}>
                         <Typography
@@ -434,6 +489,78 @@ export default function SubmissionLimitations() {
                     )}
                   </Box>
                 )}
+
+                {/* ────────────── Pool Sanction Batch Limit ────────────── */}
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: "medium", mt: 4, mb: 1 }}
+                >
+                  Pool Sanction Batch Limit
+                </Typography>
+                <Divider sx={{ mb: 2 }} />
+
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Maximum number of applications an officer can sanction in a
+                  single batch from the Pool. This applies independently of the
+                  citizen submission limits above.
+                </Alert>
+
+                <Paper
+                  elevation={1}
+                  sx={{
+                    p: 2,
+                    mb: 3,
+                    borderLeft: 4,
+                    borderColor: "secondary.main",
+                  }}
+                >
+                  <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Max applications per sanction batch"
+                        type="number"
+                        value={config.poolSanctionBatchLimit}
+                        onChange={(e) => handlePoolLimitChange(e.target.value)}
+                        onBlur={() => {
+                          // Only normalize when the current value is truly
+                          // unusable (empty / non-numeric). Do NOT clamp or
+                          // reset values just because they are outside the
+                          // writable range — we want to mirror what's in
+                          // the database.
+                          const raw = config.poolSanctionBatchLimit;
+                          if (raw === "" || !Number.isFinite(Number(raw))) {
+                            setConfig((prev) => ({
+                              ...prev,
+                              poolSanctionBatchLimit: DEFAULT_POOL_LIMIT,
+                            }));
+                          }
+                        }}
+                        fullWidth
+                        size="small"
+                        inputProps={{
+                          min: MIN_POOL_LIMIT,
+                          max: MAX_POOL_LIMIT,
+                          step: 1,
+                        }}
+                        helperText={`Between ${MIN_POOL_LIMIT} and ${MAX_POOL_LIMIT}. Default: ${DEFAULT_POOL_LIMIT}.`}
+                        disabled={!canSaveConfig}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Chip
+                        label={`Officers can select up to ${
+                          Number(config.poolSanctionBatchLimit) ||
+                          DEFAULT_POOL_LIMIT
+                        } application${
+                          Number(config.poolSanctionBatchLimit) === 1 ? "" : "s"
+                        } per sanction batch`}
+                        size="small"
+                        color="secondary"
+                        variant="outlined"
+                      />
+                    </Grid>
+                  </Grid>
+                </Paper>
 
                 {/* Save Button */}
                 <Button

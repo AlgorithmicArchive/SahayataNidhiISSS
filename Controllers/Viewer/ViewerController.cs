@@ -14,11 +14,12 @@ namespace SahayataNidhi.Controllers.Officer
 {
     [Authorize(Roles = "Viewer")]
     public partial class ViewerController(SwdjkContext dbcontext, ILogger<ViewerController> logger,
-        UserHelperFunctions helper) : Controller
+        UserHelperFunctions helper, IReferenceDataService referenceData) : Controller
     {
         protected readonly SwdjkContext dbcontext = dbcontext;
         protected readonly ILogger<ViewerController> _logger = logger;
         protected readonly UserHelperFunctions helper = helper;
+        protected readonly IReferenceDataService _referenceData = referenceData;
 
         public override void OnActionExecuted(ActionExecutedContext context)
         {
@@ -76,7 +77,6 @@ namespace SahayataNidhi.Controllers.Officer
                 accessCode = 0;
             }
 
-            _logger.LogInformation("Access Level: {AccessLevel}, Access Code: {AccessCode},ServiceID: {ServiceId} Division Code: {DivisionCode}", accessLevel, accessCode, serviceId, divisionCode);
 
             var parameters = new List<NpgsqlParameter>
             {
@@ -146,6 +146,28 @@ namespace SahayataNidhi.Controllers.Officer
                     bgColor = "#F44336",
                     gradientStart = "#ef4444",
                     gradientEnd = "#f87171",
+                },
+                // NEW: Eligible for Pension
+                new
+                {
+                    title = "Eligible for Pension",
+                    value = counts.EligibleForPensionCount.ToString("N0"),
+                    category = "application",
+                    color = "success",
+                    bgColor = "#047857", // Darker emerald for distinction
+                    gradientStart = "#10b981",
+                    gradientEnd = "#34d399",
+                },
+                // NEW: Not Eligible (Withheld)
+                new
+                {
+                    title = "Not Eligible (Withheld)",
+                    value = counts.WithheldCount.ToString("N0"),
+                    category = "application",
+                    color = "error",
+                    bgColor = "#991B1B", // Darker red for distinction
+                    gradientStart = "#ef4444",
+                    gradientEnd = "#f87171",
                 }
             };
 
@@ -154,7 +176,7 @@ namespace SahayataNidhi.Controllers.Officer
                 new { Category = "OLD AGE PENSION", Color = "#4f46e5" },
                 new { Category = "WOMEN IN DISTRESS", Color = "#059669" },
                 new { Category = "PHYSICALLY CHALLENGED PERSON", Color = "#f59e0b" },
-                new { Category = "TRANSGENDER", Color = "#0ea5e9" }
+                new { Category = "TRANSGENDER PERSON", Color = "#0ea5e9" }
             };
 
             var categoryArray = pensionCategories.Select(c => c.Category).ToArray();
@@ -421,70 +443,30 @@ namespace SahayataNidhi.Controllers.Officer
         }
 
 
-        public string GetFieldValue(string fieldName, dynamic data)
-        {
-            foreach (var section in data)
-            {
-                if (section.First is JArray fields)
-                {
-                    foreach (var field in fields)
-                    {
-                        if (field["name"] != null && field["name"]?.ToString() == fieldName)
-                        {
-                            return field["value"]?.ToString() ?? "";
-                        }
-                    }
-                }
-            }
-            return "";
-        }
+        public string GetFieldValue(string fieldName, dynamic data) => _referenceData.GetFieldValue(fieldName, data);
 
-        public string GetOfficerArea(string accessLevel, dynamic formDetails)
-        {
-            int accessCode;
+        public string GetOfficerArea(string accessLevel, dynamic formDetails) => _referenceData.GetOfficerArea(accessLevel, formDetails);
 
-            switch (accessLevel)
-            {
-                case "Tehsil":
-                    accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
-
-                case "District":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    if (districtForDivision == null)
-                        return string.Empty;
-                    return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
-            }
-        }
         [HttpGet]
-        public IActionResult GetMainApplicationStatusData(string serviceId, string type, int pageIndex = 0, int pageSize = 10, string state = "0", string? division = null, string? district = null, string? tehsil = null)
+        public IActionResult GetMainApplicationStatusData(
+     string serviceId,
+     string type,
+     int pageIndex = 0,
+     int pageSize = 10,
+     string state = "0",
+     string? division = null,
+     string? district = null,
+     string? tehsil = null)
         {
             try
             {
-                // Log the incoming parameters
-                Console.WriteLine($"=== DEBUG: Received Parameters ===");
-                Console.WriteLine($"serviceId: {serviceId}");
-                Console.WriteLine($"type: {type}");
-                Console.WriteLine($"pageIndex: {pageIndex}");
-                Console.WriteLine($"pageSize: {pageSize}");
-                Console.WriteLine($"state: {state}");
-                Console.WriteLine($"division: {division}");
-                Console.WriteLine($"district: {district}");
-                Console.WriteLine($"tehsil: {tehsil}");
-                Console.WriteLine($"==================================");
+                _logger.LogInformation(
+                    "GetMainApplicationStatusData - serviceId={ServiceId}, type={Type}, pageIndex={PageIndex}, pageSize={PageSize}, state={State}, division={Division}, district={District}, tehsil={Tehsil}",
+                    serviceId, type, pageIndex, pageSize, state, division, district, tehsil);
 
-                // Determine access level and codes
+                // ─────────────────────────────────────────────────────────
+                // Determine scope
+                // ─────────────────────────────────────────────────────────
                 string accessLevel;
                 object accessCode = DBNull.Value;
                 object divisionCode = DBNull.Value;
@@ -493,189 +475,125 @@ namespace SahayataNidhi.Controllers.Officer
                 {
                     accessLevel = "Tehsil";
                     accessCode = tehsilVal;
-                    Console.WriteLine($"DEBUG: Using Tehsil level with code: {accessCode}");
+                    // Tehsil's division (optional; used only by the report queries)
+                    divisionCode = dbcontext.Tswotehsil
+                        .Where(t => t.Tehsilid == tehsilVal)
+                        .Select(t => (int?)t.Divisioncode)
+                        .FirstOrDefault() ?? (object)DBNull.Value;
                 }
                 else if (!string.IsNullOrWhiteSpace(district) && int.TryParse(district, out var districtVal))
                 {
                     accessLevel = "District";
                     accessCode = districtVal;
-                    Console.WriteLine($"DEBUG: Using District level with code: {accessCode}");
+                    divisionCode = dbcontext.District
+                        .Where(d => d.Districtid == districtVal)
+                        .Select(d => (int?)d.Division)
+                        .FirstOrDefault() ?? (object)DBNull.Value;
                 }
                 else if (!string.IsNullOrWhiteSpace(division) && int.TryParse(division, out var divisionVal))
                 {
                     accessLevel = "Division";
                     accessCode = divisionVal;
                     divisionCode = divisionVal;
-                    Console.WriteLine($"DEBUG: Using Division level with code: {accessCode}");
                 }
                 else
                 {
                     accessLevel = "State";
-                    accessCode = state == "0" ? 0 : DBNull.Value;
-                    Console.WriteLine($"DEBUG: Using State level with code: {accessCode}");
+                    accessCode = int.TryParse(state, out var stateVal) ? stateVal : 0;
                 }
 
-                Console.WriteLine($"DEBUG: Final values - accessLevel: {accessLevel}, accessCode: {accessCode}, divisionCode: {divisionCode}");
+                _logger.LogInformation(
+                    "Scope resolved - accessLevel={AccessLevel}, accessCode={AccessCode}, divisionCode={DivisionCode}",
+                    accessLevel, accessCode, divisionCode);
 
-                // METHOD 1: Try with hardcoded values first to test the connection
-                Console.WriteLine("DEBUG: Testing with hardcoded values...");
-                var testSql = "SELECT * FROM public.get_main_application_status_data('State', 0, 1, NULL, NULL, 0, 10, true)";
-                Console.WriteLine($"DEBUG: Test SQL: {testSql}");
+                int serviceIdInt = int.Parse(serviceId);
 
-                var testResponse = dbcontext.Database
-                    .SqlQueryRaw<MainApplicationStatusDto>(testSql)
-                    .ToList();
+                // ─────────────────────────────────────────────────────────
+                // 1. Counts  — one call, correct function name
+                // ─────────────────────────────────────────────────────────
+                int pendingCount = 0, returnToEditCount = 0, sanctionedCount = 0,
+                    rejectCount = 0, totalApplications = 0, withheldCount = 0,
+                    eligibleCount = 0;
 
-                Console.WriteLine($"DEBUG: Test query returned {testResponse.Count} records");
-
-                if (testResponse.Count > 0)
+                var countParameters = new[]
                 {
-                    Console.WriteLine($"DEBUG: Test successful! First record ReferenceNumber: {testResponse[0]?.ReferenceNumber}");
-                }
-
-                // Get counts from the separate count function using parameterized query
-                long totalRecords = 0;
-                int pendingCount = 0, returnToEditCount = 0, sanctionedCount = 0, rejectCount = 0, totalApplications = 0;
-
-                try
-                {
-                    // Use parameterized query like GetApplicationStatus does
-                    var countParameters = new List<NpgsqlParameter>
-            {
-                new NpgsqlParameter("@AccessLevel", NpgsqlDbType.Varchar) { Value = accessLevel },
-                new NpgsqlParameter("@AccessCode", NpgsqlDbType.Integer) { Value = accessCode },
-                new NpgsqlParameter("@Serviceid", NpgsqlDbType.Integer) { Value = int.Parse(serviceId) },
-                new NpgsqlParameter("@TakenBy", NpgsqlDbType.Varchar) { Value = DBNull.Value },
-                new NpgsqlParameter("@DivisionCode", NpgsqlDbType.Integer) { Value = divisionCode }
-            };
-
-                    var countSql = "SELECT * FROM get_main_application_status_count(@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)";
-
-                    Console.WriteLine($"DEBUG: Count SQL: {countSql}");
-                    Console.WriteLine($"DEBUG: Count Parameters:");
-                    foreach (var param in countParameters)
-                    {
-                        Console.WriteLine($"  {param.ParameterName}: {param.Value} (Type: {param.Value?.GetType()?.Name})");
-                    }
-
-                    var countResult = dbcontext.Database
-                        .SqlQueryRaw<MainStatusCounts>(countSql, countParameters.ToArray())
-                        .AsEnumerable()
-                        .FirstOrDefault() ?? new MainStatusCounts();
-
-                    Console.WriteLine($"DEBUG: Count result: Pending={countResult.PendingCount}, Sanctioned={countResult.SanctionedCount}, Total={countResult.TotalApplications}");
-
-                    if (countResult != null)
-                    {
-                        pendingCount = countResult.PendingCount;
-                        returnToEditCount = countResult.ReturnToEditCount;
-                        sanctionedCount = countResult.SanctionedCount;
-                        rejectCount = countResult.RejectCount;
-                        totalApplications = countResult.TotalApplications;
-
-                        // Set totalRecords based on the status type requested
-                        if (string.IsNullOrEmpty(type) || type == "total")
-                        {
-                            totalRecords = totalApplications;
-                        }
-                        else if (type == "pending")
-                        {
-                            totalRecords = pendingCount;
-                        }
-                        else if (type == "returntoedit")
-                        {
-                            totalRecords = returnToEditCount;
-                        }
-                        else if (type == "sanctioned")
-                        {
-                            totalRecords = sanctionedCount;
-                        }
-                        else if (type == "reject")
-                        {
-                            totalRecords = rejectCount;
-                        }
-
-                        Console.WriteLine($"DEBUG: Counts from separate function:");
-                        Console.WriteLine($"  Total: {totalApplications}");
-                        Console.WriteLine($"  Pending: {pendingCount}");
-                        Console.WriteLine($"  Return to Edit: {returnToEditCount}");
-                        Console.WriteLine($"  Sanctioned: {sanctionedCount}");
-                        Console.WriteLine($"  Reject: {rejectCount}");
-                        Console.WriteLine($"  Using totalRecords for type '{type}': {totalRecords}");
-                    }
-                }
-                catch (Exception countEx)
-                {
-                    Console.WriteLine($"DEBUG: Error getting counts: {countEx.Message}");
-                    Console.WriteLine($"DEBUG: Count error details: {countEx.StackTrace}");
-                    // Use data count as fallback
-                    totalRecords = testResponse.Count;
-                    Console.WriteLine($"DEBUG: Using fallback totalRecords: {totalRecords}");
-                }
-
-                // Build parameterized query for data retrieval (always use parameters, no string interpolation)
-                var dataParameters = new List<NpgsqlParameter>
-        {
-            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar)
-            {
-                Value = accessLevel
-            },
-            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer)
-            {
-                Value = accessCode
-            },
-            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer)
-            {
-                Value = int.Parse(serviceId)
-            },
-            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer)
-            {
-                Value = divisionCode
-            },
-            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar)
-            {
-                Value = string.IsNullOrEmpty(type) || type == "total" ? (object)DBNull.Value : type
-            },
-            new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer)
-            {
-                Value = pageIndex
-            },
-            new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer)
-            {
-                Value = pageSize
-            },
-            new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean)
-            {
-                Value = true
-            }
+            new NpgsqlParameter("@AccessLevel",  NpgsqlDbType.Varchar) { Value = accessLevel },
+            new NpgsqlParameter("@AccessCode",   NpgsqlDbType.Integer) { Value = accessCode   ?? DBNull.Value },
+            new NpgsqlParameter("@Serviceid",    NpgsqlDbType.Integer) { Value = serviceIdInt },
+            new NpgsqlParameter("@TakenBy",      NpgsqlDbType.Varchar) { Value = DBNull.Value },
+            new NpgsqlParameter("@DivisionCode", NpgsqlDbType.Integer) { Value = divisionCode ?? DBNull.Value }
         };
 
-                string dataSql = "SELECT * FROM public.get_main_application_status_data(@p_access_level, @p_access_code, @p_service_id, @p_division_code, @p_application_status, @p_page_index, @p_page_size, @p_is_paginated)";
+                // ✅ FIX: plural "counts", matching the deployed function
+                const string countSql =
+                    "SELECT * FROM public.get_main_application_status_counts(" +
+                    "@AccessLevel, @AccessCode, @Serviceid, @TakenBy, @DivisionCode)";
 
-                Console.WriteLine($"DEBUG: Data SQL: {dataSql}");
-                Console.WriteLine($"DEBUG: Data Parameters:");
-                foreach (var param in dataParameters)
+                var countResult = dbcontext.Database
+                    .SqlQueryRaw<MainStatusCounts>(countSql, countParameters)
+                    .AsEnumerable()
+                    .FirstOrDefault() ?? new MainStatusCounts();
+
+                pendingCount = countResult.PendingCount;
+                returnToEditCount = countResult.ReturnToEditCount;
+                sanctionedCount = countResult.SanctionedCount;
+                rejectCount = countResult.RejectCount;
+                totalApplications = countResult.TotalApplications;
+                withheldCount = countResult.WithheldCount;
+                eligibleCount = countResult.EligibleForPensionCount;
+
+                // Pick the right total for this tab
+                long totalRecords = (type ?? "").ToLowerInvariant() switch
                 {
-                    Console.WriteLine($"  {param.ParameterName}: {param.Value} (Type: {param.Value?.GetType()?.Name})");
-                }
+                    "" or "total" => totalApplications,
+                    "pending" => pendingCount,
+                    "returntoedit" => returnToEditCount,
+                    "sanctioned" => sanctionedCount,
+                    "reject" or "rejected" => rejectCount,
+                    "withheld" => withheldCount,
+                    "eligible" => eligibleCount,
+                    _ => totalApplications
+                };
 
-                // Get paginated data
+                _logger.LogInformation(
+                    "Counts - Total={Total}, Pending={Pending}, ReturnToEdit={ReturnToEdit}, Sanctioned={Sanctioned}, Reject={Reject}, Withheld={Withheld}, Eligible={Eligible}; totalRecords for type '{Type}' = {TotalRecords}",
+                    totalApplications, pendingCount, returnToEditCount, sanctionedCount,
+                    rejectCount, withheldCount, eligibleCount, type, totalRecords);
+
+                // ─────────────────────────────────────────────────────────
+                // 2. Data rows — parameterized, no test query
+                // ─────────────────────────────────────────────────────────
+                var dataParameters = new[]
+                {
+            new NpgsqlParameter("@p_access_level",       NpgsqlDbType.Varchar)  { Value = accessLevel },
+            new NpgsqlParameter("@p_access_code",        NpgsqlDbType.Integer)  { Value = accessCode   ?? DBNull.Value },
+            new NpgsqlParameter("@p_service_id",         NpgsqlDbType.Integer)  { Value = serviceIdInt },
+            new NpgsqlParameter("@p_division_code",      NpgsqlDbType.Integer)  { Value = divisionCode ?? DBNull.Value },
+            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar)  {
+                Value = string.IsNullOrEmpty(type) || type.Equals("total", StringComparison.OrdinalIgnoreCase)
+                        ? (object)DBNull.Value
+                        : type
+            },
+            new NpgsqlParameter("@p_page_index",         NpgsqlDbType.Integer)  { Value = pageIndex },
+            new NpgsqlParameter("@p_page_size",          NpgsqlDbType.Integer)  { Value = pageSize },
+            new NpgsqlParameter("@p_is_paginated",       NpgsqlDbType.Boolean)  { Value = true }
+        };
+
+                const string dataSql =
+                    "SELECT * FROM public.get_main_application_status_data(" +
+                    "@p_access_level, @p_access_code, @p_service_id, @p_division_code, " +
+                    "@p_application_status, @p_page_index, @p_page_size, @p_is_paginated)";
+
                 List<MainApplicationStatusDto> response;
-
                 try
                 {
                     response = dbcontext.Database
-                        .SqlQueryRaw<MainApplicationStatusDto>(dataSql, dataParameters.ToArray())
+                        .SqlQueryRaw<MainApplicationStatusDto>(dataSql, dataParameters)
                         .ToList();
-
-                    Console.WriteLine($"DEBUG: Data query returned {response.Count} records");
                 }
                 catch (Exception dataEx)
                 {
-                    Console.WriteLine($"DEBUG: Data query failed: {dataEx.Message}");
-                    Console.WriteLine($"DEBUG: Data error details: {dataEx.StackTrace}");
-
-                    // Return empty response
+                    _logger.LogError(dataEx, "Data query failed for service {ServiceId}, type {Type}", serviceId, type);
                     return Json(new
                     {
                         data = new List<object>(),
@@ -692,16 +610,13 @@ namespace SahayataNidhi.Controllers.Officer
                     });
                 }
 
-                // Check if we got any data
+                // Empty result set — still return the correct totalRecords
                 if (response.Count == 0)
                 {
-                    Console.WriteLine($"DEBUG: No data returned. Possible issues:");
-                    Console.WriteLine($"  - Service ID {serviceId} may not exist in database");
-                    Console.WriteLine($"  - No applications with datatype='new' for this service");
-                    Console.WriteLine($"  - Access level filtering may be excluding all records");
-                    Console.WriteLine($"  - Application status filter '{type}' may not match any records");
+                    _logger.LogInformation(
+                        "No data rows for service {ServiceId}, type {Type}, scope {AccessLevel}/{AccessCode}",
+                        serviceId, type, accessLevel, accessCode);
 
-                    // Return empty response with proper structure
                     return Json(new
                     {
                         data = new List<object>(),
@@ -718,49 +633,40 @@ namespace SahayataNidhi.Controllers.Officer
                     });
                 }
 
-                Console.WriteLine($"DEBUG: Successfully retrieved {response.Count} records");
-                Console.WriteLine($"DEBUG: First record: ReferenceNumber={response[0]?.ReferenceNumber}, WorkflowStatus={response[0]?.WorkflowStatus}");
-
-                // Get service details
-                var service = dbcontext.Services
-                    .FirstOrDefault(s => s.Serviceid == int.Parse(serviceId));
-
-                if (service == null)
-                {
-                    Console.WriteLine($"DEBUG: Service with ID {serviceId} not found in Services table");
-                    return NotFound("Service not found.");
-                }
-
+                // ─────────────────────────────────────────────────────────
+                // 3. Service metadata
+                // ─────────────────────────────────────────────────────────
+                var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceIdInt);
+                if (service == null) return NotFound("Service not found.");
                 string serviceName = service.Servicename ?? "Unknown Service";
-                Console.WriteLine($"DEBUG: Service name: {serviceName}");
 
-                // Determine if sanction date column should be shown
-                bool showSanctionDateColumn = type == "sanctioned" ||
-                                              (type == "total" && response.Any(x =>
-                                                  x.WorkflowStatus != null &&
-                                                  x.WorkflowStatus.ToLower() == "sanctioned"));
-                Console.WriteLine($"DEBUG: Show sanction date column: {showSanctionDateColumn}");
+                bool showSanctionDateColumn =
+                    type?.Equals("sanctioned", StringComparison.OrdinalIgnoreCase) == true ||
+                    (string.IsNullOrEmpty(type) || type.Equals("total", StringComparison.OrdinalIgnoreCase))
+                        && response.Any(x => x.WorkflowStatus?.ToLower() == "sanctioned");
 
-                // Build columns based on access level
+                // ─────────────────────────────────────────────────────────
+                // 4. Columns
+                // ─────────────────────────────────────────────────────────
                 var columns = new List<object>
         {
-            new { accessorKey = "sno", header = "S.No" },
+            new { accessorKey = "sno",            header = "S.No" },
             new { accessorKey = "referenceNumber", header = "Reference Number" }
         };
 
-                if (accessLevel == "State")
+                switch (accessLevel)
                 {
-                    columns.Insert(1, new { accessorKey = "divisionName", header = "Division Name" });
-                    columns.Insert(2, new { accessorKey = "districtName", header = "District Name" });
-                }
-                else if (accessLevel == "Division")
-                {
-                    columns.Insert(1, new { accessorKey = "districtName", header = "District Name" });
-                    columns.Insert(2, new { accessorKey = "tehsilName", header = "Tehsil Name" });
-                }
-                else if (accessLevel == "District")
-                {
-                    columns.Insert(1, new { accessorKey = "tehsilName", header = "Tehsil Name" });
+                    case "State":
+                        columns.Insert(1, new { accessorKey = "divisionName", header = "Division Name" });
+                        columns.Insert(2, new { accessorKey = "districtName", header = "District Name" });
+                        break;
+                    case "Division":
+                        columns.Insert(1, new { accessorKey = "districtName", header = "District Name" });
+                        columns.Insert(2, new { accessorKey = "tehsilName", header = "Tehsil Name" });
+                        break;
+                    case "District":
+                        columns.Insert(1, new { accessorKey = "tehsilName", header = "Tehsil Name" });
+                        break;
                 }
 
                 columns.Add(new { accessorKey = "applicantName", header = "Applicant Name" });
@@ -770,42 +676,27 @@ namespace SahayataNidhi.Controllers.Officer
                 columns.Add(new { accessorKey = "submissionDate", header = "Submission Date" });
 
                 if (showSanctionDateColumn)
-                {
                     columns.Add(new { accessorKey = "sanctionDate", header = "Sanction Date" });
-                }
 
-                // Build data rows
+                // ─────────────────────────────────────────────────────────
+                // 5. Rows
+                // ─────────────────────────────────────────────────────────
                 var data = new List<Dictionary<string, object>>();
                 int sno = pageIndex * pageSize + 1;
 
-                Console.WriteLine($"DEBUG: Processing {response.Count} records into data rows...");
-
                 foreach (var details in response)
                 {
-                    // Skip rows that have no reference number
-                    if (string.IsNullOrEmpty(details.ReferenceNumber))
-                    {
-                        Console.WriteLine($"DEBUG: Skipping record with empty ReferenceNumber");
-                        continue;
-                    }
+                    if (string.IsNullOrEmpty(details.ReferenceNumber)) continue;
 
-                    Console.WriteLine($"DEBUG: Processing record: {details.ReferenceNumber}");
-
-                    // Parse form details JSON
                     var formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails ?? "{}");
-
-                    // Get applicant name from form details
                     string applicantName = GetFieldValue("ApplicantName", formDetails);
-                    Console.WriteLine($"DEBUG: Applicant name for {details.ReferenceNumber}: {applicantName}");
 
-                    // Determine status display - use WorkflowStatus from the function result
-                    string status = details.WorkflowStatus == "initiated" ? "Under Process" :
-                                  (details.WorkflowStatus ?? "Under Process");
+                    string status = string.IsNullOrEmpty(details.WorkflowStatus)
+                                    || details.WorkflowStatus.Equals("initiated", StringComparison.OrdinalIgnoreCase)
+                                        ? "Under Process"
+                                        : details.WorkflowStatus;
 
-                    // Get submission date
-                    string? submissionDate = details.Created_at;
-
-                    // Parse workflow to get current officer details
+                    // Workflow context
                     var officers = JsonConvert.DeserializeObject<JArray>(details.WorkFlow ?? "[]");
                     var currentPlayer = details.CurrentPlayer;
 
@@ -816,75 +707,67 @@ namespace SahayataNidhi.Controllers.Officer
 
                     if (officers != null && currentPlayer >= 0 && currentPlayer < officers.Count)
                     {
-                        officerDesignation = (string)officers[currentPlayer]?["designation"]! ?? "Unknown";
-                        officerAccessLevel = (string)officers[currentPlayer]?["accessLevel"]! ?? "Unknown";
-                        officerStatus = (string)officers[currentPlayer]?["status"]! ?? "Unknown";
+                        officerDesignation = (string?)officers[currentPlayer]?["designation"] ?? "Unknown";
+                        officerAccessLevel = (string?)officers[currentPlayer]?["accessLevel"] ?? "Unknown";
+                        officerStatus = (string?)officers[currentPlayer]?["status"] ?? "Unknown";
                         officerArea = GetOfficerArea(officerAccessLevel, formDetails);
                     }
 
-                    // Build row data
                     var row = new Dictionary<string, object>
                     {
                         ["sno"] = sno++,
                         ["referenceNumber"] = details.ReferenceNumber ?? ""
                     };
 
-                    // Add location columns based on access level
-                    if (accessLevel == "State")
+                    switch (accessLevel)
                     {
-                        row["divisionName"] = details.DivisionName ?? "N/A";
-                        row["districtName"] = details.DistrictName ?? "N/A";
-                    }
-                    else if (accessLevel == "Division")
-                    {
-                        row["districtName"] = details.DistrictName ?? "N/A";
-                        row["tehsilName"] = details.TehsilName ?? "N/A";
-                    }
-                    else if (accessLevel == "District")
-                    {
-                        row["tehsilName"] = details.TehsilName ?? "N/A";
+                        case "State":
+                            row["divisionName"] = details.DivisionName ?? "N/A";
+                            row["districtName"] = details.DistrictName ?? "N/A";
+                            break;
+                        case "Division":
+                            row["districtName"] = details.DistrictName ?? "N/A";
+                            row["tehsilName"] = details.TehsilName ?? "N/A";
+                            break;
+                        case "District":
+                            row["tehsilName"] = details.TehsilName ?? "N/A";
+                            break;
                     }
 
                     row["applicantName"] = applicantName;
                     row["serviceName"] = serviceName;
-                    row["currentlyWith"] = officerStatus == "returntoedit" ? "Citizen" : $"{officerDesignation} ({officerArea})";
-                    row["status"] = char.ToUpper(status[0]) + status.Substring(1); // Capitalize first letter
-                    row["submissionDate"] = submissionDate ?? "N/A";
+                    row["currentlyWith"] = officerStatus.Equals("returntoedit", StringComparison.OrdinalIgnoreCase)
+                                            ? "Citizen"
+                                            : $"{officerDesignation} ({officerArea})";
+                    row["status"] = char.ToUpper(status[0]) + status.Substring(1);
+                    row["submissionDate"] = details.Created_at ?? "N/A";
 
-                    // Add sanction date if applicable
                     if (showSanctionDateColumn)
                     {
                         string sanctionDate = "-";
-
-                        if (status.ToLower() == "sanctioned" && !string.IsNullOrEmpty(details.WorkFlow))
+                        if (status.Equals("sanctioned", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrEmpty(details.WorkFlow))
                         {
                             try
                             {
-                                var workflow = JsonConvert.DeserializeObject<JArray>(details.WorkFlow);
-                                var sanctionedStep = workflow?
-                                    .FirstOrDefault(w => w["status"]?.ToString()?.ToLower() == "sanctioned");
-
+                                var wf = JsonConvert.DeserializeObject<JArray>(details.WorkFlow);
+                                var sanctionedStep = wf?.FirstOrDefault(
+                                    w => w["status"]?.ToString()?.ToLower() == "sanctioned");
                                 if (sanctionedStep?["completedAt"] != null)
-                                {
                                     sanctionDate = sanctionedStep["completedAt"]!.ToString();
-                                }
                             }
-                            catch
-                            {
-                                sanctionDate = "-";
-                            }
+                            catch { /* leave as "-" */ }
                         }
-
                         row["sanctionDate"] = sanctionDate;
                     }
 
                     data.Add(row);
                 }
 
-                Console.WriteLine($"DEBUG: Final data rows count: {data.Count}");
-                Console.WriteLine($"DEBUG: Returning response with {data.Count} rows, {columns.Count} columns, totalRecords: {totalRecords}");
+                _logger.LogInformation(
+                    "Returning {RowCount} rows, {ColumnCount} columns, totalRecords={TotalRecords}",
+                    data.Count, columns.Count, totalRecords);
 
-                // Return JSON response
                 return Json(new
                 {
                     data,
@@ -902,9 +785,7 @@ namespace SahayataNidhi.Controllers.Officer
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"ERROR: Exception in GetMainApplicationStatusData: {ex.Message}");
-                Console.WriteLine($"Stack Trace: {ex.StackTrace}");
-
+                _logger.LogError(ex, "GetMainApplicationStatusData failed");
                 return StatusCode(500, new
                 {
                     error = ex.Message,

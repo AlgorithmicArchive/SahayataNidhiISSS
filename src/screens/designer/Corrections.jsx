@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Container,
   Typography,
@@ -383,12 +384,7 @@ const Corrections = () => {
       >
         <Row>
           <Col md={12}>
-            <Typography
-              variant="h4"
-              sx={{ color: "grey.800", mb: 4, fontWeight: "bold" }}
-            >
-              Configure Document Fields
-            </Typography>
+            <GovPageHeader title="Configure Document Fields" hindiTitle="दस्तावेज़ फ़ील्ड कॉन्फ़िगर करें" />
             <Box sx={{ mb: 4 }}>
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel id="service-select-label">

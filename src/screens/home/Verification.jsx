@@ -612,10 +612,10 @@ export default function Verification() {
             control={control}
             rules={{
               required: "OTP is required",
-              pattern: {
-                value: /^[0-9]{7}$/,
-                message: "OTP must be exactly 7 digits",
-              },
+              // pattern: {
+              //   value: /^[0-9]{7}$/,
+              //   message: "OTP must be exactly 7 digits",
+              // },
             }}
             errors={errors}
             disabled={isSubmitting || isSendingOtp}

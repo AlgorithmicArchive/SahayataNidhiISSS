@@ -78,126 +78,22 @@ namespace SahayataNidhi.Controllers.User
         }
 
         [HttpGet]
-        public string GetDistrictName(int districtId)
-        {
-            string? districtName = dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)!.Districtname;
-            return districtName!;
-        }
+        // BUG FIX: previously did `FirstOrDefault(...)!.Districtname!` - a
+        // null-forgiving dereference with no null check, which throws
+        // NullReferenceException for an unknown districtId. Delegating to the
+        // shared, null-safe implementation.
+        public string GetDistrictName(int districtId) => _referenceData.GetDistrictName(districtId);
 
         [HttpGet]
-        public string GetTehsilName(int tehsilId)
-        {
-            string? tehsilName = dbcontext.Tehsil.FirstOrDefault(d => d.Tehsilid == tehsilId)!.Tehsilname;
-            return tehsilName!;
-        }
+        // Same NullReferenceException risk fixed as GetDistrictName above.
+        public string GetTehsilName(int tehsilId) => _referenceData.GetTehsilName(tehsilId);
 
         public int GetCountPerDistrict(int districtId, int serviceId, string? type = "Application")
-        {
-            var financialYear = helper.GetCurrentFinancialYear();
+            => _applicationCounter.NextCount(districtId, serviceId, type ?? "Application");
 
-            try
-            {
-                // Call PostgreSQL function using Entity Framework
-                var parameters = new[]
-                {
-                    new NpgsqlParameter("p_district_id", districtId),
-                    new NpgsqlParameter("p_service_id", serviceId),
-                    new NpgsqlParameter("p_financial_year", financialYear),
-                    new NpgsqlParameter("p_type", type ?? (object)DBNull.Value)
-                };
+        public string GetOfficerArea(string accessLevel, dynamic formDetails) => _referenceData.GetOfficerArea(accessLevel, formDetails);
 
-                var result = dbcontext.Database
-                    .SqlQueryRaw<int>("SELECT get_and_increment_count({0}, {1}, {2}, {3})",
-                        parameters[0].Value!, parameters[1].Value!, parameters[2].Value!, parameters[3].Value!)
-                    .ToList();
-
-                return result.FirstOrDefault();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error getting next application count: {ex.Message}");
-                // Fallback: Get current count and increment
-                var existing = dbcontext.Applicationperdistrict
-                    .FirstOrDefault(a => a.Districtid == districtId &&
-                                        a.Serviceid == serviceId &&
-                                        a.Financialyear == financialYear &&
-                                        (type == null || a.Type == type));
-
-                if (existing != null)
-                {
-                    existing.Countvalue++;
-                    dbcontext.SaveChanges();
-                    return existing.Countvalue;
-                }
-                else
-                {
-                    var newEntry = new Applicationperdistrict
-                    {
-                        Districtid = districtId,
-                        Serviceid = serviceId,
-                        Financialyear = financialYear,
-                        Type = type,
-                        Countvalue = 1
-                    };
-                    dbcontext.Applicationperdistrict.Add(newEntry);
-                    dbcontext.SaveChanges();
-                    return 1;
-                }
-            }
-        }
-
-        public string GetOfficerArea(string accessLevel, dynamic formDetails)
-        {
-            int accessCode;
-
-            switch (accessLevel)
-            {
-                case "Tehsil":
-                    accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
-
-                case "District":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    if (districtForDivision == null)
-                        return string.Empty;
-                    return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
-            }
-        }
-
-        public string GetOfficerAreaForHistory(string accessLevel, int? accessCode)
-        {
-            switch (accessLevel)
-            {
-                case "Tehsil":
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
-
-                case "District":
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    if (districtForDivision == null)
-                        return string.Empty;
-                    return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
-            }
-        }
+        public string GetOfficerAreaForHistory(string accessLevel, int? accessCode) => _referenceData.GetOfficerAreaForHistory(accessLevel, accessCode);
 
         private static string SaveFile(IFormFile file)
         {
@@ -222,23 +118,7 @@ namespace SahayataNidhi.Controllers.User
         }
 
 
-        public string GetFieldValue(string fieldName, dynamic data)
-        {
-            foreach (var section in data)
-            {
-                if (section.First is JArray fields)
-                {
-                    foreach (var field in fields)
-                    {
-                        if (field["name"] != null && field["name"]?.ToString() == fieldName)
-                        {
-                            return field["value"]?.ToString() ?? "";
-                        }
-                    }
-                }
-            }
-            return "";
-        }
+        public string GetFieldValue(string fieldName, dynamic data) => _referenceData.GetFieldValue(fieldName, data);
 
         private dynamic GetFormattedValue(dynamic item, JObject data, CitizenApplications details)
         {
@@ -277,7 +157,7 @@ namespace SahayataNidhi.Controllers.User
                     else
                     {
                         // ✅ Step 2: If not found in 'details', continue JSON lookup
-                        var fieldObj = FindFieldRecursively(data, fieldName);
+                        var fieldObj = FormJsonHelper.FindFieldRecursively(data, fieldName);
                         if (fieldObj != null)
                         {
                             value = ExtractValueWithSpecials(fieldObj, fieldName);
@@ -286,7 +166,7 @@ namespace SahayataNidhi.Controllers.User
 
                     // ✅ Step 3: Format date values (optional)
                     if (DateTime.TryParseExact(value,
-                        new[] { "dd/mm/yyyy", "yyyy-MM-dd", "dd MMM yyyy hh:mm:ss tt" },
+                        new[] { "dd/MM/yyyy", "yyyy-MM-dd", "dd MMM yyyy hh:mm:ss tt" },
                         CultureInfo.InvariantCulture,
                         DateTimeStyles.None,
                         out DateTime dt))
@@ -333,23 +213,6 @@ namespace SahayataNidhi.Controllers.User
         }
 
         // Recursive search for a JObject with ["name"] == fieldName
-        private static JObject? FindFieldRecursively(JToken token, string fieldName)
-        {
-            if (token is JObject obj)
-            {
-                if (obj["name"]?.ToString() == fieldName) return obj;
-                foreach (var prop in obj.Properties())
-                    if (FindFieldRecursively(prop.Value, fieldName) is JObject found)
-                        return found;
-            }
-            else if (token is JArray arr)
-            {
-                foreach (var el in arr)
-                    if (FindFieldRecursively(el, fieldName) is JObject found)
-                        return found;
-            }
-            return null;
-        }
 
         // Extracts the string value (or does District/Tehsil lookups)
         private string ExtractValueWithSpecials(JObject fieldObj, string fieldName)

@@ -15,3 +15,46 @@ html, body {
   overflow: auto !important;
   height: auto !important;
 }
+
+/* ============================================================
+   GIGW (Indian Government Website Guidelines) Global Styles
+   ============================================================ */
+
+/* GIGW/WCAG 2.4.7: Visible focus indicator for keyboard navigation */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid #ff9933 !important;
+  outline-offset: 2px !important;
+}
+
+/* GIGW 7.5 / WCAG 2.3.3: Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* GIGW 3.2: Consistent link styling - underlined, not color-only */
+a:not(.MuiButton-root) {
+  text-underline-offset: 2px;
+}
+
+/* Print friendliness (GIGW 10.x): clean printed pages */
+@media print {
+  header, footer, nav, .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}

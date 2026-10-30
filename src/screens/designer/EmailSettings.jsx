@@ -1,3 +1,4 @@
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Box,
   TextField,
@@ -11,6 +12,14 @@ import {
   Select,
   MenuItem,
   IconButton,
+  RadioGroup,
+  Radio,
+  FormControlLabel,
+  Checkbox,
+  FormGroup,
+  FormHelperText,
+  Switch,
+  Alert,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -502,14 +511,552 @@ export default function EmailManager() {
     );
   };
 
+  // =====================================================================
+  // Dynamic Notification Rules: per service + action, choose channel,
+  // recipients (citizen + location-bound workflow officers) and templates.
+  // =====================================================================
+  const ACTIONS = [
+    "Submission",
+    "Resubmission",
+    "Sanction",
+    "Reject",
+    "Forward",
+    "ReturnToCitizen",
+    "ReturnToPlayer",
+    "OfficerAction",
+  ];
+
+  const NotificationRules = () => {
+    const [services, setServices] = useState([]);
+    const [steps, setSteps] = useState([]);
+    const [formFields, setFormFields] = useState([]);
+    const [config, setConfig] = useState({});
+
+    const [selectedServiceId, setSelectedServiceId] = useState("");
+    const [selectedAction, setSelectedAction] = useState("");
+
+    const [channel, setChannel] = useState("Email");
+    const [recipients, setRecipients] = useState([]); // ["Citizen", "WorkflowStep:0", ...]
+    const [emailSubject, setEmailSubject] = useState("");
+    const [emailTemplate, setEmailTemplate] = useState("");
+    const [smsTemplate, setSmsTemplate] = useState("");
+
+    useEffect(() => {
+      const fetchServices = async () => {
+        try {
+          const response = await axiosInstance.get("/Base/GetServices");
+          if (response.data.status && response.data.services)
+            setServices(response.data.services);
+        } catch (error) {
+          console.error("Error fetching services:", error);
+        }
+      };
+      fetchServices();
+    }, []);
+
+    useEffect(() => {
+      if (!selectedServiceId) {
+        setSteps([]);
+        setConfig({});
+        setRecipients([]);
+        setEmailTemplate("");
+        setSmsTemplate("");
+        return;
+      }
+      axiosInstance
+        .get("/Designer/GetServiceWorkflowSteps", {
+          params: { serviceId: selectedServiceId },
+        })
+        .then((r) => setSteps(r.data.steps || []))
+        .catch(console.error);
+      axiosInstance
+        .get("/Designer/GetFormElementsForEmail", {
+          params: { serviceId: selectedServiceId },
+        })
+        .then((r) => setFormFields(r.data.names || []))
+        .catch(console.error);
+      axiosInstance
+        .get("/Designer/GetNotificationConfig", {
+          params: { serviceId: selectedServiceId },
+        })
+        .then((r) => setConfig(r.data.config || {}))
+        .catch(console.error);
+    }, [selectedServiceId]);
+
+    // Load the selected action's rule into the form.
+    useEffect(() => {
+      if (!selectedAction) return;
+      const rule = config[selectedAction] || {};
+      setChannel(rule.channel || "Email");
+      setEmailSubject(rule.emailSubject || "");
+      setEmailTemplate(rule.emailTemplate || "");
+      setSmsTemplate(rule.smsTemplate || "");
+      setRecipients(
+        (rule.recipients || []).map((r) =>
+          r.type === "WorkflowStep" ? `${r.type}:${r.step}` : r.type,
+        ),
+      );
+    }, [selectedAction, config]);
+
+    const recipientOptions = [
+      { value: "Citizen", label: "Citizen (Applicant)" },
+      { value: "ActingOfficer", label: "Acting Officer" },
+      ...steps.map((s) => ({
+        value: `WorkflowStep:${s.step}`,
+        label: `${s.designation}${s.accessLevel ? ` (${s.accessLevel}, for this application)` : " (for this application)"}`,
+      })),
+    ];
+
+    const toggleRecipient = (value) =>
+      setRecipients((prev) =>
+        prev.includes(value)
+          ? prev.filter((v) => v !== value)
+          : [...prev, value],
+      );
+
+    const buildRule = () => ({
+      channel,
+      emailSubject,
+      emailTemplate,
+      smsTemplate,
+      recipients: recipients
+        .map((r) => {
+          if (r.startsWith("WorkflowStep:"))
+            return { type: "WorkflowStep", step: Number(r.split(":")[1]) };
+          return { type: r };
+        })
+        .filter((r) => (r.type === "WorkflowStep" ? !Number.isNaN(r.step) : true)),
+    });
+
+    const handleSave = async () => {
+      if (!selectedServiceId || !selectedAction) {
+        toast.error("Please select a service and an action.");
+        return;
+      }
+      try {
+        const formData = new FormData();
+        formData.append("serviceId", selectedServiceId);
+        formData.append("action", selectedAction);
+        formData.append("rule", JSON.stringify(buildRule()));
+        const response = await axiosInstance.post(
+          "/Designer/SaveNotificationConfig",
+          formData,
+        );
+        if (response.data.status) {
+          toast.success("Notification rule saved.");
+          const res = await axiosInstance.get("/Designer/GetNotificationConfig", {
+            params: { serviceId: selectedServiceId },
+          });
+          setConfig(res.data.config || {});
+        } else {
+          toast.error(response.data.message || "Failed to save.");
+        }
+      } catch (error) {
+        console.error("Error saving notification config:", error);
+        toast.error("An error occurred while saving.");
+      }
+    };
+
+    const variables = [
+      ...new Set([
+        ...formFields,
+        "ApplicantName",
+        "ServiceName",
+        "ReferenceNumber",
+        "OfficerRole",
+        "OfficerArea",
+        "ActionTaken",
+        "Date",
+      ]),
+    ];
+
+    return (
+      <Box sx={{ maxWidth: 1200, mx: "auto" }}>
+        <Row>
+          <Col md={6}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel id="n-svc">Select Service</InputLabel>
+              <Select
+                labelId="n-svc"
+                value={selectedServiceId}
+                label="Select Service"
+                onChange={(e) => {
+                  setSelectedServiceId(e.target.value);
+                  setSelectedAction("");
+                }}
+              >
+                <MenuItem value="" disabled>
+                  Select a Service
+                </MenuItem>
+                {services.map((s) => (
+                  <MenuItem key={s.serviceId} value={s.serviceId}>
+                    {s.serviceName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel id="n-action">Select Action</InputLabel>
+              <Select
+                labelId="n-action"
+                value={selectedAction}
+                label="Select Action"
+                disabled={!selectedServiceId}
+                onChange={(e) => setSelectedAction(e.target.value)}
+              >
+                <MenuItem value="" disabled>
+                  Select an Action
+                </MenuItem>
+                {ACTIONS.map((a) => (
+                  <MenuItem key={a} value={a}>
+                    {a}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              Channel
+            </Typography>
+            <RadioGroup row value={channel} onChange={(e) => setChannel(e.target.value)}>
+              <FormControlLabel value="Email" control={<Radio />} label="Email only" />
+              <FormControlLabel value="Sms" control={<Radio />} label="SMS only" />
+              <FormControlLabel value="Both" control={<Radio />} label="Email + SMS" />
+              <FormControlLabel value="None" control={<Radio />} label="None" />
+            </RadioGroup>
+
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              Send To
+            </Typography>
+            <FormGroup>
+              {recipientOptions.map((opt) => (
+                <FormControlLabel
+                  key={opt.value}
+                  control={
+                    <Checkbox
+                      checked={recipients.includes(opt.value)}
+                      onChange={() => toggleRecipient(opt.value)}
+                    />
+                  }
+                  label={opt.label}
+                />
+              ))}
+            </FormGroup>
+            {steps.length === 0 && (
+              <FormHelperText>
+                No officer steps found yet for this service (add an application
+                with its workflow to see them).
+              </FormHelperText>
+            )}
+
+            <TextField
+              label="Email Subject"
+              fullWidth
+              sx={{ my: 2 }}
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+            />
+          </Col>
+
+          <Col md={6}>
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              Email Template
+            </Typography>
+            <ReactQuill
+              value={emailTemplate}
+              onChange={setEmailTemplate}
+              modules={{
+                toolbar: [
+                  [{ header: [1, 2, false] }],
+                  ["bold", "italic", "underline", "strike"],
+                  [{ list: "ordered" }, { list: "bullet" }],
+                  ["link"],
+                ],
+              }}
+              formats={[
+                "header", "bold", "italic", "underline", "strike",
+                "list", "bullet", "link",
+              ]}
+              style={{ height: "220px", marginBottom: "12px", backgroundColor: "#f5f5f5" }}
+            />
+            <Box sx={{ mb: 3 }}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <InputLabel id="var-email">Insert into Email</InputLabel>
+                <Select
+                  labelId="var-email"
+                  label="Insert into Email"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) setEmailTemplate((t) => t + `{${e.target.value}}`);
+                  }}
+                >
+                  <MenuItem value="" disabled>
+                    Select variable
+                  </MenuItem>
+                  {variables.map((f) => (
+                    <MenuItem key={f} value={f}>
+                      {f}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+              SMS Template (plain text)
+            </Typography>
+            <TextField
+              multiline
+              minRows={4}
+              fullWidth
+              value={smsTemplate}
+              onChange={(e) => setSmsTemplate(e.target.value)}
+              placeholder="e.g. Dear {ApplicantName}, your application {ReferenceNumber} has been {ActionTaken}. - SWD"
+              sx={{ mb: 1, backgroundColor: "#f5f5f5" }}
+            />
+            <Box sx={{ mb: 3 }}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <InputLabel id="var-sms">Insert into SMS</InputLabel>
+                <Select
+                  labelId="var-sms"
+                  label="Insert into SMS"
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) setSmsTemplate((t) => t + `{${e.target.value}}`);
+                  }}
+                >
+                  <MenuItem value="" disabled>
+                    Select variable
+                  </MenuItem>
+                  {variables.map((f) => (
+                    <MenuItem key={f} value={f}>
+                      {f}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+
+            <Button
+              variant="contained"
+              color="success"
+              onClick={handleSave}
+              disabled={!selectedServiceId || !selectedAction}
+            >
+              Save Notification Rule
+            </Button>
+          </Col>
+        </Row>
+      </Box>
+    );
+  };
+
+  // =====================================================================
+  // SMS provider settings (generic — plug in any provider's credentials).
+  // =====================================================================
+  const SmsSettings = () => {
+    const {
+      control,
+      handleSubmit,
+      reset,
+      formState: { errors },
+    } = useForm({
+      defaultValues: {
+        providername: "",
+        apiurl: "",
+        httpmethod: "POST",
+        apikey: "",
+        keylocation: "header",
+        keyname: "authkey",
+        senderid: "",
+        bodytemplate: "",
+        successindicator: "",
+        enabled: false,
+      },
+      mode: "onChange",
+    });
+
+    useEffect(() => {
+      axiosInstance
+        .get("/Designer/GetSmsSettings")
+        .then((r) => {
+          if (r.data.settings)
+            reset({
+              providername: r.data.settings.providername || "",
+              apiurl: r.data.settings.apiurl || "",
+              httpmethod: r.data.settings.httpmethod || "POST",
+              apikey: "",
+              keylocation: r.data.settings.keylocation || "header",
+              keyname: r.data.settings.keyname || "authkey",
+              senderid: r.data.settings.senderid || "",
+              bodytemplate: r.data.settings.bodytemplate || "",
+              successindicator: r.data.settings.successindicator || "",
+              enabled: !!r.data.settings.enabled,
+            });
+        })
+        .catch(console.error);
+    }, [reset]);
+
+    const onSubmit = async (data) => {
+      try {
+        const formData = new FormData();
+        formData.append("providername", data.providername);
+        formData.append("apiurl", data.apiurl);
+        formData.append("httpmethod", data.httpmethod);
+        formData.append("apikey", data.apikey);
+        formData.append("keylocation", data.keylocation);
+        formData.append("keyname", data.keyname);
+        formData.append("senderid", data.senderid);
+        formData.append("bodytemplate", data.bodytemplate);
+        formData.append("successindicator", data.successindicator);
+        formData.append("enabled", String(data.enabled));
+        const response = await axiosInstance.post(
+          "/Designer/SaveSmsSettings",
+          formData,
+        );
+        if (response.data.status) toast.success("SMS settings saved.");
+        else toast.error(response.data.message);
+      } catch (error) {
+        console.error(error);
+        toast.error("An error occurred while saving SMS settings.");
+      }
+    };
+
+    return (
+      <Box sx={{ maxWidth: 700, mx: "auto" }}>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Generic SMS provider — endpoint, API key, sender id and request-body
+          template are stored here. When you get real credentials, fill this
+          form; no code change is needed. Sending stays <b>disabled</b> (log-only)
+          until you toggle it on.
+        </Alert>
+        <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Controller
+            name="providername"
+            control={control}
+            render={({ field }) => (
+              <TextField {...field} label="Provider Name (e.g. Msg91, Fast2SMS)" variant="outlined" fullWidth />
+            )}
+          />
+          <Controller
+            name="apiurl"
+            control={control}
+            render={({ field }) => (
+              <TextField {...field} label="API URL / Endpoint" variant="outlined" fullWidth />
+            )}
+          />
+          <Row>
+            <Col md={6}>
+              <FormControl fullWidth>
+                <InputLabel id="sms-method">HTTP Method</InputLabel>
+                <Controller
+                  name="httpmethod"
+                  control={control}
+                  render={({ field }) => (
+                    <Select {...field} labelId="sms-method" label="HTTP Method">
+                      <MenuItem value="POST">POST</MenuItem>
+                      <MenuItem value="GET">GET</MenuItem>
+                    </Select>
+                  )}
+                />
+              </FormControl>
+            </Col>
+            <Col md={6}>
+              <Controller
+                name="keyname"
+                control={control}
+                render={({ field }) => (
+                  <TextField {...field} label="API Key Name (header/query param)" variant="outlined" fullWidth />
+                )}
+              />
+            </Col>
+          </Row>
+          <Row>
+            <Col md={6}>
+              <FormControl fullWidth>
+                <InputLabel id="sms-keyloc">Key Location</InputLabel>
+                <Controller
+                  name="keylocation"
+                  control={control}
+                  render={({ field }) => (
+                    <Select {...field} labelId="sms-keyloc" label="Key Location">
+                      <MenuItem value="header">Header</MenuItem>
+                      <MenuItem value="query">Query string</MenuItem>
+                      <MenuItem value="body">Request body</MenuItem>
+                    </Select>
+                  )}
+                />
+              </FormControl>
+            </Col>
+            <Col md={6}>
+              <Controller
+                name="senderid"
+                control={control}
+                render={({ field }) => (
+                  <TextField {...field} label="Sender ID" variant="outlined" fullWidth />
+                )}
+              />
+            </Col>
+          </Row>
+          <Controller
+            name="apikey"
+            control={control}
+            render={({ field }) => (
+              <TextField {...field} label="API Key (leave blank to keep existing key)" type="password" variant="outlined" fullWidth />
+            )}
+          />
+          <Controller
+            name="bodytemplate"
+            control={control}
+            render={({ field }) => (
+              <TextField {...field} label="Request Body Template ({to} {message} {senderid} {apikey})" variant="outlined" fullWidth multiline minRows={2} />
+            )}
+          />
+          <Controller
+            name="successindicator"
+            control={control}
+            render={({ field }) => (
+              <TextField {...field} label="Success Indicator (substring in successful response; optional)" variant="outlined" fullWidth />
+            )}
+          />
+          <Controller
+            name="enabled"
+            control={control}
+            render={({ field }) => (
+              <FormControlLabel
+                control={<Switch checked={!!field.value} onChange={(e) => field.onChange(e.target.checked)} />}
+                label="Enable SMS sending (when disabled, sends are simulated/logged)"
+              />
+            )}
+          />
+          <Button type="submit" variant="contained" color="primary" size="large" sx={{ mt: 1 }}>
+            Save SMS Settings
+          </Button>
+        </Box>
+      </Box>
+    );
+  };
+
   return (
     <Box sx={{ width: "100%", minHeight: "100vh", bgcolor: "grey.100", p: 2 }}>
+      <GovPageHeader
+        title="Notification Settings"
+        hindiTitle="सूचना सेटिंग्स"
+        crumbs={[
+          { label: "Designer", path: "/designer/dashboard" },
+          { label: "Notification Settings", path: "" },
+        ]}
+      />
       <Tabs value={tabValue} onChange={handleTabChange} centered sx={{ mb: 2 }}>
+        <Tab label="Notification Rules" />
+        <Tab label="SMS Settings" />
         <Tab label="Email Template Generator" />
         <Tab label="Email Settings" />
       </Tabs>
-      {tabValue === 0 && <DynamicEmailTemplateGenerator />}
-      {tabValue === 1 && <EmailSettings />}
+      {tabValue === 0 && <NotificationRules />}
+      {tabValue === 1 && <SmsSettings />}
+      {tabValue === 2 && <DynamicEmailTemplateGenerator />}
+      {tabValue === 3 && <EmailSettings />}
       <ToastContainer position="top-right" autoClose={3000} />
     </Box>
   );

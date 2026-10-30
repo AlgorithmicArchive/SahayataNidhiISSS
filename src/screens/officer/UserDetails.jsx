@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { fetchCertificateDetails } from "../../assets/fetch";
 import { Container } from "react-bootstrap";
 import {
@@ -46,8 +46,28 @@ import "react-toastify/dist/ReactToastify.css";
 import CollapsibleActionHistory from "../../components/officer/CollapsibleActionHistory";
 import CollapsibleFormDetails from "../../components/officer/CollapsibleFormDetails";
 import { MaterialReactTable } from "material-react-table";
+import UserDetailsBasicModal from "../../components/UserDetailsBasicModal";
 
-// Styled components for table
+// ✅ Base name for auto-numbered enclosure labels. The officer can freely edit
+//    any of these in the UI, but if they don't, each file gets a unique name
+//    like "Legacy Application Document 1", "... 2", etc.
+const DEFAULT_LEGACY_ENCLOSURE_NAME = "Legacy Application Document";
+
+// ✅ Find the next available number by inspecting the trailing digits of every
+//    existing enclosure name. Prevents collisions when the officer removes one
+//    and adds another.
+const getNextEnclosureNumber = (entries) => {
+  let max = 0;
+  entries.forEach((e) => {
+    const m = String(e.enclosureName || "").match(/(\d+)\s*$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+  });
+  return max + 1;
+};
+
 const buttonStyles = {
   backgroundColor: "#FFFFFF",
   color: "primary.main",
@@ -99,11 +119,10 @@ const submitButtonStyles = {
   },
 };
 
-// ✅ NEW: Helper function to check DSC status before sanctioning
 const checkDSCStatus = async () => {
   try {
     const response = await axiosInstance.get("/Officer/GetDSCStatus");
-    return response.data; // Expected: { status: true } or { status: false, reason: "..." }
+    return response.data;
   } catch (error) {
     console.error("Error checking DSC status:", error);
     return {
@@ -113,7 +132,6 @@ const checkDSCStatus = async () => {
   }
 };
 
-// New component to display previous officers' details
 const PreviousOfficersDetails = ({
   previousOfficersDetails,
   open,
@@ -191,7 +209,6 @@ const PreviousOfficersDetails = ({
               }}
             >
               <CardContent>
-                {/* Officer Header */}
                 <Box
                   sx={{
                     display: "flex",
@@ -240,7 +257,6 @@ const PreviousOfficersDetails = ({
 
                 <Divider sx={{ my: 2 }} />
 
-                {/* Remarks Section */}
                 {officer.remarks && (
                   <Box sx={{ mb: 2 }}>
                     <Typography
@@ -265,7 +281,6 @@ const PreviousOfficersDetails = ({
                   </Box>
                 )}
 
-                {/* Recommendation Section */}
                 {(officer.recommendation || officer.recommendationRemarks) && (
                   <Box sx={{ mb: 2 }}>
                     <Typography
@@ -304,7 +319,6 @@ const PreviousOfficersDetails = ({
                   </Box>
                 )}
 
-                {/* Declaration Section */}
                 {officer.additionalDetails &&
                   Object.keys(officer.additionalDetails).length > 0 && (
                     <Box sx={{ mb: 2 }}>
@@ -364,7 +378,6 @@ const PreviousOfficersDetails = ({
                     </Box>
                   )}
 
-                {/* Action Form Fields */}
                 {officer.actionFormFields &&
                   officer.actionFormFields.length > 0 && (
                     <Box>
@@ -394,7 +407,6 @@ const PreviousOfficersDetails = ({
                     </Box>
                   )}
 
-                {/* Action Date */}
                 {officer.actionDate && (
                   <Typography
                     variant="caption"
@@ -420,7 +432,6 @@ const PreviousOfficersDetails = ({
   );
 };
 
-// MaterialTable component for corrigendum fields
 const MaterialTable = ({ columns, data }) => {
   return (
     <MaterialReactTable
@@ -485,7 +496,6 @@ const MaterialTable = ({ columns, data }) => {
   );
 };
 
-// CollapsibleTable component for corrigendum fields
 const CollapsibleCorrigendumTable = ({
   title,
   columns,
@@ -533,7 +543,6 @@ const CollapsibleCorrigendumTable = ({
   );
 };
 
-// Collapsible component for Corrigendum Attachments
 const CollapsibleAttachments = ({
   title,
   files,
@@ -628,7 +637,6 @@ const CollapsibleAttachments = ({
   );
 };
 
-// Helper function to replace placeholders with actual values (SAFE VERSION)
 const processDeclaration = (
   declarationText,
   declarationFields,
@@ -639,22 +647,18 @@ const processDeclaration = (
 
   let processedText = declarationText;
 
-  // Ensure declarationFields is an array
   const fieldsArray = Array.isArray(declarationFields) ? declarationFields : [];
 
-  // Replace each placeholder with actual value from formDetails
   fieldsArray.forEach((field) => {
     if (!field || !field.name) return;
 
     const placeholder = `{${field.name}}`;
     let value = "";
 
-    // Try to get value from formDetails
     if (formDetails) {
       value = getValueByName(formDetails, field.name);
     }
 
-    // If still no value, use applicationId for referencenumber placeholder
     if (
       !value &&
       (field.name.toLowerCase().includes("referencenumber") ||
@@ -664,14 +668,12 @@ const processDeclaration = (
       value = applicationId || "";
     }
 
-    // If still no value, show the field label as placeholder
     if (!value && field.label) {
       value = `[${field.label}]`;
     } else if (!value) {
       value = `[${field.name}]`;
     }
 
-    // Only replace if placeholder exists in the text
     if (processedText.includes(placeholder)) {
       processedText = processedText.replace(
         new RegExp(placeholder, "g"),
@@ -683,16 +685,13 @@ const processDeclaration = (
   return processedText;
 };
 
-// Function to get field value by name
 const getValueByName = (data, name) => {
   if (!data || !name) return null;
 
-  // If data is not an object, return null
   if (typeof data !== "object" || data === null) {
     return null;
   }
 
-  // Check if data is an array (iterate through sections)
   if (Array.isArray(data)) {
     for (const field of data) {
       if (field && typeof field === "object" && field.name === name) {
@@ -700,7 +699,6 @@ const getValueByName = (data, name) => {
           field.value || field.File || field.Enclosure || field.Photo || null
         );
       }
-      // Check additionalFields if present
       if (
         field &&
         field.additionalFields &&
@@ -722,7 +720,6 @@ const getValueByName = (data, name) => {
     return null;
   }
 
-  // If data is an object with sections (like formDetails structure)
   for (const section of Object.values(data)) {
     if (Array.isArray(section)) {
       for (const field of section) {
@@ -731,7 +728,6 @@ const getValueByName = (data, name) => {
             field.value || field.File || field.Enclosure || field.Photo || null
           );
         }
-        // Check additionalFields if present
         if (
           field &&
           field.additionalFields &&
@@ -758,12 +754,16 @@ const getValueByName = (data, name) => {
 
 export default function UserDetails() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { applicationId, notaction } = location.state || {};
+
+  const isLegacyApplication = (applicationId || "").startsWith("JK-SW-PNS");
+
   const [formDetails, setFormDetails] = useState({});
   const [actionForm, setActionForm] = useState([]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
-  const [previousOfficersOpen, setPreviousOfficersOpen] = useState(false); // New state for previous officers section
+  const [previousOfficersOpen, setPreviousOfficersOpen] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pdfUrl, setPdfUrl] = useState("");
   const [pdfBlob, setPdfBlob] = useState(null);
@@ -785,13 +785,15 @@ export default function UserDetails() {
   const [esignUserName, setEsignUserName] = useState("");
   const [pollInterval, setPollInterval] = useState(null);
   const [previousOfficer, setPreviousOfficer] = useState("");
-  const [previousOfficersDetails, setPreviousOfficersDetails] = useState([]); // Updated to array
-  // New state for corrigendum data
+  const [previousOfficersDetails, setPreviousOfficersDetails] = useState([]);
   const [corrigendumData, setCorrigendumData] = useState(null);
   const [corrigendumOpen, setCorrigendumOpen] = useState(false);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
-  // State for dynamic declaration
   const [dynamicDeclaration, setDynamicDeclaration] = useState(null);
+
+  // ✅ Legacy document upload state — array of { id, file, enclosureName }
+  const [legacyDocEntries, setLegacyDocEntries] = useState([]);
+  const [legacyDocUploading, setLegacyDocUploading] = useState(false);
 
   const {
     control,
@@ -802,6 +804,18 @@ export default function UserDetails() {
     formState: { errors },
     unregister,
   } = useForm({ mode: "onChange" });
+
+  const watchedDefaultAction = watch("defaultAction");
+  const watchedRecommendation = watch("Recommendation");
+
+  const isForward = watchedDefaultAction === "Forward";
+  const isRecommendedForSanction =
+    watchedRecommendation === "Recommended for Sanction";
+
+  // ✅ Derived from state — updates automatically when currentOfficerDetails
+  //    is populated by the loadDetails effect.
+  const isTSWO =
+    currentOfficerDetails?.designation === "Tehsil Social Welfare Officer";
 
   useEffect(() => {
     console.log(
@@ -816,11 +830,18 @@ export default function UserDetails() {
     };
   }, [pdfUrl, pollInterval, isSanctionLetter, isSignedPdf]);
 
+  // Clear the upload entries when the officer leaves Forward or changes the
+  // recommendation away from "Recommended for Sanction"
+  useEffect(() => {
+    if (!isForward || !isRecommendedForSanction) {
+      setLegacyDocEntries([]);
+    }
+  }, [isForward, isRecommendedForSanction]);
+
   useEffect(() => {
     async function loadDetails() {
       setLoading(true);
       try {
-        // Call the API directly to get all data including corrigendum
         const response = await axiosInstance.get("/Officer/GetUserDetails", {
           params: { applicationId },
         });
@@ -834,33 +855,78 @@ export default function UserDetails() {
           return;
         }
 
-        // Set form details and other data from response
         setFormDetails(response.data.list);
         setHaspending(response.data.hasPending);
         setPreviousOfficer(response.data.previousOfficer || "");
         setCanTakeAction(response.data.canTakeAction || false);
 
-        // Set previous officers details as array
         setPreviousOfficersDetails(response.data.previousOfficersDetails || []);
 
-        // Set corrigendum data if available
         if (response.data.corrigendum) {
           setCorrigendumData(response.data.corrigendum);
         }
 
-        // Extract action form from currentOfficerDetails
         if (response.data.currentOfficerDetails) {
           setCurrentOfficerDetails(response.data.currentOfficerDetails);
           const actionFormData = response.data.currentOfficerDetails.actionForm;
           if (actionFormData) {
-            setActionForm(Array.isArray(actionFormData) ? actionFormData : []);
+            let processedActionForm = Array.isArray(actionFormData)
+              ? actionFormData
+              : [];
 
-            // Find dynamic declaration in additionalFields
+            const officerDesignation =
+              response.data.currentOfficerDetails?.designation || "";
+
+            const isTSWOLocal =
+              officerDesignation === "Tehsil Social Welfare Officer";
+            const isLegacy = isLegacyApplication;
+
+            // ✅ Legacy applications: remove "Return to Citizen" from the
+            //    defaultAction dropdown entirely.
+            if (isLegacy) {
+              processedActionForm = processedActionForm.map((field) => {
+                if (field.name !== "defaultAction" || field.type !== "select") {
+                  return field;
+                }
+                const filteredOptions = (field.options || []).filter(
+                  (opt) =>
+                    String(opt.value).toLowerCase() !== "returntocitizen" &&
+                    String(opt.label).toLowerCase() !== "return to citizen",
+                );
+                return { ...field, options: filteredOptions };
+              });
+            }
+
+            // ✅ TSWO + legacy: append "Reject" to the defaultAction dropdown
+            if (isTSWOLocal && isLegacy) {
+              processedActionForm = processedActionForm.map((field) => {
+                if (field.name !== "defaultAction" || field.type !== "select") {
+                  return field;
+                }
+
+                const existing = field.options || [];
+                const alreadyHasReject = existing.some(
+                  (opt) =>
+                    String(opt.value).toLowerCase() === "reject" ||
+                    String(opt.label).toLowerCase() === "reject",
+                );
+
+                if (alreadyHasReject) return field;
+
+                return {
+                  ...field,
+                  options: [...existing, { value: "Reject", label: "Reject" }],
+                };
+              });
+            }
+
+            setActionForm(processedActionForm);
+
             const defaultActionField = actionFormData.find(
               (field) => field.name === "defaultAction",
             );
+
             if (defaultActionField?.additionalFields?.Forward) {
-              // Find declaration checkbox in Forward additionalFields
               const declarationField =
                 defaultActionField.additionalFields.Forward.find(
                   (field) => field.isConsentCheckbox && field.isDeclaration,
@@ -871,7 +937,6 @@ export default function UserDetails() {
                   declarationFields: declarationField.declarationFields,
                   fieldId: declarationField.id,
                 });
-                console.log("Found dynamic declaration:", declarationField);
               }
             }
           }
@@ -888,6 +953,7 @@ export default function UserDetails() {
       }
     }
     if (applicationId) loadDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId]);
 
   const handleViewPdf = (url) => {
@@ -934,10 +1000,13 @@ export default function UserDetails() {
     }
   };
 
-  async function signPdf(pdfBlob, pin) {
+  async function signPdf(pdfBlob, pin, serialNumber) {
     const formData = new FormData();
     formData.append("pdf", pdfBlob, "document.pdf");
     formData.append("pin", pin);
+    if (serialNumber) {
+      formData.append("serial_number", serialNumber);
+    }
     formData.append(
       "original_path",
       applicationId.replace(/\//g, "_") + "SanctionLetter.pdf",
@@ -960,6 +1029,96 @@ export default function UserDetails() {
       );
     }
   }
+
+  // ✅ Validate one or more legacy PDFs. The enclosure name is auto-assigned
+  //    with a running number (1, 2, 3, …) so the default name never collides.
+  //    The officer can edit each name later.
+  const handleLegacyFilesAdd = async (files) => {
+    if (!files || files.length === 0) return;
+
+    const validEntries = [];
+
+    for (const file of files) {
+      const ext = `.${file.name.split(".").pop().toLowerCase()}`;
+      if (ext !== ".pdf") {
+        toast.error(`"${file.name}" skipped — only PDF files are allowed.`, {
+          position: "top-center",
+          autoClose: 3000,
+          theme: "colored",
+        });
+        continue;
+      }
+
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("fileType", "pdf");
+        fd.append("legacyDocument", "true");
+
+        const res = await axiosInstance.post("/Base/Validate", fd);
+
+        if (!res.data?.isValid) {
+          toast.error(
+            `"${file.name}": ${res.data?.errorMessage || "Invalid file."}`,
+            {
+              position: "top-center",
+              autoClose: 4000,
+              theme: "colored",
+            },
+          );
+          continue;
+        }
+
+        // Placeholder — the real numbered name is assigned in the setter below.
+        validEntries.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          file,
+          enclosureName: "",
+        });
+      } catch (err) {
+        console.error("Legacy file validation failed:", err);
+        toast.error(`"${file.name}": Could not validate the file.`, {
+          position: "top-center",
+          autoClose: 3000,
+          theme: "colored",
+        });
+      }
+    }
+
+    if (validEntries.length === 0) return;
+
+    setLegacyDocEntries((prev) => {
+      const existing = new Set(
+        prev.map((e) => `${e.file.name}__${e.file.size}`),
+      );
+      const merged = [...prev];
+      let nextNum = getNextEnclosureNumber(prev);
+      validEntries.forEach((e) => {
+        const key = `${e.file.name}__${e.file.size}`;
+        if (!existing.has(key)) {
+          merged.push({
+            ...e,
+            enclosureName: `${DEFAULT_LEGACY_ENCLOSURE_NAME} ${nextNum}`,
+          });
+          nextNum += 1;
+          existing.add(key);
+        }
+      });
+      return merged;
+    });
+  };
+
+  const updateLegacyEntryName = (id, newName) => {
+    setLegacyDocEntries((prev) =>
+      prev.map((entry) =>
+        entry.id === id ? { ...entry, enclosureName: newName } : entry,
+      ),
+    );
+  };
+
+  const removeLegacyEntry = (id) => {
+    setLegacyDocEntries((prev) => prev.filter((entry) => entry.id !== id));
+  };
 
   const checkDesktopApp = async () => {
     try {
@@ -1007,9 +1166,6 @@ export default function UserDetails() {
       return;
     }
 
-    const normalizeSerial = (value) =>
-      value?.toString().replace(/\s+/g, "").toUpperCase();
-
     setButtonLoading(true);
     try {
       const certificates = await fetchCertificates(pin);
@@ -1018,21 +1174,10 @@ export default function UserDetails() {
       }
 
       const selectedCertificate = certificates[0];
+
       const expiration = new Date(certificateDetails.expirationDate);
       const now = new Date();
-      const tokenSerial = normalizeSerial(selectedCertificate.serial_number);
-      const registeredSerial = normalizeSerial(
-        certificateDetails.serial_number,
-      );
-
-      if (tokenSerial !== registeredSerial) {
-        toast.error("Not the registered certificate.", {
-          position: "top-center",
-          autoClose: 3000,
-          theme: "colored",
-        });
-        return;
-      } else if (expiration < now) {
+      if (expiration < now) {
         toast.error("The registered certificate has expired.", {
           position: "top-center",
           autoClose: 3000,
@@ -1041,7 +1186,71 @@ export default function UserDetails() {
         return;
       }
 
-      const signedBlob = await signPdf(pdfBlob, pin);
+      const normalizeSerial = (v) =>
+        String(v ?? "")
+          .replace(/\s+/g, "")
+          .replace(/-/g, "")
+          .toUpperCase();
+
+      const dbSerial = normalizeSerial(certificateDetails.serial_number);
+      const tokenSerial = normalizeSerial(selectedCertificate.serial_number);
+      const tokenHex = normalizeSerial(selectedCertificate.serial_number_hex);
+      const tokenInt = String(selectedCertificate.serial_number_int ?? "");
+
+      let isMatch = false;
+
+      if (dbSerial === tokenSerial) {
+        isMatch = true;
+      }
+
+      if (!isMatch && dbSerial === tokenHex) {
+        isMatch = true;
+      }
+
+      if (!isMatch) {
+        try {
+          const dbAsInt = parseInt(dbSerial, 16);
+          if (!isNaN(dbAsInt) && dbAsInt.toString() === tokenInt) {
+            isMatch = true;
+          }
+        } catch (e) {}
+      }
+
+      if (!isMatch) {
+        try {
+          const dbAsDecimal = parseInt(dbSerial, 10);
+          if (!isNaN(dbAsDecimal) && dbAsDecimal.toString() === tokenInt) {
+            isMatch = true;
+          }
+        } catch (e) {}
+      }
+
+      if (!isMatch && dbSerial.length % 2 === 0 && dbSerial.length > 0) {
+        try {
+          let decoded = "";
+          for (let i = 0; i < dbSerial.length; i += 2) {
+            decoded += String.fromCharCode(parseInt(dbSerial.substr(i, 2), 16));
+          }
+          if (/^\d+$/.test(decoded) && decoded === tokenInt) {
+            isMatch = true;
+          }
+        } catch (e) {}
+      }
+
+      if (!isMatch) {
+        toast.error("Not the registered certificate.", {
+          position: "top-center",
+          autoClose: 3000,
+          theme: "colored",
+        });
+        return;
+      }
+
+      const signedBlob = await signPdf(
+        pdfBlob,
+        pin,
+        selectedCertificate.serial_number_hex,
+      );
 
       const updateFormData = new FormData();
       updateFormData.append("signedPdf", signedBlob, "signed.pdf");
@@ -1067,6 +1276,7 @@ export default function UserDetails() {
         setConfirmOpen(false);
         setPdfModalOpen(true);
       }, 100);
+
       if (pendingFormData) {
         await handleFinalSubmit(pendingFormData);
         setPendingFormData(null);
@@ -1116,10 +1326,6 @@ export default function UserDetails() {
         formData.append("signPosition", esignSignPosition);
         formData.append("pageNo", esignPageNo);
 
-        console.log(
-          "Sending eSign preparation request for applicationId:",
-          applicationId,
-        );
         const response = await axiosInstance.post(
           "/Officer/PrepareEsign",
           formData,
@@ -1128,13 +1334,6 @@ export default function UserDetails() {
         if (!response.data.status) {
           throw new Error(response.data.message || "Failed to prepare eSign");
         }
-
-        console.log("PrepareEsign response:", {
-          status: response.data.status,
-          txnId: response.data.txnId,
-          signedXmlPreview: response.data.signedXml.substring(0, 100),
-          clientrequestURL: response.data.clientrequestURL,
-        });
 
         const htmlEscape = (str) => {
           if (!str) return "";
@@ -1178,7 +1377,6 @@ export default function UserDetails() {
                             <input type="hidden" name="txn" value="${escapedTxnId}" />
                         </form>
                         <script>
-                            console.log('Submitting eSign form with txn: ${escapedTxnId}');
                             document.getElementById('esignForm').submit();
                         </script>
                     </body>
@@ -1191,7 +1389,6 @@ export default function UserDetails() {
             const statusRes = await axiosInstance.get(
               `/Officer/CheckESignStatus?applicationId=${applicationId}`,
             );
-            console.log("CheckESignStatus response:", statusRes.data);
             if (statusRes.data.success) {
               clearInterval(interval);
               setPollInterval(null);
@@ -1259,7 +1456,6 @@ export default function UserDetails() {
 
   const sanctionAction = async () => {
     try {
-      console.log("Fetching sanction letter for applicationId:", applicationId);
       const response = await axiosInstance.get("/Officer/GetSanctionLetter", {
         params: { applicationId },
       });
@@ -1280,7 +1476,6 @@ export default function UserDetails() {
       setIsSignedPdf(false);
       setIsSanctionLetter(true);
       setPdfModalOpen(true);
-      console.log("Sanction letter fetched, opening modal");
     } catch (error) {
       console.error("Sanction action error:", error);
       toast.error("Error fetching sanction letter: " + error.message, {
@@ -1298,14 +1493,12 @@ export default function UserDetails() {
     const defaultAction = data.defaultAction || "";
     formData.append("defaultAction", defaultAction);
 
-    // Send Remarks as separate field (use lowercase 'remarks' to match backend)
     const remarks = data.Remarks || data.remarks || "";
     formData.append("remarks", remarks);
 
     const additionalDetails = {};
 
     for (const [key, value] of Object.entries(data)) {
-      // Skip defaultAction and Remarks (both sent separately)
       if (key === "defaultAction" || key === "Remarks" || key === "remarks")
         continue;
 
@@ -1316,13 +1509,10 @@ export default function UserDetails() {
 
       let cleanedValue = value;
 
-      // Handle plain file
       if (value instanceof File) {
         formData.append(key, value);
         cleanedValue = value.name || "";
-      }
-      // Handle enclosure-style object { selected, file } or similar
-      else if (
+      } else if (
         typeof value === "object" &&
         value !== null &&
         !Array.isArray(value)
@@ -1337,20 +1527,15 @@ export default function UserDetails() {
             cleanedValue[fileProp] = cleanedValue[fileProp].name || "";
           }
         });
-      }
-      // Array (e.g. returnFields)
-      else if (Array.isArray(value)) {
+      } else if (Array.isArray(value)) {
         cleanedValue = value;
-      }
-      // Primitive
-      else {
+      } else {
         cleanedValue = value;
       }
 
       additionalDetails[key] = cleanedValue;
     }
 
-    // Remove Remarks from additionalDetails to avoid duplication
     if (additionalDetails.Remarks) {
       delete additionalDetails.Remarks;
     }
@@ -1358,8 +1543,78 @@ export default function UserDetails() {
       delete additionalDetails.remarks;
     }
 
-    // Always send additionalDetails (can be {} if no other fields)
     formData.append("additionalDetails", JSON.stringify(additionalDetails));
+
+    // ✅ Legacy officer documents — required when Forward + Recommended for
+    //    Sanction on a legacy app by a TSWO officer.
+    const isForwardAction =
+      String(data.defaultAction || "").toLowerCase() === "forward";
+    const recommendation = data.Recommendation || data.recommendation || "";
+    const isRecommendedForSanctionLocal =
+      recommendation === "Recommended for Sanction";
+
+    const needsLegacyDocs =
+      isForwardAction &&
+      isLegacyApplication &&
+      isTSWO &&
+      isRecommendedForSanctionLocal;
+
+    if (needsLegacyDocs) {
+      if (legacyDocEntries.length === 0) {
+        toast.error(
+          "Please upload at least one PDF as a Legacy Application Document.",
+          {
+            position: "top-center",
+            autoClose: 4000,
+            theme: "colored",
+          },
+        );
+        setButtonLoading(false);
+        return;
+      }
+
+      const hasEmptyName = legacyDocEntries.some(
+        (entry) => !entry.enclosureName?.trim(),
+      );
+      if (hasEmptyName) {
+        toast.error("Every uploaded PDF must have an enclosure name.", {
+          position: "top-center",
+          autoClose: 4000,
+          theme: "colored",
+        });
+        setButtonLoading(false);
+        return;
+      }
+
+      // ✅ Guard against duplicates — two files with the same enclosure name
+      //    would collide on the backend.
+      const nameSet = new Set();
+      const hasDuplicates = legacyDocEntries.some((entry) => {
+        const key = entry.enclosureName.trim().toLowerCase();
+        if (nameSet.has(key)) return true;
+        nameSet.add(key);
+        return false;
+      });
+      if (hasDuplicates) {
+        toast.error("Each uploaded PDF must have a unique enclosure name.", {
+          position: "top-center",
+          autoClose: 4000,
+          theme: "colored",
+        });
+        setButtonLoading(false);
+        return;
+      }
+
+      legacyDocEntries.forEach((entry, idx) => {
+        formData.append(`legacyDocument_${idx}`, entry.file);
+        formData.append(
+          `legacyDocumentName_${idx}`,
+          entry.enclosureName.trim(),
+        );
+      });
+    }
+
+    console.log("FORM DATA TO CHECK DOCUMENTS", formData);
 
     try {
       const { data: result } = await axiosInstance.post(
@@ -1382,11 +1637,15 @@ export default function UserDetails() {
 
       setLastActionTaken(actionLabel);
 
-      toast.success("Action completed successfully!", {
+      toast.success("Action completed successfully! Redirecting...", {
         position: "top-center",
-        autoClose: 6000,
+        autoClose: 2000,
         theme: "colored",
       });
+
+      setTimeout(() => {
+        navigate(-1);
+      }, 4000);
     } catch (error) {
       console.error("Submission error:", error);
       toast.error("Error processing request: " + error.message, {
@@ -1404,24 +1663,21 @@ export default function UserDetails() {
     setButtonLoading(true);
 
     if (defaultAction === "sanction") {
-      // ✅ 1. Check backend DSC status FIRST
       const dscCheck = await checkDSCStatus();
 
       if (!dscCheck.status) {
-        // 🛑 BLOCK the action and show the specific reason from the backend
         toast.error(
           `Cannot proceed with Sanction: ${dscCheck.reason || "Your DSC is not valid or pending."}`,
           {
             position: "top-center",
-            autoClose: 6000, // Longer duration so the user can read the reason
+            autoClose: 6000,
             theme: "colored",
           },
         );
         setButtonLoading(false);
-        return; // Exit early, do NOT proceed to fetch sanction letter
+        return;
       }
 
-      // ✅ 2. Keep existing frontend certificate check for later PIN validation
       const certDetails = await fetchCertificateDetails();
       if (!certDetails) {
         toast.error(
@@ -1443,7 +1699,6 @@ export default function UserDetails() {
       return;
     }
 
-    // For non-sanction actions, proceed normally
     await handleFinalSubmit(data);
   };
 
@@ -1461,7 +1716,6 @@ export default function UserDetails() {
     setPollInterval(null);
   };
 
-  // Modified renderField function to handle all field types dynamically
   const renderField = (field, sectionIndex) => {
     switch (field.type) {
       case "text":
@@ -1629,7 +1883,6 @@ export default function UserDetails() {
                           additionalField.name ||
                           `${field.name}_${additionalField.id}`;
 
-                        // Handle checkbox with declaration specially
                         if (
                           additionalField.type === "checkbox" &&
                           additionalField.isDeclaration
@@ -1685,7 +1938,6 @@ export default function UserDetails() {
                           );
                         }
 
-                        // Handle regular additional fields
                         return (
                           <Box key={additionalField.id} sx={{ mb: 2 }}>
                             <InputLabel
@@ -1828,11 +2080,9 @@ export default function UserDetails() {
     }
   };
 
-  // Helper function to get dynamic declaration text
   const getDeclarationText = () => {
     try {
       if (dynamicDeclaration) {
-        // Use dynamic declaration
         return processDeclaration(
           dynamicDeclaration.declaration,
           dynamicDeclaration.declarationFields,
@@ -1840,17 +2090,12 @@ export default function UserDetails() {
           applicationId,
         );
       }
-      // else {
-      //   // Fallback to static declaration if no dynamic one exists
-      //   const applicantName = getValueByName(formDetails, "ApplicantName") || "[Applicant Name]";
-      //   const parentage = getValueByName(formDetails, "Parentage") || "[Parentage]";
-      //   return `I hereby certify that the beneficiary, namely ${applicantName} parentage ${parentage} Application No. ${applicationId}, is eligible for pension and his application is submitted for sanction.`;
-      // }
     } catch (error) {
       console.error("Error processing declaration:", error);
       return "Error loading declaration. Please refresh the page.";
     }
   };
+
   if (loading) {
     return (
       <Box
@@ -1911,14 +2156,12 @@ export default function UserDetails() {
           applicationId={applicationId}
         />
 
-        {/* Previous Officers Details - NEW SECTION */}
         <PreviousOfficersDetails
           previousOfficersDetails={previousOfficersDetails}
           open={previousOfficersOpen}
           setOpen={setPreviousOfficersOpen}
         />
 
-        {/* Corrigendum Fields Table - Added below Movement History */}
         {corrigendumData &&
           corrigendumData.fieldChanges &&
           corrigendumData.fieldChanges.length > 0 && (
@@ -1943,7 +2186,6 @@ export default function UserDetails() {
             />
           )}
 
-        {/* Corrigendum Attachments Section - Updated to match design */}
         {corrigendumData &&
           corrigendumData.files &&
           corrigendumData.fieldChanges.length > 0 &&
@@ -1970,6 +2212,7 @@ export default function UserDetails() {
             aria-label="Generate user details PDF"
           />
         </Box>
+
         {canTakeAction ? (
           <>
             {!notaction && !hasPending && (
@@ -2006,7 +2249,6 @@ export default function UserDetails() {
                           <Box key={index} sx={{ mb: 2 }}>
                             {renderField(field, index)}
 
-                            {/* Handle ReturnToCitizen additional fields */}
                             {field.type === "select" &&
                               field.name === "defaultAction" &&
                               selectedValue === "ReturnToCitizen" && (
@@ -2055,6 +2297,168 @@ export default function UserDetails() {
                                   )}
                                 />
                               )}
+
+                            {/* ✅ Legacy multi-document upload — shown only when
+                                Action = Forward AND Recommendation = "Recommended
+                                for Sanction" AND app is legacy AND officer is TSWO.
+                                At least one PDF is required and each file carries
+                                its own officer-editable enclosure name. */}
+                            {field.name === "defaultAction" &&
+                              isForward &&
+                              isRecommendedForSanction &&
+                              isLegacyApplication &&
+                              isTSWO && (
+                                <Box
+                                  sx={{
+                                    mt: 3,
+                                    p: 2,
+                                    border: "1px dashed #1976D2",
+                                    borderRadius: "8px",
+                                    bgcolor: "#F3F8FF",
+                                  }}
+                                >
+                                  <Typography
+                                    variant="subtitle1"
+                                    sx={{
+                                      fontWeight: 600,
+                                      color: "primary.main",
+                                      mb: 2,
+                                    }}
+                                  >
+                                    Add Citizen Documents{" "}
+                                    <span style={{ color: "#B3261E" }}>*</span>
+                                  </Typography>
+
+                                  <FormControl
+                                    fullWidth
+                                    margin="normal"
+                                    sx={commonStyles}
+                                    disabled={legacyDocUploading}
+                                  >
+                                    <Button
+                                      variant="contained"
+                                      component="label"
+                                      sx={submitButtonStyles}
+                                      disabled={legacyDocUploading}
+                                    >
+                                      Add Document
+                                      <input
+                                        type="file"
+                                        hidden
+                                        accept=".pdf"
+                                        multiple
+                                        onChange={(e) => {
+                                          const files = Array.from(
+                                            e.target.files || [],
+                                          );
+                                          handleLegacyFilesAdd(files);
+                                          e.target.value = "";
+                                        }}
+                                      />
+                                    </Button>
+                                  </FormControl>
+
+                                  {legacyDocEntries.length === 0 ? (
+                                    <Typography
+                                      sx={{
+                                        fontSize: "0.85rem",
+                                        color: "#B3261E",
+                                        mt: 1,
+                                      }}
+                                    >
+                                      At least one PDF must be uploaded.
+                                    </Typography>
+                                  ) : (
+                                    <Box sx={{ mt: 1 }}>
+                                      {legacyDocEntries.map((entry) => {
+                                        const isNameEmpty =
+                                          !entry.enclosureName?.trim();
+                                        return (
+                                          <Box
+                                            key={entry.id}
+                                            sx={{
+                                              bgcolor: "#FFFFFF",
+                                              border: "1px solid #E0E0E0",
+                                              borderRadius: "8px",
+                                              p: 1.5,
+                                              mb: 1,
+                                            }}
+                                          >
+                                            <Box
+                                              sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "space-between",
+                                                mb: 1,
+                                              }}
+                                            >
+                                              <Typography
+                                                variant="body2"
+                                                sx={{
+                                                  overflow: "hidden",
+                                                  textOverflow: "ellipsis",
+                                                  whiteSpace: "nowrap",
+                                                  maxWidth: "75%",
+                                                }}
+                                              >
+                                                📄 {entry.file.name}
+                                              </Typography>
+                                              <Button
+                                                size="small"
+                                                onClick={() =>
+                                                  removeLegacyEntry(entry.id)
+                                                }
+                                                sx={{
+                                                  minWidth: 0,
+                                                  color: "#B3261E",
+                                                  textTransform: "none",
+                                                }}
+                                                disabled={legacyDocUploading}
+                                              >
+                                                Remove
+                                              </Button>
+                                            </Box>
+
+                                            <TextField
+                                              label="Enclosure Name"
+                                              value={entry.enclosureName}
+                                              onChange={(e) =>
+                                                updateLegacyEntryName(
+                                                  entry.id,
+                                                  e.target.value,
+                                                )
+                                              }
+                                              fullWidth
+                                              size="small"
+                                              margin="normal"
+                                              sx={commonStyles}
+                                              disabled={legacyDocUploading}
+                                              required
+                                              error={isNameEmpty}
+                                              helperText={
+                                                isNameEmpty
+                                                  ? "Enclosure name is required"
+                                                  : ""
+                                              }
+                                            />
+                                          </Box>
+                                        );
+                                      })}
+                                    </Box>
+                                  )}
+
+                                  <Typography
+                                    sx={{
+                                      fontSize: "0.8rem",
+                                      color: "#4A5568",
+                                      mt: 1,
+                                    }}
+                                  >
+                                    Accepted type: <strong>.pdf</strong> (up to
+                                    1 MB each).
+                                  </Typography>
+                                </Box>
+                              )}
                           </Box>
                         );
                       })
@@ -2100,6 +2504,7 @@ export default function UserDetails() {
               : "Action Taken Successfully."}
           </Typography>
         )}
+
         <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
           <DialogTitle>Enter USB Token PIN</DialogTitle>
           <DialogContent>
@@ -2136,7 +2541,7 @@ export default function UserDetails() {
           </DialogActions>
         </Dialog>
 
-        <BasicModal
+        <UserDetailsBasicModal
           open={pdfModalOpen}
           handleClose={handleModalClose}
           handleActionButton={
@@ -2170,7 +2575,6 @@ export default function UserDetails() {
                     onChange={(e) => setSigningMethod(e.target.value)}
                   >
                     <MenuItem value="dsc">DSC (USB Token)</MenuItem>
-                    {/* <MenuItem value="esign">eSign (Aadhaar)</MenuItem> */}
                   </Select>
                 </FormControl>
                 {signingMethod === "esign" && (

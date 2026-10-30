@@ -69,6 +69,7 @@
     "react-loading": "^2.0.3",
     "react-pdf": "^10.2.0",
     "react-quill": "^2.0.0",
+    "react-rnd": "^10.5.3",
     "react-router-dom": "^6.27.0",
     "react-textfit": "^1.1.1",
     "react-toastify": "^11.0.5",

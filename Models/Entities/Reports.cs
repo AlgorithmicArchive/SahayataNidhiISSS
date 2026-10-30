@@ -20,4 +20,6 @@ public partial class Reports
     public DateTime? Createdat { get; set; }
 
     public string? Createdby { get; set; }
+
+    public int? ServiceId { get; set; }
 }

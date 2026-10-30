@@ -41,5 +41,7 @@ public partial class CitizenApplications
 
     public int? Division { get; set; }
 
+    public string? WorkflowMap { get; set; }
+
     public virtual ICollection<Corrigendum> Corrigendum { get; set; } = new List<Corrigendum>();
 }

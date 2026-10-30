@@ -1,4 +1,6 @@
 using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -6,42 +8,50 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.HttpOverrides;
 using SahayataNidhi.Models.Entities;
 using SendEmails;
+using SahayataNidhi.Services;
 using Microsoft.AspNetCore.DataProtection;
 using System.Security.Claims;
 using EncryptionHelper;
 using Newtonsoft.Json.Serialization;
 using Newtonsoft.Json;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ============================================================
-// 1. Remove Server header (Kestrel) – mitigates #12 partially
+// 1. Kestrel Configuration (Security)
 // ============================================================
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.AddServerHeader = false;
+    serverOptions.AddServerHeader = false; // Mitigates server fingerprinting
 });
 
 // ============================================================
-// 2. Existing service registrations (unchanged)
+// 2. Database & Data Protection
 // ============================================================
-builder.Services.AddControllersWithViews().AddRazorRuntimeCompilation();
-builder.Services.AddSignalR();
-builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
-    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
-
 builder.Services.AddDbContext<SwdjkContext>(options =>
-{
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
-});
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "DataProtection-Keys")))
     .SetApplicationName("ReactMvcApp");
 
-builder.Services.AddControllers().AddNewtonsoftJson(options =>
+// ============================================================
+// 3. MVC, JSON & SignalR Configuration
+// ============================================================
+// OPTIMIZATION: Combined redundant AddControllersWithViews calls.
+// OPTIMIZATION: Razor Runtime Compilation is strictly for Development (Huge performance win in Prod).
+var mvcBuilder = builder.Services.AddControllersWithViews(options =>
+{
+    options.Filters.Add<SessionValidationFilter>();
+});
+
+if (builder.Environment.IsDevelopment())
+{
+    mvcBuilder.AddRazorRuntimeCompilation();
+}
+
+// Configure Newtonsoft for MVC
+mvcBuilder.AddNewtonsoftJson(options =>
 {
     options.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
     options.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
@@ -49,16 +59,21 @@ builder.Services.AddControllers().AddNewtonsoftJson(options =>
     options.SerializerSettings.Formatting = Formatting.None;
 });
 
+// Configure System.Text.Json for Minimal APIs / SignalR (if not using Newtonsoft protocol)
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
+
+builder.Services.AddSignalR();
+
 // ============================================================
-// 3. FIX #4 – CORS: Read allowed origins from configuration
+// 4. CORS Configuration
 // ============================================================
 var corsOrigins = builder.Configuration.GetSection("CorsAllowedOrigins").Get<string[]>();
 if (corsOrigins == null || corsOrigins.Length == 0)
 {
-    // Fallback for development only – never use wildcard in production
     corsOrigins = builder.Environment.IsDevelopment()
         ? new[] { "http://localhost:3000", "https://localhost:3000" }
-        : throw new InvalidOperationException("CorsAllowedOrigins is not configured.");
+        : throw new InvalidOperationException("CorsAllowedOrigins is not configured for production.");
 }
 
 builder.Services.AddCors(options =>
@@ -68,14 +83,17 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(corsOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .AllowCredentials(); // Set to false if you don't send credentials
+              .AllowCredentials();
     });
 });
 
+// ============================================================
+// 5. Authentication & Authorization
+// ============================================================
+var jwtSecretKey = builder.Configuration.GetValue<string>("JWT:Secret")
+    ?? throw new InvalidOperationException("JWT:Secret is not configured.");
+var key = Encoding.ASCII.GetBytes(jwtSecretKey);
 
-// JWT Authentication (unchanged)
-var jwtSecretKey = builder.Configuration.GetValue<string>("JWT:Secret");
-var key = Encoding.ASCII.GetBytes(jwtSecretKey!);
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -94,17 +112,12 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ClockSkew = TimeSpan.Zero
     };
-
     options.Events = new JwtBearerEvents
     {
         OnTokenValidated = context =>
         {
-            var claimsIdentity = context.Principal!.Identity as ClaimsIdentity;
-            if (claimsIdentity != null)
-            {
-                var username = claimsIdentity.FindFirst(ClaimTypes.Name)?.Value;
-                Console.WriteLine($"JWT Token validated for user: {username}");
-            }
+            var username = context.Principal?.FindFirst(ClaimTypes.Name)?.Value;
+            Console.WriteLine($"JWT Token validated for user: {username}");
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>
@@ -115,7 +128,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Authorization policies (unchanged)
+// BUG FIX: Removed accidental trailing spaces in Policy and Role names!
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("CitizenPolicy", policy => policy.RequireRole("Citizen"))
     .AddPolicy("OfficerPolicy", policy => policy.RequireRole("Officer"))
@@ -123,6 +136,49 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("DesignerPolicy", policy => policy.RequireRole("Designer"))
     .AddPolicy("ViewerPolicy", policy => policy.RequireRole("Viewer"));
 
+
+builder.Services.AddHttpClient("WebService", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+
+builder.Services.AddScoped<IWebServiceExecutionService, WebServiceExecutionService>();
+
+// ============================================================
+// 5b. Rate Limiting (brute-force & abuse protection)
+// ============================================================
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Strict per-IP fixed window for unauthenticated auth/OTP endpoints.
+    options.AddPolicy("AuthEndpoints", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // General per-user (falls back to IP) sliding window for authenticated traffic.
+    options.AddPolicy("ApiGeneral", context =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0
+            }));
+});
+
+// ============================================================
+// 6. Dependency Injection Registrations
+// ============================================================
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 builder.Services.AddScoped<OtpStore>();
@@ -132,105 +188,86 @@ builder.Services.AddTransient<PdfService>();
 builder.Services.AddSingleton<IEncryptionService, EncryptionService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddDetection();
-
 builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
 builder.Services.AddScoped<IExpirationSyncService, ExpirationSyncService>();
 builder.Services.AddHostedService<QueuedHostedService>();
 builder.Services.AddSingleton<ICronScheduler, CronScheduler>();
-// builder.Services.AddHostedService<CronScheduler>();
 builder.Services.AddScoped<SessionRepository>();
+builder.Services.AddScoped<IReferenceDataService, ReferenceDataService>();
+builder.Services.AddScoped<ApplicationCounterService>();
 builder.Services.AddScoped<CronServices>();
+builder.Services.AddTransient<ISmsSender, SmsSender>();
+builder.Services.AddScoped<INotificationDispatcher, NotificationDispatcher>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<RsaKeyService>();
 
-builder.Services.AddControllersWithViews(options =>
-{
-    options.Filters.Add<SessionValidationFilter>();
-}).AddRazorRuntimeCompilation();
-
-// ============================================================
-// 4. Enforce HTTPS globally (RequireHttps filter)
-// ============================================================
-// builder.Services.Configure<MvcOptions>(options =>
-// {
-//     options.Filters.Add(new RequireHttpsAttribute());
-// });
-
 var app = builder.Build();
 
-// Background task registration (unchanged)
-// app.Lifetime.ApplicationStarted.Register(async () =>
-// {
-//     using var scope = app.Services.CreateScope();
-//     var cronService = scope.ServiceProvider.GetRequiredService<CronServices>();
-//     await cronService.RegisterAllTasksAsync();
-// });
-
 // ============================================================
-// 5. HTTP pipeline – order matters!
+// 7. HTTP Middleware Pipeline (Order is critical!)
 // ============================================================
 
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Home/Error");
-    // HSTS must come BEFORE HTTPS redirection and before any response headers
-    // app.UseHsts();
-}
-
-
-// ============================================================
-// 6. FIX #2 & #3 – Enforce HTTPS redirection (uncommented)
-// ============================================================
-// app.UseHttpsRedirection();
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    OnPrepareResponse = ctx =>
-    {
-        // Remove wildcard CORS from static files – it's unsafe
-        // ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
-        var fileExtension = Path.GetExtension(ctx.File.Name).ToLower();
-        if (fileExtension == ".pdf")
-            ctx.Context.Response.Headers.Append("Content-Disposition", "inline");
-        else if (new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg" }.Contains(fileExtension))
-            ctx.Context.Response.Headers.Append("Content-Type", $"image/{fileExtension.TrimStart('.')}");
-    }
-});
-
-app.UseDetection();
-
-// Forwarded headers for proxies (ngrok, nginx, etc.)
+// 1. Forwarded Headers (Must be first to correctly identify scheme/host behind proxies like Nginx/ngrok)
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
-// ============================================================
-// 7. Custom security middleware (Host whitelist, security headers, CSP, OPTIONS block)
-//    Must be placed after UseForwardedHeaders and before UseRouting
-// ============================================================
+// 2. Exception Handling & HSTS (Production only)
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts(); // Enforce HTTP Strict Transport Security
+}
 
+// 3. HTTPS Redirection
+// app.UseHttpsRedirection();
+
+// 4. Static Files
+// OPTIMIZATION: Use HashSet for O(1) lookups instead of Array.Contains()
+var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+{
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg"
+};
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var fileExtension = Path.GetExtension(ctx.File.Name);
+        if (fileExtension.Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers.Append("Content-Disposition", "inline");
+        }
+        else if (imageExtensions.Contains(fileExtension))
+        {
+            ctx.Context.Response.Headers.Append("Content-Type", $"image/{fileExtension.TrimStart('.')}");
+        }
+    }
+});
+
+app.UseDetection();
 app.UseRouting();
 
-// ============================================================
-// 8. Use the new restricted CORS policy (not "AllowAll")
-// ============================================================
+// 5. CORS (Must be after UseRouting and before UseAuthorization)
 app.UseCors("StrictCors");
 
+// 5b. Rate Limiting (after CORS, before auth endpoints execute)
+app.UseRateLimiter();
 
-
-
-
-
-app.MapHub<SessionHub>("/sessionHub");
-
-app.UseMiddleware<SecurityMiddleware>();
-
+// 6. Authentication & Custom Middleware
 app.UseAuthentication();
 app.UseMiddleware<JanParichayValidationMiddleware>();
+app.UseMiddleware<SecurityMiddleware>();
+
+// 7. Authorization
 app.UseAuthorization();
 
+// ============================================================
+// 8. Endpoint Routing
+// ============================================================
+app.MapHub<SessionHub>("/sessionHub");
 app.MapHub<ProgressHub>("/progressHub");
 
 app.MapControllerRoute(

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import GovPageHeader from "../components/gov/GovPageHeader";
 import axios from "axios";
 import {
   Container,
@@ -95,9 +96,10 @@ export default function Feedback() {
 
   return (
     <Container maxWidth="sm" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h2" gutterBottom>
-        Submit Portal Feedback
-      </Typography>
+      <GovPageHeader
+        title="Submit Portal Feedback"
+        hindiTitle="पोर्टल प्रतिक्रिया भेजें"
+      />
       <Box component="form" onSubmit={handleSubmit} sx={{ mt: 2 }}>
         <TextField
           fullWidth

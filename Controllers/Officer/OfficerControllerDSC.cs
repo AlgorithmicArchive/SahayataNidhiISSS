@@ -23,7 +23,6 @@ namespace SahayataNidhi.Controllers.Officer
     public partial class OfficerController : Controller
     {
         [HttpPost]
-
         public IActionResult RegisterDSC([FromForm] IFormCollection form)
         {
             var officer = GetOfficerDetails();
@@ -32,17 +31,47 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 if (officer == null)
                 {
-                    return BadRequest(new { success = false, message = "User session expired or invalid. Please log in again." });
+                    return BadRequest(new
+                    {
+                        success = false,
+                        message = "User session expired or invalid. Please log in again."
+                    });
                 }
 
                 _logger.LogInformation($"------------USER ID: {officer.UserId}-----------------");
 
+                // ==========================================================
+                // READ ALL SERIAL REPRESENTATIONS SENT BY THE CLIENT
+                // ==========================================================
+                // The desktop token exposes the same certificate serial in several
+                // shapes: a raw hex string, a decimal/ASCII form, and an integer.
+                // The frontend (RegisterDSC.jsx) forwards all of them so the
+                // backend can persist the canonical byte[] from the most reliable
+                // representation. On later signing calls, UserDetails re-reads the
+                // token and tries every shape — so the value we store here must
+                // round-trip cleanly against at least one of them.
                 var serialString = form["serial_number"].ToString();
+                var serialHexString = form["serial_number_hex"].ToString();
+                var serialIntString = form["serial_number_int"].ToString();
+
                 var ca = form["certifying_authority"].ToString();
                 var expirationString = form["expiration_date"].ToString();
                 var certSubjectName = form["cert_subject_name"].ToString()?.Trim();
 
-                if (string.IsNullOrEmpty(serialString) || string.IsNullOrEmpty(ca))
+                _logger.LogInformation(
+                    "DSC Register payload — serial_number='{Serial}', serial_number_hex='{SerialHex}', serial_number_int='{SerialInt}', CA='{CA}'",
+                    serialString, serialHexString, serialIntString, ca);
+
+                if (string.IsNullOrEmpty(serialString) && string.IsNullOrEmpty(serialHexString))
+                {
+                    return BadRequest(new
+                    {
+                        success = false,
+                        message = "Certificate details are incomplete. Please ensure your USB token is properly connected and the correct PIN was entered."
+                    });
+                }
+
+                if (string.IsNullOrEmpty(ca))
                 {
                     return BadRequest(new
                     {
@@ -54,7 +83,6 @@ namespace SahayataNidhi.Controllers.Officer
                 // ==========================================================
                 // FIX 1: VALIDATE CERTIFICATE NAME MATCHES OFFICER NAME
                 // ==========================================================
-                // Note: Ensure 'officer.Name' matches the actual property in your Officer model
                 string officerName = officer.Name?.Trim() ?? "";
 
                 if (string.IsNullOrWhiteSpace(officerName))
@@ -67,10 +95,10 @@ namespace SahayataNidhi.Controllers.Officer
                     });
                 }
 
-                // Case-insensitive comparison to handle minor casing differences (e.g., "John Doe" vs "JOHN DOE")
                 if (!string.Equals(officerName, certSubjectName, StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogWarning($"DSC Registration Blocked: Name mismatch. Officer: '{officerName}', Cert: '{certSubjectName}'");
+                    _logger.LogWarning(
+                        $"DSC Registration Blocked: Name mismatch. Officer: '{officerName}', Cert: '{certSubjectName}'");
                     return Json(new
                     {
                         success = false,
@@ -81,21 +109,74 @@ namespace SahayataNidhi.Controllers.Officer
                 // ==========================================================
                 // FIX 2: ROBUST SERIAL NUMBER PARSING
                 // ==========================================================
+                // Priority:
+                //   1. serial_number_hex  — explicit, unambiguous (preferred)
+                //   2. serial_number      — fall back to the legacy auto-detect
+                //                           (hex vs base64), for older clients
+                //
+                // Note on the legacy path: `Uri.IsHexDigit` returns TRUE for pure
+                // digits ("12345"), so a decimal-looking string would have been
+                // silently misread as hex. We now detect that case and, if the
+                // string is all digits AND longer than 2 chars AND not flagged as
+                // hex, we treat it as a decimal integer and convert properly.
                 byte[] serialBytes;
                 try
                 {
-                    if (serialString.All(c => Uri.IsHexDigit(c)))
+                    string serialToParse = !string.IsNullOrWhiteSpace(serialHexString)
+                        ? serialHexString
+                        : serialString;
+
+                    // Strip common separators used in serial display strings.
+                    string cleanSerial = (serialToParse ?? "")
+                        .Replace(" ", "")
+                        .Replace("-", "")
+                        .Replace(":", "")
+                        .Trim();
+
+                    if (string.IsNullOrEmpty(cleanSerial))
                     {
-                        serialBytes = Convert.FromHexString(serialString);
+                        throw new ArgumentException("Serial number is empty after cleaning.");
+                    }
+
+                    bool isExplicitHex = !string.IsNullOrWhiteSpace(serialHexString);
+                    bool looksLikeHex = cleanSerial.All(c => Uri.IsHexDigit(c));
+                    bool looksLikeDecimal = cleanSerial.All(char.IsDigit);
+
+                    if (isExplicitHex)
+                    {
+                        // Caller told us it's hex — trust it, just pad to even length.
+                        if (cleanSerial.Length % 2 != 0)
+                            cleanSerial = "0" + cleanSerial;
+
+                        serialBytes = Convert.FromHexString(cleanSerial);
+                    }
+                    else if (looksLikeHex && !looksLikeDecimal)
+                    {
+                        // Contains A-F → definitely hex.
+                        if (cleanSerial.Length % 2 != 0)
+                            cleanSerial = "0" + cleanSerial;
+
+                        serialBytes = Convert.FromHexString(cleanSerial);
+                    }
+                    else if (looksLikeDecimal && long.TryParse(cleanSerial, out var decimalSerial))
+                    {
+                        // All digits — treat as decimal integer and convert to the
+                        // minimal big-endian byte array. Matches what the token
+                        // exposes as `serial_number_int` on later reads.
+                        serialBytes = DecimalSerialToBytes(decimalSerial);
                     }
                     else
                     {
-                        serialBytes = Convert.FromBase64String(serialString);
+                        // Fall back to base64 (legacy clients).
+                        serialBytes = Convert.FromBase64String(cleanSerial);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to parse serial number: {SerialString}", serialString);
+                    _logger.LogError(ex,
+                        "Failed to parse serial number. serial_number='{Serial}', serial_number_hex='{SerialHex}', serial_number_int='{SerialInt}'",
+                        serialString, serialHexString, serialIntString);
+
                     return Json(new
                     {
                         success = false,
@@ -109,16 +190,16 @@ namespace SahayataNidhi.Controllers.Officer
                 DateTime? expirationDate = null;
                 if (!string.IsNullOrWhiteSpace(expirationString))
                 {
-                    // Remove " UTC" suffix to ensure clean parsing across all server cultures
                     string cleanDateStr = expirationString.Replace(" UTC", "").Trim();
 
-                    if (DateTime.TryParse(cleanDateStr, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedDate))
+                    if (DateTime.TryParse(cleanDateStr, CultureInfo.InvariantCulture,
+                                          DateTimeStyles.AssumeUniversal, out var parsedDate))
                     {
-                        // CRITICAL POSTGRESQL FIX: 
-                        // 1. Convert to UTC so the time is accurate.
-                        // 2. Use SpecifyKind to change it to 'Unspecified' so Npgsql allows saving 
-                        //    to a 'timestamp without time zone' column without throwing an exception.
-                        expirationDate = DateTime.SpecifyKind(parsedDate.ToUniversalTime(), DateTimeKind.Unspecified);
+                        // Npgsql: convert to UTC then drop the Kind so it saves into
+                        // a `timestamp without time zone` column without complaining.
+                        expirationDate = DateTime.SpecifyKind(
+                            parsedDate.ToUniversalTime(),
+                            DateTimeKind.Unspecified);
                     }
                     else
                     {
@@ -132,14 +213,10 @@ namespace SahayataNidhi.Controllers.Officer
                 var cert = new Models.Entities.Certificates
                 {
                     Officerid = officer.UserId,
-                    Serialnumber = serialBytes,
+                    Serialnumber = serialBytes,               // canonical byte[]
                     Certifiyingauthority = ca,
                     Expirationdate = expirationDate,
-
-                    // NOTE: If 'Registereddate' is a DateTime column in your DB model, 
-                    // change this line to: Registereddate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
                     Registereddate = DateTime.UtcNow.ToString("dd MMM yyyy hh:mm:ss tt"),
-
                     Status = "PENDING",
                     CertSubjectName = certSubjectName
                 };
@@ -147,10 +224,19 @@ namespace SahayataNidhi.Controllers.Officer
                 dbcontext.Certificates.Add(cert);
                 dbcontext.SaveChanges();
 
+                // Log the canonical hex so we can cross-reference it against what
+                // UserDetails will later read back from the token.
+                _logger.LogInformation(
+                    "DSC registered for UserId {UserId}. Stored serial (hex) = {Hex}",
+                    officer.UserId, Convert.ToHexString(serialBytes));
+
                 return Json(new
                 {
                     success = true,
-                    message = "Digital Signature Certificate registered successfully and is pending Admin approval."
+                    message = "Digital Signature Certificate registered successfully and is pending Admin approval.",
+                    // Echo back the canonical hex so the client can sanity-check
+                    // round-trip against the token.
+                    serial_number_hex = Convert.ToHexString(serialBytes)
                 });
             }
             catch (Exception ex)
@@ -163,6 +249,35 @@ namespace SahayataNidhi.Controllers.Officer
                 });
             }
         }
+
+        // ==========================================================
+        // HELPERS
+        // ==========================================================
+
+        /// <summary>
+        /// Converts a decimal serial-number string (as exposed by some USB tokens
+        /// through `serial_number_int`) to its minimal big-endian byte array.
+        /// Mirrors the conversion already used implicitly by the token's own
+        /// `serial_number_hex` output.
+        /// </summary>
+        private static byte[] DecimalSerialToBytes(long value)
+        {
+            if (value == 0) return new byte[] { 0 };
+
+            // Handle negative values defensively (shouldn't happen for a cert
+            // serial, but a corrupted token could report one).
+            ulong unsigned = value < 0 ? unchecked((ulong)value) : (ulong)value;
+
+            var bytes = new List<byte>();
+            while (unsigned > 0)
+            {
+                bytes.Add((byte)(unsigned & 0xFF));
+                unsigned >>= 8;
+            }
+            bytes.Reverse(); // big-endian
+            return bytes.ToArray();
+        }
+
 
         [HttpGet]
         public IActionResult AlreadyRegistered()
@@ -214,10 +329,34 @@ namespace SahayataNidhi.Controllers.Officer
         {
             try
             {
-                if (!form.TryGetValue("certificateId", out var certificateIdStr) ||
-                    !int.TryParse(certificateIdStr, out int certificateId))
+                // Log every form field received so you can see the real name in the console
+                foreach (var key in form.Keys)
                 {
-                    return BadRequest(new { status = false, message = "Invalid certificate ID." });
+                    _logger.LogInformation($"Form field received -> Key: '{key}', Value: '{form[key]}'");
+                }
+
+                // Try all common field names the frontend might use
+                string certificateIdStr = null;
+                foreach (var candidate in new[] { "certificateId", "uuid", "id", "certId", "certificate_id" })
+                {
+                    if (form.TryGetValue(candidate, out var val) && !string.IsNullOrWhiteSpace(val))
+                    {
+                        certificateIdStr = val.ToString().Trim();
+                        _logger.LogInformation($"Matched certificate ID field name: '{candidate}' with value: '{certificateIdStr}'");
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(certificateIdStr))
+                {
+                    _logger.LogWarning("No certificate ID field found in the form. Available keys: " + string.Join(", ", form.Keys));
+                    return BadRequest(new { status = false, message = "Invalid certificate ID. No matching field was found in the request." });
+                }
+
+                if (!int.TryParse(certificateIdStr, out int certificateId))
+                {
+                    _logger.LogWarning($"Could not parse certificate ID as integer: '{certificateIdStr}'");
+                    return BadRequest(new { status = false, message = $"Invalid certificate ID. Received value was not a number: '{certificateIdStr}'" });
                 }
 
                 var officer = GetOfficerDetails();
@@ -226,12 +365,13 @@ namespace SahayataNidhi.Controllers.Officer
                     return BadRequest(new { status = false, message = "Officer not found." });
                 }
 
-                // Verify the certificate belongs to the officer
+                // uuid is a PostgreSQL "serial" = integer, so compare directly
                 var certificate = dbcontext.Certificates
                     .FirstOrDefault(c => c.Uuid == certificateId && c.Officerid == officer.UserId);
 
                 if (certificate == null)
                 {
+                    _logger.LogWarning($"Certificate with Uuid={certificateId} not found for OfficerId={officer.UserId}");
                     return NotFound(new { status = false, message = "Certificate not found or does not belong to this officer." });
                 }
 

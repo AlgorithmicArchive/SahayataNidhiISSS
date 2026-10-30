@@ -315,10 +315,10 @@ export default function NotValidated() {
                   <CardMedia
                     component="img"
                     height="300"
-                    image={`${API_BASE}/assets/images/pending-validation.png`}
+                    image={`/assets/images/pending-validation.png`}
                     alt="Pending Validation"
                     onError={(e) => {
-                      e.currentTarget.src = `${API_BASE}/assets/images/placeholder-pending.png`; // fallback image if needed
+                      e.currentTarget.src = `/assets/images/placeholder-pending.png`; // fallback image if needed
                     }}
                     sx={{
                       borderRadius: "12px 12px 0 0",

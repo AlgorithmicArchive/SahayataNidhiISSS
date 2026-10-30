@@ -22,8 +22,9 @@ export function notEmpty(field, value) {
 }
 
 export function onlyAlphabets(field, value) {
-  if (!/^[A-Za-z .']+$/.test(value)) {
-    return "Please use letters (a-z, A-Z) and special characters (. and ') only.";
+  console.log(field, value);
+  if (!/^[A-Za-z .,']+$/.test(value)) {
+    return "Please use letters (a-z, A-Z) and special characters (., , and ') only.";
   }
   return true;
 }
@@ -51,13 +52,35 @@ function resolveLengthConfig(lengthConfig, formData, fieldLabel = "value") {
     return { error: `Missing dependent field for ${fieldLabel}.` };
   }
 
-  const primaryValue = formData[dependentOn];
+  let primaryValue = formData[dependentOn];
   if (
     primaryValue === undefined ||
     primaryValue === null ||
     primaryValue === ""
   ) {
     return { error: `Dependent field (${dependentOn}) value is missing.` };
+  }
+
+  // ★ NEW: if the config is keyed by BankName but the value stored in
+  //   formData is a name (not an integer id), fall back to BankId — the
+  //   synthetic field the backend injects alongside BankName.
+  if (dependentOn === "BankName") {
+    const raw = String(primaryValue).trim();
+    const isInteger = /^\d+$/.test(raw);
+
+    if (!isInteger) {
+      const bankIdFromForm = formData["BankId"];
+      if (
+        bankIdFromForm !== undefined &&
+        bankIdFromForm !== null &&
+        String(bankIdFromForm).trim() !== ""
+      ) {
+        primaryValue = String(bankIdFromForm).trim();
+      }
+      // else: no BankId available — fall through with the name; the
+      // "No X defined for option ..." branch below will fire, which is
+      // the same behaviour as today.
+    }
   }
 
   // 3. New two‑field style with primaryConfig
@@ -188,6 +211,8 @@ export async function duplicateAccountNumber(
   value,
   formData,
   referenceNumber,
+  setValue, // 5th — unused here, kept for positional consistency
+  selectedServiceId, // 6th — the actual service id
 ) {
   try {
     const bankName =
@@ -199,11 +224,21 @@ export async function duplicateAccountNumber(
         ? formData["Bank Details"][2].value
         : formData.IfscCode;
 
+    // Guard so we never POST a function/undefined as serviceid.
+    const serviceIdToSend =
+      selectedServiceId !== undefined &&
+      selectedServiceId !== null &&
+      typeof selectedServiceId !== "function" &&
+      String(selectedServiceId).trim() !== ""
+        ? String(selectedServiceId)
+        : "";
+
     const fd = new FormData();
+    fd.append("serviceId", serviceIdToSend); // note camelCase, matches backend
     fd.append("bankName", bankName);
     fd.append("ifscCode", ifscCode);
     fd.append("accNo", value);
-    fd.append("applicationId", referenceNumber);
+    fd.append("applicationId", referenceNumber ?? "");
 
     const res = await fetch(`${API_BASE}/Base/IsDuplicateAccNo`, {
       method: "POST",
@@ -239,7 +274,7 @@ export async function validateIfscCode(
 
   // Ensure IFSC code exists
   if (!ifscCode || !ifscCode.trim()) {
-    return true; // Allow empty IFSC
+    return true; // Allow empty IFSC — `notEmpty` handles the required case
   }
 
   if (!bankName || bankName === "Please Select") {
@@ -269,7 +304,14 @@ export async function validateIfscCode(
       if (typeof setValue === "function") {
         setValue("BranchName", "", { shouldValidate: true });
       }
-      return "IFSC Code is incorrect or branch details not available.";
+      // ← CHANGED: return a sentinel so the caller can distinguish
+      //   "IFSC not found in DB" (allow manual BranchName entry) from
+      //   real hard errors (empty field, fetch failure, etc).
+      return {
+        status: false,
+        code: "IFSC_NOT_IN_DB",
+        message: "IFSC Code is incorrect or branch details not available.",
+      };
     }
 
     // Update BranchName if setValue exists
@@ -293,7 +335,7 @@ export async function validateFile(field, value) {
 
     if (field.accept.includes(".jpg")) formData.append("fileType", "image");
     else if (field.accept.includes(".pdf")) formData.append("fileType", "pdf");
-    else return;
+    else return true; // ← FIX: was bare `return;` which yielded undefined
 
     const notRequired = !field.validationFunctions.includes("notEmpty");
 
@@ -320,10 +362,14 @@ export async function validateFile(field, value) {
   }
 }
 
+// ← FIX: added explicit `return true;` on the success path. Previously
+// this fell off the end of the function and returned `undefined`, which
+// caused `runValidations` to short-circuit the entire validator chain.
 export function range(field, value) {
   if (value < field.minLength || value > field.maxLength) {
     return `The value must be between ${field.minLength} and ${field.maxLength}.`;
   }
+  return true;
 }
 
 // Add this helper function at the top (if not already there)
@@ -643,8 +689,28 @@ export const runValidations = async (
   formData,
   referenceNumber,
   setValue,
+  selectedServiceId,
 ) => {
   if (!Array.isArray(field.validationFunctions)) return true;
+
+  // ── Short-circuit: optional field left empty ──────────────────────
+  // A field is "required" only if `notEmpty` is one of its validation
+  // functions. If it isn't, and the value is empty, every validator
+  // (onlyDigits, specificLength, isDateAfterCurrentDate, …) must be
+  // skipped — otherwise they all fail on "" and the error sticks.
+  const isEmpty =
+    value === "" ||
+    value === null ||
+    value === undefined ||
+    value === "Please Select" ||
+    value === "placeholder" ||
+    (Array.isArray(value) && value.length === 0);
+
+  const isRequired = field.validationFunctions.includes("notEmpty");
+
+  if (isEmpty && !isRequired) {
+    return true; // ← no error; RHF clears the field on blur
+  }
 
   for (const validationFn of field.validationFunctions) {
     const fun = ValidationFunctionsList[validationFn];
@@ -657,8 +723,15 @@ export const runValidations = async (
         formData,
         referenceNumber,
         setValue,
+        selectedServiceId,
       );
-      if (error !== true) return error;
+      // ← FIX: treat `undefined` as pass. Some validators historically
+      // forgot the explicit `return true` on success (e.g. `range` before
+      // the fix above). Without this guard, the very first such validator
+      // would bail out of the loop and skip every later validator in the
+      // chain — which is exactly why `PercentageOfDisability` came back
+      // as `undefined` and no further checks ran.
+      if (error !== true && error !== undefined) return error;
     } catch (err) {
       return "Validation failed due to an unexpected error.";
     }
@@ -677,10 +750,19 @@ export function formatKey(input) {
   return result;
 }
 
+export function onlyAlphaNumeric(field, value) {
+  // Allow letters (a-z, A-Z), digits (0-9), and spaces. Nothing else.
+  if (!/^[A-Za-z0-9 ]+$/.test(value)) {
+    return "Please use only letters (a-z, A-Z), numbers (0-9), and spaces.";
+  }
+  return true;
+}
+
 export const ValidationFunctionsList = {
   notEmpty,
   onlyAlphabets,
   onlyDigits,
+  onlyAlphaNumeric,
   specificLength,
   isAgeGreaterThan,
   isEmailValid,
@@ -713,6 +795,7 @@ export const validationFunctionsList = [
   { id: "notEmpty", label: "Required" },
   { id: "onlyAlphabets", label: "Only Alphabets" },
   { id: "onlyDigits", label: "Only Digits" },
+  { id: "onlyAlphaNumeric", label: "Only AlphaNumeric" },
   { id: "specificLength", label: "Specific Length" },
   { id: "isAgeGreaterThan", label: "Age Limit" },
   { id: "isEmailValid", label: "Email Format" },

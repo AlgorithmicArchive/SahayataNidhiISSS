@@ -1,4 +1,5 @@
 import { Box, Tab, Tabs } from "@mui/material";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import React, { useState } from "react";
 import { Container } from "react-bootstrap";
 import ServerSideTable from "../../components/ServerSideTable";
@@ -134,6 +135,15 @@ export default function Dashboard() {
       }}
     >
       <Container>
+        <GovPageHeader
+          title="Designer Dashboard"
+          hindiTitle="डिज़ाइनर डैशबोर्ड"
+          subtitle="Manage services, workflows, and web services"
+          crumbs={[
+            { label: "Designer", path: "/designer/dashboard" },
+            { label: "Dashboard", path: "" },
+          ]}
+        />
         <Box sx={{ mb: 3, bgcolor: "white", borderRadius: 2, boxShadow: 1 }}>
           <Tabs
             value={activeTab}

@@ -12,6 +12,36 @@ namespace SahayataNidhi.Controllers.User
 {
     public partial class UserController
     {
+        /// <summary>
+        /// Safely parses the Actiontakendate string for sorting.
+        /// Canonical write format: "dd MMM yyyy hh:mm:ss tt" (see HelperFunctions.cs).
+        /// Falls back to common legacy formats; unparsable values sort last.
+        /// </summary>
+        private static readonly string[] ActionResultDateFormats =
+        [
+            "dd MMM yyyy hh:mm:ss tt",   // e.g. 19 Aug 2026 04:14:28 PM (canonical)
+            "dd-MM-yyyy HH:mm:ss",       // e.g. 19-08-2026 16:14:28 (legacy)
+            "dd MMM yyyy HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+        ];
+
+        private static DateTime ParseActionDate(string? actionTakendate)
+        {
+            if (string.IsNullOrWhiteSpace(actionTakendate))
+                return DateTime.MinValue;
+
+            if (DateTime.TryParseExact(
+                    actionTakendate,
+                    ActionResultDateFormats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var parsed))
+                return parsed;
+
+            // Last resort: culture-aware parse so unexpected formats never crash the API
+            return DateTime.TryParse(actionTakendate, out var fallback) ? fallback : DateTime.MinValue;
+        }
+
         public string? GetSanctionedCorrigendum(dynamic Workflow, string id)
         {
             foreach (var item in Workflow)
@@ -119,7 +149,6 @@ namespace SahayataNidhi.Controllers.User
             return Json(new { data, columns, totalRecords });
         }
 
-
         public async Task<IActionResult> GetInitiatedApplications(int pageIndex = 0, int pageSize = 10)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -131,38 +160,37 @@ namespace SahayataNidhi.Controllers.User
                 return BadRequest("Invalid user ID.");
             }
 
-            // PostgreSQL function call with parameters
             var userIdParam = new NpgsqlParameter("userid", userId);
             var pageIndexParam = new NpgsqlParameter("pageindex", pageIndex);
             var pageSizeParam = new NpgsqlParameter("pagesize", pageSize);
             var isPaginatedParam = new NpgsqlParameter("ispaginated", true);
 
-            // Execute PostgreSQL function
             var applications = dbcontext.CitizenApplications
                 .FromSqlRaw("SELECT * FROM get_initiated_applications({0}, {1}, {2}, {3})",
                     userIdParam.Value, pageIndexParam.Value, pageSizeParam.Value, isPaginatedParam.Value)
                 .ToList();
 
-            // Get total count for pagination
             var totalRecords = await dbcontext.CitizenApplications
                 .CountAsync(ca => ca.CitizenId == userId && ca.Status != "Incomplete");
 
-            // Define columns
+            // =====================================================================
+            //                       COLUMNS
+            // =====================================================================
             var columns = new List<dynamic>
             {
-                new { header = "S.No", accessorKey = "sno" },
-                new { header = "Service Name", accessorKey = "serviceName" },
-                new { header = "Reference Number", accessorKey = "referenceNumber" },
-                new { header = "Applicant Name", accessorKey = "applicantName" },
-                new { header = "Currently With", accessorKey = "currentlyWith" },
-                new { header = "Submission Date", accessorKey = "submissionDate" },
-                new { header = "Status", accessorKey = "status" }
+                new { header = "S.No",              accessorKey = "sno" },
+                new { header = "Service Name",      accessorKey = "serviceName" },
+                new { header = "Reference Number",  accessorKey = "referenceNumber" },
+                new { header = "Applicant Name",    accessorKey = "applicantName" },
+                new { header = "Currently With",    accessorKey = "currentlyWith" },
+                new { header = "Submission Date",   accessorKey = "submissionDate" },
+                new { header = "Status",            accessorKey = "status" },
+                new { header = "Officer Remarks",   accessorKey = "officerRemarks" }   // ★ NEW
             };
 
             List<dynamic> data = new List<dynamic>();
             int rowIndex = 0;
 
-            // Case-insensitive status mapping
             var actionMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 {"pending", "Pending"},
@@ -179,7 +207,6 @@ namespace SahayataNidhi.Controllers.User
 
             foreach (var application in applications)
             {
-                // Safely deserialize formdetails and workflow
                 var formDetails = string.IsNullOrEmpty(application.Formdetails)
                     ? null
                     : JsonConvert.DeserializeObject<dynamic>(application.Formdetails);
@@ -190,15 +217,15 @@ namespace SahayataNidhi.Controllers.User
 
                 int currentPlayer = application.Currentplayer ?? -1;
 
-                // Default values
                 string officerDesignation = "Unknown";
                 string officerAccessLevel = "Unknown";
                 string workflowStatus = "pending";
                 string officerArea = "";
+                string officerRemarks = "";   // ★ NEW
 
                 _logger.LogInformation($"Processing ApplicationId: {application.Referencenumber}, Currentplayer: {currentPlayer}, Officers Count: {officers?.Count} Officers Data: {application.Workflow}");
 
-                // Safely extract current officer details
+                // ── Current officer slot ─────────────────────────────────────────
                 if (officers != null &&
                     currentPlayer >= 0 &&
                     currentPlayer < officers.Count &&
@@ -209,14 +236,29 @@ namespace SahayataNidhi.Controllers.User
                     workflowStatus = currentOfficer["status"]?.ToString() ?? "pending";
                 }
 
-                // Get service name safely
+                // ★ NEW: walk backwards through workflow for the latest non-empty remarks.
+                //   Current officer's remarks are often empty (they haven't acted yet),
+                //   so fall back to the most recent step that actually wrote a remark.
+                if (officers != null && officers.Count > 0)
+                {
+                    for (int i = officers.Count - 1; i >= 0; i--)
+                    {
+                        if (officers[i] is not JObject step) continue;
+
+                        var r = step["remarks"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(r))
+                        {
+                            officerRemarks = r.Trim();
+                            break;
+                        }
+                    }
+                }
+
                 string serviceName = dbcontext.Services
                     .FirstOrDefault(s => s.Serviceid == application.Serviceid)?.Servicename ?? "Unknown Service";
 
-                // Get officer area from form details
                 officerArea = GetOfficerArea(officerAccessLevel, formDetails);
 
-                // Corrigendum handling
                 var Corrigendum = dbcontext.Corrigendum
                     .Where(co => co.Referencenumber == application.Referencenumber)
                     .ToList();
@@ -233,7 +275,6 @@ namespace SahayataNidhi.Controllers.User
                     }
                 }
 
-                // Define actions
                 var actions = new List<dynamic>();
 
                 if (workflowStatus != "returntoedit" && workflowStatus != "sanctioned")
@@ -243,7 +284,9 @@ namespace SahayataNidhi.Controllers.User
                 else if (workflowStatus == "sanctioned")
                 {
                     actions.Add(new { tooltip = "View", color = "#F0C38E", actionFunction = "CreateTimeLine" });
-                    var ifSanctionedLetter = dbcontext.Userdocuments.FirstOrDefault(sl => sl.Filename == application.Referencenumber + "_SanctionLetter.pdf");
+
+                    var ifSanctionedLetter = dbcontext.Userdocuments
+                        .FirstOrDefault(sl => sl.Filename == application.Referencenumber + "_SanctionLetter.pdf");
                     if (ifSanctionedLetter != null)
                     {
                         actions.Add(new { tooltip = "Download SL", color = "#F0C38E", actionFunction = "DownloadSanctionLetter" });
@@ -262,12 +305,11 @@ namespace SahayataNidhi.Controllers.User
                         corrigendumIndex++;
                     }
                 }
-                else // returntoedit
+                else
                 {
                     actions.Add(new { tooltip = "Edit Form", color = "#F0C38E", actionFunction = "EditForm" });
                 }
 
-                // --- Expiring Eligibility Handling (Multiple Types) ---
                 if (application.Status == "Sanctioned")
                 {
                     var activeExpirations = await dbcontext.ApplicationExpirations
@@ -281,13 +323,11 @@ namespace SahayataNidhi.Controllers.User
 
                     foreach (var exp in activeExpirations)
                     {
-                        if (hasInitiatedCorrection)
-                            break; // Already being corrected globally, skip all
+                        if (hasInitiatedCorrection) break;
 
                         var expType = exp.ExpirationType;
                         if (expType == null) continue;
 
-                        // Determine reminder start date
                         DateOnly reminderStart = exp.ExpirationDate;
                         if (!string.IsNullOrEmpty(expType.ReminderBefore))
                         {
@@ -300,25 +340,24 @@ namespace SahayataNidhi.Controllers.User
                         var today = DateOnly.FromDateTime(DateTime.Today);
                         bool isExpiringSoon = today >= reminderStart && today <= exp.ExpirationDate;
 
-                        if (isExpiringSoon)
-                        {
-                            string tooltip = $"Update {expType.ExpirationName}";
-                            string tooltipText = $"To update {expType.ExpirationName} as its validity is expiring soon.";
+                        // if (isExpiringSoon)
+                        // {
+                        //     string tooltip = $"Update {expType.ExpirationName}";
+                        //     string tooltipText = $"To update {expType.ExpirationName} as its validity is expiring soon.";
 
-                            actions.Add(new
-                            {
-                                tooltip = tooltip,
-                                tooltipText = tooltipText,
-                                color = "#F0C38E",
-                                actionFunction = "UpdateExpiringDocument",
-                                expirationTypeId = exp.ExpirationTypeId,
-                                expirationTypeName = expType.ExpirationName
-                            });
-                        }
+                        //     actions.Add(new
+                        //     {
+                        //         tooltip,
+                        //         tooltipText,
+                        //         color = "#F0C38E",
+                        //         actionFunction = "UpdateExpiringDocument",
+                        //         expirationTypeId = exp.ExpirationTypeId,
+                        //         expirationTypeName = expType.ExpirationName
+                        //     });
+                        // }
                     }
                 }
 
-                // Add row data
                 data.Add(new
                 {
                     sno = (pageIndex * pageSize) + rowIndex + 1,
@@ -332,6 +371,7 @@ namespace SahayataNidhi.Controllers.User
                     submissionDate = DateTime.TryParse(application.CreatedAt, out var createdAt)
                         ? createdAt.ToString("dd MMM yyyy")
                         : "",
+                    officerRemarks,   // ★ NEW
                     serviceId = application.Serviceid,
                     customActions = actions
                 });
@@ -339,7 +379,6 @@ namespace SahayataNidhi.Controllers.User
                 rowIndex++;
             }
 
-            // Sort by submission date descending
             data = data
                 .OrderByDescending(d =>
                 {
@@ -355,9 +394,9 @@ namespace SahayataNidhi.Controllers.User
                 .ToList();
 
             return Json(new { data, columns, totalRecords });
-        }
+        }        // Helper method to parse interval strings (same as in CronServices)
 
-        // Helper method to parse interval strings (same as in CronServices)
+
         private bool TryParseInterval(string intervalStr, out TimeSpan interval)
         {
             interval = TimeSpan.Zero;
@@ -402,10 +441,7 @@ namespace SahayataNidhi.Controllers.User
             .Where(ah => ah.Referencenumber == ApplicationId &&
                         !ah.Actiontaken.Contains("Withheld"))
             .ToListAsync())
-            .OrderBy(ah => DateTime.ParseExact(
-                ah.Actiontakendate,
-                "dd-MM-yyyy HH:mm:ss",
-                CultureInfo.InvariantCulture))
+            .OrderBy(ah => ParseActionDate(ah.Actiontakendate))
             .ToList();
             var formDetails = JsonConvert.DeserializeObject<dynamic>(application.Formdetails!);
             int totalRecords = history.Count;
@@ -770,14 +806,32 @@ namespace SahayataNidhi.Controllers.User
         [HttpGet]
         public IActionResult GetIfSameUdidNumber(string referenceNumber, string udidNumber)
         {
-            var application = dbcontext.CitizenApplications.FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
+            var application = dbcontext.CitizenApplications
+                .FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
+
             var formDetails = JToken.Parse(application!.Formdetails!);
-            var UdidNumber = FindFieldRecursively(formDetails, "UdidCardNumber");
-            if (udidNumber == (string)UdidNumber!["value"]!)
+
+            var udidField = FormJsonHelper.FindFieldRecursively(formDetails, "UdidCardNumber");
+
+            // If the UDID field does not exist or has no value, allow it.
+            if (udidField == null || string.IsNullOrWhiteSpace((string?)udidField["value"]))
             {
                 return Json(new { status = true });
             }
-            return Json(new { status = false, message = "Udid Number doesn't match the existing one in the record." });
+
+            var existingUdidNumber = (string?)udidField["value"];
+
+            // Allow if the UDID number matches the existing record.
+            if (udidNumber == existingUdidNumber)
+            {
+                return Json(new { status = true });
+            }
+
+            return Json(new
+            {
+                status = false,
+                message = "UDID Number doesn't match the existing one in the record."
+            });
         }
 
         [HttpGet]

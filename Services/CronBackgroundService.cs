@@ -289,9 +289,7 @@ public class CronScheduler : BackgroundService, ICronScheduler
         }
     }
 
-    private Task<Func<CancellationToken, Task>?> ResolveActionFromDIAsync(
-     string actionType,
-     CancellationToken ct)
+    private Task<Func<CancellationToken, Task>?> ResolveActionFromDIAsync(string actionType, CancellationToken ct)
     {
         using var scope = _serviceProvider.CreateScope();
         var cronServices = scope.ServiceProvider.GetService<CronServices>();

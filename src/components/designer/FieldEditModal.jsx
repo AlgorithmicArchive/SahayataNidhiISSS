@@ -29,6 +29,34 @@ import {
 import axiosInstance from "../../axiosConfig";
 import { toast } from "react-toastify";
 import SearchIcon from "@mui/icons-material/Search";
+import { TypeBadge, HelpTip, WIDTH_OPTIONS, FieldPreview } from "./uxHelpers";
+
+// ---------- Helper: friendly section heading with help popper ----------
+const SectionTitle = ({
+  children,
+  helpTitle,
+  helpText,
+  example,
+  first = false,
+}) => (
+  <Box
+    sx={{
+      display: "flex",
+      alignItems: "center",
+      gap: 0.5,
+      mt: first ? 1 : 3,
+      mb: 1,
+    }}
+  >
+    <Typography
+      variant="h6"
+      sx={{ fontWeight: 700, color: "#0F172A", fontSize: "1.05rem" }}
+    >
+      {children}
+    </Typography>
+    <HelpTip title={helpTitle} text={helpText} example={example} />
+  </Box>
+);
 
 // ---------- Helper Functions ----------
 const fetchDistricts = async () => {
@@ -61,17 +89,20 @@ const getSelectableFields = (sections = [], actionForm = []) => {
         parentFieldName: parentFieldName || undefined,
       });
       if (field.additionalFields) {
-        Object.values(field.additionalFields).forEach((additionalFieldArray) => {
-          processFields(
-            additionalFieldArray,
-            parentLabel ? `${parentLabel} > ${field.label}` : field.label,
-            field.name
-          );
-        });
+        Object.values(field.additionalFields).forEach(
+          (additionalFieldArray) => {
+            processFields(
+              additionalFieldArray,
+              parentLabel ? `${parentLabel} > ${field.label}` : field.label,
+              field.name,
+            );
+          },
+        );
       }
     });
   };
-  if (sections?.length > 0) sections.forEach((s) => processFields(s.fields || []));
+  if (sections?.length > 0)
+    sections.forEach((s) => processFields(s.fields || []));
   if (actionForm?.length > 0) processFields(actionForm);
   return selectableFields;
 };
@@ -148,7 +179,8 @@ const DECLARATION_TEMPLATES = [
   {
     id: 3,
     name: "Short Declaration",
-    template: "I declare that all information provided herein is accurate and complete.",
+    template:
+      "I declare that all information provided herein is accurate and complete.",
   },
   {
     id: 4,
@@ -172,9 +204,11 @@ const DeclarationConfiguration = ({
   allAvailableFields = [],
 }) => {
   const [declarationFields, setDeclarationFields] = useState(
-    formData.declarationFields || []
+    formData.declarationFields || [],
   );
-  const [declarationText, setDeclarationText] = useState(formData.declaration || "");
+  const [declarationText, setDeclarationText] = useState(
+    formData.declaration || "",
+  );
   const [availableFields, setAvailableFields] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -183,7 +217,7 @@ const DeclarationConfiguration = ({
       ? DECLARATION_TEMPLATES.some((t) => t.template === formData.declaration)
         ? "template"
         : "custom"
-      : "template"
+      : "template",
   );
 
   useEffect(() => {
@@ -209,7 +243,12 @@ const DeclarationConfiguration = ({
         isDeclaration: true,
       }));
     }
-  }, [declarationFields, declarationText, setFormData, formData.isConsentCheckbox]);
+  }, [
+    declarationFields,
+    declarationText,
+    setFormData,
+    formData.isConsentCheckbox,
+  ]);
 
   const handleTemplateSelect = (template) => {
     setSelectedTemplate(template);
@@ -249,18 +288,25 @@ const DeclarationConfiguration = ({
   };
 
   const handleRemoveField = (fieldId) => {
-    const updatedFields = declarationFields.filter((field) => field.id !== fieldId);
+    const updatedFields = declarationFields.filter(
+      (field) => field.id !== fieldId,
+    );
     setDeclarationFields(updatedFields);
     if (declarationOption === "custom") {
       const regex = new RegExp(`\\{${fieldId}\\}`, "g");
-      const newText = declarationText.replace(regex, "").replace(/\s+/g, " ").trim();
+      const newText = declarationText
+        .replace(regex, "")
+        .replace(/\s+/g, " ")
+        .trim();
       setDeclarationText(newText);
     }
   };
 
   const handleAddPlaceholder = (fieldName) => {
     const newText =
-      declarationText + (declarationText.endsWith(" ") ? "" : " ") + `{${fieldName}}`;
+      declarationText +
+      (declarationText.endsWith(" ") ? "" : " ") +
+      `{${fieldName}}`;
     setDeclarationText(newText);
     setDeclarationOption("custom");
   };
@@ -268,7 +314,7 @@ const DeclarationConfiguration = ({
   const filteredFields = availableFields.filter(
     (field) =>
       field.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      field.name.toLowerCase().includes(searchQuery.toLowerCase())
+      field.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -282,30 +328,51 @@ const DeclarationConfiguration = ({
         bgcolor: "background.paper",
       }}
     >
-      <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: "primary.main" }}>
-        📝 Declaration Configuration
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 2 }}>
+        <Typography
+          variant="h6"
+          sx={{ fontWeight: 700, color: "primary.main" }}
+        >
+          Consent text (declaration) settings
+        </Typography>
+        <HelpTip
+          title="Consent text"
+          text="The statement the citizen must tick to agree to before submitting. You can insert the citizen's own answers into the text using placeholders."
+          example="I declare that {Name}, {DOB} are correct."
+        />
+      </Box>
+
       {serviceId && (
         <Alert severity="info" sx={{ mb: 3 }}>
           <Typography variant="body2">
-            Select fields from the service form to include in the declaration. Fields will
-            appear as {`{fieldName}`} placeholders.
+            Select fields from the service form to include in the declaration.
+            Fields will appear as {`{fieldName}`} placeholders.
           </Typography>
         </Alert>
       )}
+
       <Box sx={{ mb: 3 }}>
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-          Declaration Type
+          How do you want to write it?
         </Typography>
         <RadioGroup
           value={declarationOption}
           onChange={(e) => setDeclarationOption(e.target.value)}
           row
         >
-          <FormControlLabel value="template" control={<Radio />} label="Use Template" />
-          <FormControlLabel value="custom" control={<Radio />} label="Custom Declaration" />
+          <FormControlLabel
+            value="template"
+            control={<Radio />}
+            label="Pick a ready-made template"
+          />
+          <FormControlLabel
+            value="custom"
+            control={<Radio />}
+            label="Write my own"
+          />
         </RadioGroup>
       </Box>
+
       {declarationOption === "template" && (
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
@@ -319,9 +386,14 @@ const DeclarationConfiguration = ({
                   sx={{
                     p: 2,
                     cursor: "pointer",
-                    border: selectedTemplate?.id === template.id ? "2px solid" : "1px solid",
+                    border:
+                      selectedTemplate?.id === template.id
+                        ? "2px solid"
+                        : "1px solid",
                     borderColor:
-                      selectedTemplate?.id === template.id ? "primary.main" : "divider",
+                      selectedTemplate?.id === template.id
+                        ? "primary.main"
+                        : "divider",
                     bgcolor:
                       selectedTemplate?.id === template.id
                         ? "primary.light"
@@ -333,10 +405,16 @@ const DeclarationConfiguration = ({
                   }}
                   onClick={() => handleTemplateSelect(template)}
                 >
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                  <Typography
+                    variant="subtitle2"
+                    sx={{ fontWeight: 600, mb: 1 }}
+                  >
                     {template.name}
                   </Typography>
-                  <Typography variant="body2" sx={{ fontStyle: "italic", color: "text.secondary" }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ fontStyle: "italic", color: "text.secondary" }}
+                  >
                     {template.template}
                   </Typography>
                 </Paper>
@@ -345,9 +423,10 @@ const DeclarationConfiguration = ({
           </Grid>
         </Box>
       )}
+
       <Box sx={{ mb: 3 }}>
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-          Add Form Fields to Declaration
+          Insert the citizen's own answers (optional)
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
           <SearchIcon sx={{ mr: 1, color: "action.active" }} />
@@ -404,16 +483,20 @@ const DeclarationConfiguration = ({
               </Paper>
             )}
             <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" sx={{ display: "block", mb: 1, fontWeight: 600 }}>
+              <Typography
+                variant="caption"
+                sx={{ display: "block", mb: 1, fontWeight: 600 }}
+              >
                 Quick Add Common Fields:
               </Typography>
               <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
                 {availableFields
                   .filter((f) =>
-                    ["name", "address", "email", "phone", "dob"].some((term) =>
-                      f.name.toLowerCase().includes(term) ||
-                      f.label.toLowerCase().includes(term)
-                    )
+                    ["name", "address", "email", "phone", "dob"].some(
+                      (term) =>
+                        f.name.toLowerCase().includes(term) ||
+                        f.label.toLowerCase().includes(term),
+                    ),
                   )
                   .slice(0, 8)
                   .map((field) => (
@@ -439,6 +522,7 @@ const DeclarationConfiguration = ({
           </Paper>
         )}
       </Box>
+
       {declarationFields.length > 0 && (
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
@@ -461,9 +545,12 @@ const DeclarationConfiguration = ({
           </Paper>
         </Box>
       )}
+
       <Box sx={{ mb: 3 }}>
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-          {declarationOption === "template" ? "Selected Declaration" : "Custom Declaration"}
+          {declarationOption === "template"
+            ? "Selected Declaration"
+            : "Custom Declaration"}
         </Typography>
         <TextField
           fullWidth
@@ -475,13 +562,17 @@ const DeclarationConfiguration = ({
           sx={{ mb: 1 }}
         />
         <Typography variant="caption" color="text.secondary">
-          Tip: Use {`{fieldName}`} placeholders for selected fields. Click on field chips above
-          to insert.
+          Tip: Use {`{fieldName}`} placeholders for selected fields. Click on
+          field chips above to insert.
         </Typography>
       </Box>
+
       {declarationFields.length > 0 && (
         <Box sx={{ mb: 3 }}>
-          <Typography variant="caption" sx={{ display: "block", mb: 1, fontWeight: 600 }}>
+          <Typography
+            variant="caption"
+            sx={{ display: "block", mb: 1, fontWeight: 600 }}
+          >
             Quick Insert Placeholders:
           </Typography>
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
@@ -497,6 +588,7 @@ const DeclarationConfiguration = ({
           </Box>
         </Box>
       )}
+
       <Box sx={{ mt: 3, p: 2, bgcolor: "grey.100", borderRadius: 2 }}>
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
           Preview:
@@ -506,13 +598,18 @@ const DeclarationConfiguration = ({
             {declarationFields.reduce((text, field) => {
               return text.replace(
                 new RegExp(`\\{${field.name}\\}`, "g"),
-                `<strong>[${field.label}]</strong>`
+                `[${field.label}]`,
               );
             }, declarationText)}
           </Typography>
         </Paper>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-          {`{fieldName}`} placeholders will be replaced with actual input fields at runtime
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ mt: 1, display: "block" }}
+        >
+          {`{fieldName}`} placeholders will be replaced with actual input fields
+          at runtime
         </Typography>
       </Box>
     </Box>
@@ -529,8 +626,9 @@ const FieldEditModal = ({
   serviceId,
   availableFormFields = [],
 }) => {
-  const [dependentOn, setDependentOn] = useState(selectedField?.dependentOn || "");
-
+  const [dependentOn, setDependentOn] = useState(
+    selectedField?.dependentOn || "",
+  );
   const [formData, setFormData] = useState({
     id: selectedField?.id || `field-${Date.now()}`,
     type: selectedField?.type || "text",
@@ -543,7 +641,9 @@ const FieldEditModal = ({
     validationFunctions: Array.isArray(selectedField?.validationFunctions)
       ? selectedField.validationFunctions
       : [],
-    transformationFunctions: Array.isArray(selectedField?.transformationFunctions)
+    transformationFunctions: Array.isArray(
+      selectedField?.transformationFunctions,
+    )
       ? selectedField.transformationFunctions
       : [],
     accept: selectedField?.accept || "",
@@ -569,9 +669,16 @@ const FieldEditModal = ({
     declarationFields: Array.isArray(selectedField?.declarationFields)
       ? selectedField.declarationFields
       : [],
-    isOfficeField: selectedField?.isOfficeField !== undefined ? selectedField.isOfficeField : false,
-    officeTypeId: selectedField?.officeTypeId !== undefined ? selectedField.officeTypeId : "",
-    enableConditionalVisibility: selectedField?.enableConditionalVisibility || false,
+    isOfficeField:
+      selectedField?.isOfficeField !== undefined
+        ? selectedField.isOfficeField
+        : false,
+    officeTypeId:
+      selectedField?.officeTypeId !== undefined
+        ? selectedField.officeTypeId
+        : "",
+    enableConditionalVisibility:
+      selectedField?.enableConditionalVisibility || false,
     conditionalField: selectedField?.conditionalField || "",
     conditionalValues: selectedField?.conditionalValues || [],
     enableValueDependency: selectedField?.enableValueDependency || false,
@@ -580,54 +687,52 @@ const FieldEditModal = ({
   });
 
   const [optionInputText, setOptionInputText] = useState(
-    formData.options.map((opt) => opt.label).join(";")
+    formData.options.map((opt) => opt.label).join(";"),
   );
 
   const initialIsDependentMinLength =
     typeof selectedField?.minLength === "object" &&
     selectedField?.minLength?.dependentOn;
   const [isDependentMinLength, setIsDependentMinLength] = useState(
-    initialIsDependentMinLength
+    initialIsDependentMinLength,
   );
-  const [secondaryMinLengthDependentOn, setSecondaryMinLengthDependentOn] = useState(
-    typeof selectedField?.minLength === "object"
-      ? selectedField.minLength.secondaryDependentOn || ""
-      : ""
-  );
-
+  const [secondaryMinLengthDependentOn, setSecondaryMinLengthDependentOn] =
+    useState(
+      typeof selectedField?.minLength === "object"
+        ? selectedField.minLength.secondaryDependentOn || ""
+        : "",
+    );
   const initialIsDependentMaxLength =
     typeof selectedField?.maxLength === "object" &&
     selectedField?.maxLength?.dependentOn;
   const [isDependentMaxLength, setIsDependentMaxLength] = useState(
-    initialIsDependentMaxLength
+    initialIsDependentMaxLength,
   );
-  const [secondaryMaxLengthDependentOn, setSecondaryMaxLengthDependentOn] = useState(
-    typeof selectedField?.maxLength === "object"
-      ? selectedField.maxLength.secondaryDependentOn || ""
-      : ""
-  );
-
+  const [secondaryMaxLengthDependentOn, setSecondaryMaxLengthDependentOn] =
+    useState(
+      typeof selectedField?.maxLength === "object"
+        ? selectedField.maxLength.secondaryDependentOn || ""
+        : "",
+    );
   const [dependentOptionInputs, setDependentOptionInputs] = useState({});
   const [availableFields, setAvailableFields] = useState(availableFormFields);
   const [isFetchingFormFields, setIsFetchingFormFields] = useState(false);
-
   const [officeTypes, setOfficeTypes] = useState([]);
   const [loadingOfficeTypes, setLoadingOfficeTypes] = useState(false);
-
   const [availableTables, setAvailableTables] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
 
   const isWorkflowContext = sections.length === 0 && actionForm.length > 0;
   const selectableFields = getSelectableFields(sections, actionForm);
   const filteredSelectableFields = selectableFields.filter(
-    (field) => field.id !== selectedField?.name
+    (field) => field.id !== selectedField?.name,
   );
 
   const [enableValueDependency, setEnableValueDependency] = useState(
-    selectedField?.enableValueDependency || false
+    selectedField?.enableValueDependency || false,
   );
   const [valueDependentOn, setValueDependentOn] = useState(
-    selectedField?.valueDependentOn || ""
+    selectedField?.valueDependentOn || "",
   );
 
   useEffect(() => {
@@ -707,7 +812,10 @@ const FieldEditModal = ({
       }));
       setFormData((prev) => ({
         ...prev,
-        options: [{ value: "Please Select", label: "Please Select" }, ...districtOptions],
+        options: [
+          { value: "Please Select", label: "Please Select" },
+          ...districtOptions,
+        ],
         optionsType: "independent",
       }));
       setOptionInputText(districtOptions.map((opt) => opt.label).join(";"));
@@ -730,15 +838,17 @@ const FieldEditModal = ({
 
   const saveChanges = () => {
     if (!validateField(formData)) return;
-
     let finalFormData = {
       ...formData,
       options: formData.isConsentCheckbox ? [] : formData.options,
       optionsType: formData.isConsentCheckbox ? "" : formData.optionsType,
       dependentOn: formData.isConsentCheckbox ? "" : formData.dependentOn,
-      dependentOptions: formData.isConsentCheckbox ? {} : formData.dependentOptions,
+      dependentOptions: formData.isConsentCheckbox
+        ? {}
+        : formData.dependentOptions,
       dependentTable: enableValueDependency ? formData.dependentTable : "",
-      isCheckboxDependent: formData.type === "checkbox" ? formData.isCheckboxDependent : false,
+      isCheckboxDependent:
+        formData.type === "checkbox" ? formData.isCheckboxDependent : false,
       checkboxDependentOn:
         formData.type === "checkbox" && formData.isCheckboxDependent
           ? formData.checkboxDependentOn
@@ -750,8 +860,12 @@ const FieldEditModal = ({
       isOfficeField: formData.isOfficeField,
       officeTypeId: formData.isOfficeField ? formData.officeTypeId : undefined,
       enableConditionalVisibility: formData.enableConditionalVisibility,
-      conditionalField: formData.enableConditionalVisibility ? formData.conditionalField : "",
-      conditionalValues: formData.enableConditionalVisibility ? formData.conditionalValues : [],
+      conditionalField: formData.enableConditionalVisibility
+        ? formData.conditionalField
+        : "",
+      conditionalValues: formData.enableConditionalVisibility
+        ? formData.conditionalValues
+        : [],
       enableValueDependency: enableValueDependency,
       valueDependentOn: enableValueDependency ? valueDependentOn : "",
     };
@@ -771,9 +885,9 @@ const FieldEditModal = ({
       delete finalFormData.isDeclaration;
     }
 
-    if (finalFormData.declarationFields?.length === 0) delete finalFormData.declarationFields;
+    if (finalFormData.declarationFields?.length === 0)
+      delete finalFormData.declarationFields;
     if (!finalFormData.declaration?.trim()) delete finalFormData.declaration;
-
     finalFormData = cleanDeclarationData(finalFormData);
     updateField(finalFormData);
     onClose();
@@ -784,16 +898,15 @@ const FieldEditModal = ({
     setLengthObject,
     primaryFieldId,
     secondaryFieldId,
-    label = "Value"
+    label = "Value",
   ) => {
     const primaryField = selectableFields.find((f) => f.id === primaryFieldId);
-    const secondaryField = selectableFields.find((f) => f.id === secondaryFieldId);
-
+    const secondaryField = selectableFields.find(
+      (f) => f.id === secondaryFieldId,
+    );
     if (!primaryField || !secondaryField) return null;
-
     const primaryOptions = primaryField.options || [];
     const secondaryOptions = secondaryField.options || [];
-
     if (primaryOptions.length === 0) {
       return (
         <Alert severity="warning" sx={{ mt: 2 }}>
@@ -801,7 +914,6 @@ const FieldEditModal = ({
         </Alert>
       );
     }
-
     const getPrimaryConfig = (primaryValue) => {
       const config = lengthObject?.primaryConfig?.[primaryValue] || {};
       return {
@@ -810,21 +922,27 @@ const FieldEditModal = ({
         secondaryValues: config.secondaryValues || {},
       };
     };
-
     return (
       <Box sx={{ mt: 2 }}>
         <Typography variant="subtitle2" gutterBottom>
-          Configure {label.toLowerCase()} for each option:
+          Set the {label.toLowerCase()} for each answer of "{primaryField.label}
+          ":
         </Typography>
         {primaryOptions.map((primOpt) => {
           const config = getPrimaryConfig(primOpt.value);
           const useSecondary = config.useSecondary;
-
           return (
             <Paper key={primOpt.value} sx={{ p: 2, mb: 2, bgcolor: "grey.50" }}>
-              <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  mb: 1,
+                  flexWrap: "wrap",
+                }}
+              >
                 <Typography variant="subtitle2" sx={{ fontWeight: 600, mr: 2 }}>
-                  {primOpt.label}
+                  If citizen chooses "{primOpt.label}"
                 </Typography>
                 {secondaryOptions.length > 0 && (
                   <FormControlLabel
@@ -846,17 +964,16 @@ const FieldEditModal = ({
                         }}
                       />
                     }
-                    label={`Use secondary field (${secondaryField.label})`}
+                    label={`Also depends on "${secondaryField.label}"`}
                   />
                 )}
               </Box>
-
               {!useSecondary ? (
                 <TextField
                   fullWidth
                   size="small"
                   type="number"
-                  label={`${label} for ${primOpt.label}`}
+                  label={`${label} when "${primOpt.label}"`}
                   value={config.singleValue}
                   onChange={(e) => {
                     const newVal = parseInt(e.target.value, 10) || 0;
@@ -881,7 +998,7 @@ const FieldEditModal = ({
                         fullWidth
                         size="small"
                         type="number"
-                        label={`For ${secOpt.label}`}
+                        label={`When "${secOpt.label}"`}
                         value={config.secondaryValues?.[secOpt.value] || ""}
                         onChange={(e) => {
                           const newVal = parseInt(e.target.value, 10) || 0;
@@ -892,7 +1009,8 @@ const FieldEditModal = ({
                               [primOpt.value]: {
                                 ...prev.primaryConfig?.[primOpt.value],
                                 secondaryValues: {
-                                  ...prev.primaryConfig?.[primOpt.value]?.secondaryValues,
+                                  ...prev.primaryConfig?.[primOpt.value]
+                                    ?.secondaryValues,
                                   [secOpt.value]: newVal,
                                 },
                               },
@@ -919,37 +1037,69 @@ const FieldEditModal = ({
       aria-labelledby="form-dialog-title"
       PaperProps={{ style: { width: "90%", maxWidth: 900 } }}
     >
-      <DialogTitle id="form-dialog-title">Edit Field Properties</DialogTitle>
-      <DialogContent>
-        {/* Basic Information */}
-        <Typography variant="h6" sx={{ mt: 1, mb: 1 }}>
-          Basic Information
+      {/* ===== Friendly title with type badge & save-model explanation ===== */}
+      <DialogTitle id="form-dialog-title">
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+          <Typography variant="h6" sx={{ fontWeight: 800, color: "#0F172A" }}>
+            Edit field
+          </Typography>
+          <TypeBadge type={formData.type} />
+        </Box>
+        <Typography variant="body2" sx={{ color: "#64748B", fontWeight: 400 }}>
+          Changes apply to the form canvas when you press <b>"Apply to Form"</b>
+          . Nothing is published until you press <b>"Save Service"</b> on the
+          builder page.
         </Typography>
+      </DialogTitle>
+
+      <DialogContent>
+        {/* ===== LIVE CITIZEN PREVIEW ===== */}
+        <Box sx={{ mb: 3, mt: 1 }}>
+          <FieldPreview field={formData} />
+        </Box>
+
+        {/* ===== What the field asks ===== */}
+        <SectionTitle
+          first
+          helpTitle="field basics"
+          helpText="The label is what the citizen reads. The name is the internal code used by the system — avoid spaces."
+          example="Label: 'Applicant Name' • Name: 'ApplicantName'"
+        >
+          What the field asks
+        </SectionTitle>
         <TextField
           fullWidth
-          label="Field Label"
+          label="field label (shown to citizen)"
           value={formData.label}
-          onChange={(e) => setFormData((prev) => ({ ...prev, label: e.target.value }))}
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, label: e.target.value }))
+          }
           margin="dense"
         />
         <TextField
           fullWidth
-          label="Field Name"
+          label="Internal name (for system use)"
           value={formData.name}
-          onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+          onChange={(e) =>
+            setFormData((prev) => ({ ...prev, name: e.target.value }))
+          }
           margin="dense"
+          helperText="No spaces. Example: ApplicantName"
         />
 
-        {/* Field Type & Span */}
-        <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-          Field Type
-        </Typography>
+        {/* ===== Type of answer ===== */}
+        <SectionTitle
+          helpTitle="Type of answer"
+          helpText="Choose how the citizen answers: typing text, picking from a dropdown, uploading a file, etc."
+        >
+          Type of answer
+        </SectionTitle>
         <FormControl fullWidth margin="dense">
-          <InputLabel id="field-type-label">Field Type</InputLabel>
+          <InputLabel id="field-type-label">Type of answer</InputLabel>
           <Select
             labelId="field-type-label"
             value={formData.type}
-            label="Field Type"
+            label="Type of answer"
             onChange={(e) => {
               const newType = e.target.value;
               setFormData((prev) => ({
@@ -960,22 +1110,31 @@ const FieldEditModal = ({
                     ? [{ value: "Please Select", label: "Please Select" }]
                     : [],
                 optionsType: newType === "select" ? "independent" : "",
-                isConsentCheckbox: newType === "checkbox" ? prev.isConsentCheckbox : false,
+                isConsentCheckbox:
+                  newType === "checkbox" ? prev.isConsentCheckbox : false,
                 declaration:
-                  newType === "checkbox" && prev.isConsentCheckbox ? prev.declaration : "",
+                  newType === "checkbox" && prev.isConsentCheckbox
+                    ? prev.declaration
+                    : "",
                 isDeclaration:
-                  newType === "checkbox" && prev.isConsentCheckbox ? prev.isDeclaration : false,
+                  newType === "checkbox" && prev.isConsentCheckbox
+                    ? prev.isDeclaration
+                    : false,
                 declarationFields:
                   newType === "checkbox" && prev.isConsentCheckbox
                     ? prev.declarationFields
                     : [],
                 accept:
-                  newType === "file" || (newType === "select" && prev.isDependentEnclosure)
+                  newType === "file" ||
+                  (newType === "select" && prev.isDependentEnclosure)
                     ? prev.accept
                     : "",
-                isCheckboxDependent: newType === "checkbox" ? prev.isCheckboxDependent : false,
-                checkboxDependentOn: newType === "checkbox" ? prev.checkboxDependentOn : "",
-                checkboxDependentValue: newType === "checkbox" ? prev.checkboxDependentValue : "",
+                isCheckboxDependent:
+                  newType === "checkbox" ? prev.isCheckboxDependent : false,
+                checkboxDependentOn:
+                  newType === "checkbox" ? prev.checkboxDependentOn : "",
+                checkboxDependentValue:
+                  newType === "checkbox" ? prev.checkboxDependentValue : "",
                 isOfficeField: prev.isOfficeField,
                 officeTypeId: prev.officeTypeId,
                 enableValueDependency: false,
@@ -986,31 +1145,57 @@ const FieldEditModal = ({
               setValueDependentOn("");
             }}
           >
-            <MenuItem value="text">Text</MenuItem>
-            <MenuItem value="email">Email</MenuItem>
-            <MenuItem value="select">Select</MenuItem>
-            <MenuItem value="checkbox">Checkbox</MenuItem>
-            <MenuItem value="file">File</MenuItem>
-            <MenuItem value="date">Date</MenuItem>
-            <MenuItem value="enclosure">Enclosure</MenuItem>
+            <MenuItem value="text">Typed text</MenuItem>
+            <MenuItem value="email">Email address</MenuItem>
+            <MenuItem value="select">Dropdown choice</MenuItem>
+            <MenuItem value="checkbox">Tick box</MenuItem>
+            <MenuItem value="file">File upload</MenuItem>
+            <MenuItem value="date">Date picker</MenuItem>
+            <MenuItem value="enclosure">Attachment group</MenuItem>
           </Select>
         </FormControl>
-        <TextField
-          fullWidth
-          label="Span (Grid)"
-          type="number"
-          value={formData.span}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, span: parseInt(e.target.value, 10) || 12 }))
-          }
-          margin="dense"
-        />
 
-        {/* Office Field Configuration */}
+        {/* ===== Width on the form (replaces Span number) ===== */}
+        <FormControl fullWidth margin="dense">
+          <InputLabel id="span-label">Width on the form</InputLabel>
+          <Select
+            labelId="span-label"
+            value={formData.span}
+            label="Width on the form"
+            onChange={(e) =>
+              setFormData((prev) => ({
+                ...prev,
+                span: parseInt(e.target.value, 10) || 12,
+              }))
+            }
+          >
+            {WIDTH_OPTIONS.map((w) => (
+              <MenuItem key={w.value} value={w.value}>
+                {w.label}
+              </MenuItem>
+            ))}
+            {!WIDTH_OPTIONS.some((w) => w.value === formData.span) && (
+              <MenuItem value={formData.span}>
+                Custom ({formData.span})
+              </MenuItem>
+            )}
+          </Select>
+          <FormHelperText>
+            How much horizontal space this field takes on the citizen's form.
+          </FormHelperText>
+        </FormControl>
+
+        {/* ===== Office lookup settings ===== */}
         <Box sx={{ mt: 2, p: 2, bgcolor: "grey.50", borderRadius: 1 }}>
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Office Field Configuration
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1rem" }}>
+              Office lookup settings
+            </Typography>
+            <HelpTip
+              title="Office field"
+              text="Turn this on when the answer must be an office from the department's office list, instead of free text."
+            />
+          </Box>
           <FormControlLabel
             control={
               <Checkbox
@@ -1025,29 +1210,34 @@ const FieldEditModal = ({
                 }}
               />
             }
-            label="This field is for an Office"
+            label="This field asks for an Office"
           />
           {formData.isOfficeField && (
             <FormControl fullWidth margin="dense">
-              <InputLabel id="office-type-label">Office Type</InputLabel>
+              <InputLabel id="office-type-label">Which office list?</InputLabel>
               <Select
                 labelId="office-type-label"
                 value={formData.officeTypeId}
-                label="Office Type"
+                label="Which office list?"
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, officeTypeId: e.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    officeTypeId: e.target.value,
+                  }))
                 }
                 disabled={loadingOfficeTypes}
               >
                 <MenuItem value="">
-                  <em>Select Office Type</em>
+                  <em>Select office list</em>
                 </MenuItem>
                 {loadingOfficeTypes ? (
                   <MenuItem disabled>Loading...</MenuItem>
                 ) : (
                   officeTypes.map((office) => (
                     <MenuItem key={office.officeid} value={office.officeid}>
-                      {office.officename || office.officenameshort || `Office ${office.officeid}`}
+                      {office.officename ||
+                        office.officenameshort ||
+                        `Office ${office.officeid}`}
                     </MenuItem>
                   ))
                 )}
@@ -1056,13 +1246,21 @@ const FieldEditModal = ({
           )}
         </Box>
 
-        {/* Length Constraints */}
+        {/* ===== Answer length rules ===== */}
         <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderRadius: 1, p: 2 }}>
-          <Typography variant="h6">Length Constraints</Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1rem" }}>
+              Answer length rules
+            </Typography>
+            <HelpTip
+              title="Length rules"
+              text="The minimum and maximum number of characters the citizen's answer may have. Advanced: the limits can change based on another field's answer."
+            />
+          </Box>
 
           <Box sx={{ mt: 1 }}>
             <Typography variant="body2" fontWeight="bold">
-              Minimum Length
+              Minimum characters
             </Typography>
             {!isWorkflowContext && (
               <FormControlLabel
@@ -1084,20 +1282,20 @@ const FieldEditModal = ({
                     }}
                   />
                 }
-                label="Use Dependent Rules"
+                label="Change the limit based on another field (advanced)"
               />
             )}
             {isDependentMinLength && !isWorkflowContext ? (
               <Box sx={{ mt: 1 }}>
                 <FormControl fullWidth margin="dense">
-                  <InputLabel>Primary Dependent Field</InputLabel>
+                  <InputLabel>Depending on field</InputLabel>
                   <Select
                     value={
                       typeof formData.minLength === "object"
                         ? formData.minLength.dependentOn || ""
                         : ""
                     }
-                    label="Primary Dependent Field"
+                    label="Depending on field"
                     onChange={(e) => {
                       const newPrimary = e.target.value;
                       setFormData((prev) => ({
@@ -1124,10 +1322,10 @@ const FieldEditModal = ({
                   formData.minLength.dependentOn && (
                     <>
                       <FormControl fullWidth margin="dense">
-                        <InputLabel>Secondary Dependent Field (Optional)</InputLabel>
+                        <InputLabel>Second field (optional)</InputLabel>
                         <Select
                           value={secondaryMinLengthDependentOn}
-                          label="Secondary Dependent Field (Optional)"
+                          label="Second field (optional)"
                           onChange={(e) => {
                             const newSecondary = e.target.value;
                             setSecondaryMinLengthDependentOn(newSecondary);
@@ -1144,7 +1342,9 @@ const FieldEditModal = ({
                             <em>None</em>
                           </MenuItem>
                           {filteredSelectableFields
-                            .filter((f) => f.id !== formData.minLength.dependentOn)
+                            .filter(
+                              (f) => f.id !== formData.minLength.dependentOn,
+                            )
                             .map((field) => (
                               <MenuItem key={field.id} value={field.id}>
                                 {field.label} ({field.type})
@@ -1155,19 +1355,22 @@ const FieldEditModal = ({
                       {!secondaryMinLengthDependentOn ? (
                         <>
                           {(() => {
-                            const primaryField = selectableFields.find(
-                              (f) => f.id === formData.minLength.dependentOn
+                            const primarySource = selectableFields.find(
+                              (f) => f.id === formData.minLength.dependentOn,
                             );
-                            if (primaryField?.options?.length > 0) {
-                              return primaryField.options.map((option) => (
+                            if (primarySource?.options?.length > 0) {
+                              return primarySource.options.map((option) => (
                                 <TextField
                                   key={option.value}
                                   fullWidth
-                                  label={`Minimum Length for ${option.label}`}
+                                  label={`Minimum characters when "${option.label}"`}
                                   type="number"
-                                  value={formData.minLength?.[option.value] || ""}
+                                  value={
+                                    formData.minLength?.[option.value] || ""
+                                  }
                                   onChange={(e) => {
-                                    const newValue = parseInt(e.target.value, 10) || 0;
+                                    const newValue =
+                                      parseInt(e.target.value, 10) || 0;
                                     setFormData((prev) => ({
                                       ...prev,
                                       minLength: {
@@ -1213,7 +1416,7 @@ const FieldEditModal = ({
                             })),
                           formData.minLength.dependentOn,
                           secondaryMinLengthDependentOn,
-                          "Minimum Length"
+                          "Minimum characters",
                         )
                       )}
                     </>
@@ -1222,9 +1425,13 @@ const FieldEditModal = ({
             ) : (
               <TextField
                 fullWidth
-                label="Minimum Length"
+                label="Minimum characters"
                 type="number"
-                value={typeof formData.minLength === "number" ? formData.minLength : 5}
+                value={
+                  typeof formData.minLength === "number"
+                    ? formData.minLength
+                    : 5
+                }
                 onChange={(e) =>
                   setFormData((prev) => ({
                     ...prev,
@@ -1238,7 +1445,7 @@ const FieldEditModal = ({
 
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" fontWeight="bold">
-              Maximum Length
+              Maximum characters
             </Typography>
             {!isWorkflowContext && (
               <FormControlLabel
@@ -1260,20 +1467,20 @@ const FieldEditModal = ({
                     }}
                   />
                 }
-                label="Use Dependent Rules"
+                label="Change the limit based on another field (advanced)"
               />
             )}
             {isDependentMaxLength && !isWorkflowContext ? (
               <Box sx={{ mt: 1 }}>
                 <FormControl fullWidth margin="dense">
-                  <InputLabel>Primary Dependent Field</InputLabel>
+                  <InputLabel>Depending on field</InputLabel>
                   <Select
                     value={
                       typeof formData.maxLength === "object"
                         ? formData.maxLength.dependentOn || ""
                         : ""
                     }
-                    label="Primary Dependent Field"
+                    label="Depending on field"
                     onChange={(e) => {
                       const newPrimary = e.target.value;
                       setFormData((prev) => ({
@@ -1300,10 +1507,10 @@ const FieldEditModal = ({
                   formData.maxLength.dependentOn && (
                     <>
                       <FormControl fullWidth margin="dense">
-                        <InputLabel>Secondary Dependent Field (Optional)</InputLabel>
+                        <InputLabel>Second field (optional)</InputLabel>
                         <Select
                           value={secondaryMaxLengthDependentOn}
-                          label="Secondary Dependent Field (Optional)"
+                          label="Second field (optional)"
                           onChange={(e) => {
                             const newSecondary = e.target.value;
                             setSecondaryMaxLengthDependentOn(newSecondary);
@@ -1320,7 +1527,9 @@ const FieldEditModal = ({
                             <em>None</em>
                           </MenuItem>
                           {filteredSelectableFields
-                            .filter((f) => f.id !== formData.maxLength.dependentOn)
+                            .filter(
+                              (f) => f.id !== formData.maxLength.dependentOn,
+                            )
                             .map((field) => (
                               <MenuItem key={field.id} value={field.id}>
                                 {field.label} ({field.type})
@@ -1331,19 +1540,22 @@ const FieldEditModal = ({
                       {!secondaryMaxLengthDependentOn ? (
                         <>
                           {(() => {
-                            const primaryField = selectableFields.find(
-                              (f) => f.id === formData.maxLength.dependentOn
+                            const primarySource = selectableFields.find(
+                              (f) => f.id === formData.maxLength.dependentOn,
                             );
-                            if (primaryField?.options?.length > 0) {
-                              return primaryField.options.map((option) => (
+                            if (primarySource?.options?.length > 0) {
+                              return primarySource.options.map((option) => (
                                 <TextField
                                   key={option.value}
                                   fullWidth
-                                  label={`Maximum Length for ${option.label}`}
+                                  label={`Maximum characters when "${option.label}"`}
                                   type="number"
-                                  value={formData.maxLength?.[option.value] || ""}
+                                  value={
+                                    formData.maxLength?.[option.value] || ""
+                                  }
                                   onChange={(e) => {
-                                    const newValue = parseInt(e.target.value, 10) || 0;
+                                    const newValue =
+                                      parseInt(e.target.value, 10) || 0;
                                     setFormData((prev) => ({
                                       ...prev,
                                       maxLength: {
@@ -1389,7 +1601,7 @@ const FieldEditModal = ({
                             })),
                           formData.maxLength.dependentOn,
                           secondaryMaxLengthDependentOn,
-                          "Maximum Length"
+                          "Maximum characters",
                         )
                       )}
                     </>
@@ -1398,9 +1610,13 @@ const FieldEditModal = ({
             ) : (
               <TextField
                 fullWidth
-                label="Maximum Length"
+                label="Maximum characters"
                 type="number"
-                value={typeof formData.maxLength === "number" ? formData.maxLength : 50}
+                value={
+                  typeof formData.maxLength === "number"
+                    ? formData.maxLength
+                    : 50
+                }
                 onChange={(e) =>
                   setFormData((prev) => ({
                     ...prev,
@@ -1413,9 +1629,18 @@ const FieldEditModal = ({
           </Box>
         </Box>
 
-        {/* Field Dependency (Conditional Visibility) */}
+        {/* ===== Show / hide based on another answer ===== */}
         <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderRadius: 1, p: 2 }}>
-          <Typography variant="h6">Field Dependency (Conditional Visibility)</Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1rem" }}>
+              Show / hide based on another answer
+            </Typography>
+            <HelpTip
+              title="Conditional visibility"
+              text="Only show this field when the citizen has chosen specific answers in another field."
+              example="Show 'Caste Certificate No.' only when 'Caste' = 'OBC'."
+            />
+          </Box>
           <FormControlLabel
             control={
               <Checkbox
@@ -1424,22 +1649,25 @@ const FieldEditModal = ({
                   setFormData((prev) => ({
                     ...prev,
                     enableConditionalVisibility: e.target.checked,
-                    conditionalField: e.target.checked ? prev.conditionalField : "",
-                    conditionalValues: e.target.checked ? prev.conditionalValues : [],
+                    conditionalField: e.target.checked
+                      ? prev.conditionalField
+                      : "",
+                    conditionalValues: e.target.checked
+                      ? prev.conditionalValues
+                      : [],
                   }))
                 }
               />
             }
-            label="This field depends on another field"
+            label="Only show this field in certain cases"
           />
-
           {formData.enableConditionalVisibility && (
             <>
               <FormControl fullWidth margin="dense">
-                <InputLabel>Depending on Field</InputLabel>
+                <InputLabel>Watch which field?</InputLabel>
                 <Select
                   value={formData.conditionalField}
-                  label="Depending on Field"
+                  label="Watch which field?"
                   onChange={(e) => {
                     const newField = e.target.value;
                     setFormData((prev) => ({
@@ -1461,14 +1689,13 @@ const FieldEditModal = ({
                     ))}
                 </Select>
               </FormControl>
-
               {formData.conditionalField && (
                 <FormControl fullWidth margin="dense">
-                  <InputLabel>Show when field value is one of</InputLabel>
+                  <InputLabel>Show when the answer is one of</InputLabel>
                   <Select
                     multiple
                     value={formData.conditionalValues || []}
-                    label="Show when field value is one of"
+                    label="Show when the answer is one of"
                     onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
@@ -1478,27 +1705,29 @@ const FieldEditModal = ({
                     renderValue={(selected) =>
                       selected
                         .map((val) => {
-                          const depField = selectableFields.find(
-                            (f) => f.id === formData.conditionalField
+                          const watchField = selectableFields.find(
+                            (f) => f.id === formData.conditionalField,
                           );
-                          const option = depField?.options.find((opt) => opt.value === val);
+                          const option = watchField?.options.find(
+                            (opt) => opt.value === val,
+                          );
                           return option ? option.label : val;
                         })
                         .join(", ")
                     }
                   >
                     {(() => {
-                      const depField = selectableFields.find(
-                        (f) => f.id === formData.conditionalField
+                      const watchField = selectableFields.find(
+                        (f) => f.id === formData.conditionalField,
                       );
-                      if (!depField?.options?.length) {
+                      if (!watchField?.options?.length) {
                         return (
                           <MenuItem disabled>
                             <em>No options available</em>
                           </MenuItem>
                         );
                       }
-                      return depField.options.map((opt) => (
+                      return watchField.options.map((opt) => (
                         <MenuItem key={opt.value} value={opt.value}>
                           {opt.label}
                         </MenuItem>
@@ -1506,7 +1735,7 @@ const FieldEditModal = ({
                     })()}
                   </Select>
                   <Typography variant="caption" sx={{ mt: 1 }}>
-                    If no values are selected, the field will always be shown.
+                    If no answers are selected, the field will always be shown.
                   </Typography>
                 </FormControl>
               )}
@@ -1514,9 +1743,17 @@ const FieldEditModal = ({
           )}
         </Box>
 
-        {/* Value Dependency (with Table Dropdown) */}
+        {/* ===== Copy answer from another field ===== */}
         <Box sx={{ mt: 2, border: "1px solid #e0e0e0", borderRadius: 1, p: 2 }}>
-          <Typography variant="h6">Value Dependency</Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: "1rem" }}>
+              Copy answer from another field
+            </Typography>
+            <HelpTip
+              title="Value dependency"
+              text="Automatically fills this field with the same answer the citizen gave in another field, so they don't type it twice."
+            />
+          </Box>
           <FormControlLabel
             control={
               <Checkbox
@@ -1524,7 +1761,7 @@ const FieldEditModal = ({
                 onChange={(e) => {
                   const checked = e.target.checked;
                   setEnableValueDependency(checked);
-                  setFormData(prev => ({
+                  setFormData((prev) => ({
                     ...prev,
                     enableValueDependency: checked,
                     valueDependentOn: checked ? prev.valueDependentOn : "",
@@ -1534,9 +1771,8 @@ const FieldEditModal = ({
                 }}
               />
             }
-            label="This field's value depends on another field"
+            label="Copy the answer from another field"
           />
-
           {enableValueDependency && (
             <>
               <FormControl fullWidth margin="dense">
@@ -1547,9 +1783,9 @@ const FieldEditModal = ({
                   onChange={(e) => {
                     const newSource = e.target.value;
                     setValueDependentOn(newSource);
-                    setFormData(prev => ({
+                    setFormData((prev) => ({
                       ...prev,
-                      valueDependentOn: newSource
+                      valueDependentOn: newSource,
                     }));
                   }}
                 >
@@ -1557,22 +1793,28 @@ const FieldEditModal = ({
                     <em>Select a field</em>
                   </MenuItem>
                   {filteredSelectableFields
-                    .filter(f => f.id !== selectedField?.name)
-                    .map(field => (
+                    .filter((f) => f.id !== selectedField?.name)
+                    .map((field) => (
                       <MenuItem key={field.id} value={field.id}>
                         {field.label} ({field.type})
                       </MenuItem>
                     ))}
                 </Select>
               </FormControl>
-
               <FormControl fullWidth margin="dense">
-                <InputLabel id="value-dep-table-label">Source Table (for options)</InputLabel>
+                <InputLabel id="value-dep-table-label">
+                  Source table (for options)
+                </InputLabel>
                 <Select
                   labelId="value-dep-table-label"
                   value={formData.dependentTable || ""}
-                  label="Source Table (for options)"
-                  onChange={(e) => setFormData(prev => ({ ...prev, dependentTable: e.target.value }))}
+                  label="Source table (for options)"
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      dependentTable: e.target.value,
+                    }))
+                  }
                   disabled={loadingTables}
                 >
                   <MenuItem value="">
@@ -1589,21 +1831,30 @@ const FieldEditModal = ({
                   )}
                 </Select>
                 <FormHelperText>
-                  Choose the database table that provides options for the source field (if needed).
+                  Choose the database table that provides options for the source
+                  field (if needed).
                 </FormHelperText>
               </FormControl>
-
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-                The value of this field will be automatically synchronised with the selected field's value.
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mt: 1, display: "block" }}
+              >
+                The value of this field will be automatically synchronised with
+                the selected field's value.
               </Typography>
             </>
           )}
         </Box>
 
-        {/* Validation Functions */}
-        <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-          Validation Functions
-        </Typography>
+        {/* ===== Checks performed on the answer ===== */}
+        <SectionTitle
+          helpTitle="Answer checks"
+          helpText="Tick the checks the system should run on the citizen's answer before accepting it."
+          example="Tick 'Valid Aadhaar' to require a 12-digit Aadhaar number."
+        >
+          Checks performed on the answer
+        </SectionTitle>
         <Grid container spacing={1}>
           {validationFunctionsList.map((func) => (
             <Grid item xs={6} sm={4} key={func.id}>
@@ -1615,7 +1866,10 @@ const FieldEditModal = ({
                       let updated = [...formData.validationFunctions];
                       if (e.target.checked) updated.push(func.id);
                       else updated = updated.filter((id) => id !== func.id);
-                      setFormData((prev) => ({ ...prev, validationFunctions: updated }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        validationFunctions: updated,
+                      }));
                     }}
                   />
                 }
@@ -1625,40 +1879,49 @@ const FieldEditModal = ({
           ))}
         </Grid>
 
-
-        {/* NEW: Configuration for "Date > Reference Date" validation */}
+        {/* Date > reference configuration */}
         {formData.validationFunctions.includes("isDateGreaterThan") && (
           <Box sx={{ mt: 2, p: 2, bgcolor: "#F3F4F6", borderRadius: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>
+            <Typography
+              variant="subtitle2"
+              gutterBottom
+              sx={{ fontWeight: 700 }}
+            >
+              The entered date must be after…
             </Typography>
             <FormControl fullWidth margin="dense">
-              <InputLabel>Reference Type</InputLabel>
+              <InputLabel>Compare against</InputLabel>
               <Select
                 value={formData.dateGreaterThanConfig?.type || "field"}
-                label="Reference Type"
+                label="Compare against"
                 onChange={(e) => {
                   const newType = e.target.value;
                   setFormData((prev) => ({
                     ...prev,
                     dateGreaterThanConfig: {
                       type: newType,
-                      fieldName: newType === "field" ? (prev.dateGreaterThanConfig?.fieldName || "") : undefined,
-                      staticDate: newType === "static" ? (prev.dateGreaterThanConfig?.staticDate || "") : undefined,
+                      fieldName:
+                        newType === "field"
+                          ? prev.dateGreaterThanConfig?.fieldName || ""
+                          : undefined,
+                      staticDate:
+                        newType === "static"
+                          ? prev.dateGreaterThanConfig?.staticDate || ""
+                          : undefined,
                     },
                   }));
                 }}
               >
-                <MenuItem value="field">From another field</MenuItem>
-                <MenuItem value="static">Static date</MenuItem>
+                <MenuItem value="field">Another date field</MenuItem>
+                <MenuItem value="static">A fixed date</MenuItem>
               </Select>
             </FormControl>
-
             {formData.dateGreaterThanConfig?.type === "field" && (
               <FormControl fullWidth margin="dense">
-                <InputLabel>Reference Date Field</InputLabel>
+                <InputLabel>Which date field?</InputLabel>
                 <Select
                   value={formData.dateGreaterThanConfig?.fieldName || ""}
-                  label="Reference Date Field"
+                  label="Which date field?"
                   onChange={(e) => {
                     const fieldName = e.target.value;
                     setFormData((prev) => ({
@@ -1672,21 +1935,22 @@ const FieldEditModal = ({
                 >
                   <MenuItem value="">Select a date field</MenuItem>
                   {filteredSelectableFields
-                    .filter(f => f.type === "date")
-                    .map(f => (
+                    .filter((f) => f.type === "date")
+                    .map((f) => (
                       <MenuItem key={f.id} value={f.id}>
                         {f.label} ({f.id})
                       </MenuItem>
                     ))}
                 </Select>
-                <FormHelperText>Choose the field whose date will be used as the lower bound.</FormHelperText>
+                <FormHelperText>
+                  Choose the field whose date will be used as the lower bound.
+                </FormHelperText>
               </FormControl>
             )}
-
             {formData.dateGreaterThanConfig?.type === "static" && (
               <TextField
                 fullWidth
-                label="Static Reference Date (DD/MM/YYYY)"
+                label="Fixed date (DD/MM/YYYY)"
                 value={formData.dateGreaterThanConfig?.staticDate || ""}
                 onChange={(e) => {
                   const dateStr = e.target.value;
@@ -1706,10 +1970,13 @@ const FieldEditModal = ({
           </Box>
         )}
 
-        {/* Transformation Functions */}
-        <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-          Transformation Functions
-        </Typography>
+        {/* ===== Automatic clean-up of the answer ===== */}
+        <SectionTitle
+          helpTitle="Auto clean-up"
+          helpText="The system can automatically tidy the citizen's answer, for example removing spaces or converting to uppercase."
+        >
+          Automatic clean-up of the answer
+        </SectionTitle>
         <Grid container spacing={1}>
           {transformationFunctionsList.map((func) => (
             <Grid item xs={6} sm={4} key={func.id}>
@@ -1721,7 +1988,10 @@ const FieldEditModal = ({
                       let updated = [...formData.transformationFunctions];
                       if (e.target.checked) updated.push(func.id);
                       else updated = updated.filter((id) => id !== func.id);
-                      setFormData((prev) => ({ ...prev, transformationFunctions: updated }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        transformationFunctions: updated,
+                      }));
                     }}
                   />
                 }
@@ -1731,12 +2001,15 @@ const FieldEditModal = ({
           ))}
         </Grid>
 
-        {/* Checkbox Options */}
+        {/* ===== Tick-box settings ===== */}
         {formData.type === "checkbox" && (
           <>
-            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-              Checkbox Options
-            </Typography>
+            <SectionTitle
+              helpTitle="Tick-box settings"
+              helpText="A tick box can be a simple yes/no, or a consent statement the citizen must agree to."
+            >
+              Tick-box settings
+            </SectionTitle>
             <FormControlLabel
               control={
                 <Checkbox
@@ -1761,7 +2034,7 @@ const FieldEditModal = ({
                   }}
                 />
               }
-              label="Single Consent Checkbox (True/False)"
+              label="This is a consent statement (citizen must agree)"
             />
             {formData.isConsentCheckbox && (
               <>
@@ -1772,9 +2045,18 @@ const FieldEditModal = ({
                   allAvailableFields={availableFields}
                 />
                 {isFetchingFormFields && (
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 2 }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mt: 2,
+                    }}
+                  >
                     <CircularProgress size={16} />
-                    <Typography variant="caption">Loading form fields...</Typography>
+                    <Typography variant="caption">
+                      Loading form fields...
+                    </Typography>
                   </Box>
                 )}
               </>
@@ -1789,23 +2071,29 @@ const FieldEditModal = ({
                       setFormData((prev) => ({
                         ...prev,
                         isCheckboxDependent: checked,
-                        checkboxDependentOn: checked ? prev.checkboxDependentOn : "",
-                        checkboxDependentValue: checked ? prev.checkboxDependentValue : "",
+                        checkboxDependentOn: checked
+                          ? prev.checkboxDependentOn
+                          : "",
+                        checkboxDependentValue: checked
+                          ? prev.checkboxDependentValue
+                          : "",
                       }));
                     }}
                   />
                 }
-                label="Make Checkbox Dependent on Another Field"
+                label="Only show this tick box in certain cases"
               />
             )}
             {formData.isCheckboxDependent && !isWorkflowContext && (
               <>
                 <FormControl fullWidth margin="dense">
-                  <InputLabel id="checkbox-dependent-on-label">Dependent On Field</InputLabel>
+                  <InputLabel id="checkbox-dependent-on-label">
+                    Watch which field?
+                  </InputLabel>
                   <Select
                     labelId="checkbox-dependent-on-label"
                     value={formData.checkboxDependentOn}
-                    label="Dependent On Field"
+                    label="Watch which field?"
                     onChange={(e) => {
                       const newDependentOn = e.target.value;
                       setFormData((prev) => ({
@@ -1830,12 +2118,12 @@ const FieldEditModal = ({
                 {formData.checkboxDependentOn && (
                   <FormControl fullWidth margin="dense">
                     <InputLabel id="checkbox-dependent-value-label">
-                      Show When Selected Value Is
+                      Show when the answer is
                     </InputLabel>
                     <Select
                       labelId="checkbox-dependent-value-label"
                       value={formData.checkboxDependentValue}
-                      label="Show When Selected Value Is"
+                      label="Show when the answer is"
                       onChange={(e) =>
                         setFormData((prev) => ({
                           ...prev,
@@ -1847,11 +2135,11 @@ const FieldEditModal = ({
                         <em>Select a value</em>
                       </MenuItem>
                       {(() => {
-                        const selectedField = selectableFields.find(
-                          (f) => f.id === formData.checkboxDependentOn
+                        const watchSource = selectableFields.find(
+                          (f) => f.id === formData.checkboxDependentOn,
                         );
                         return (
-                          selectedField?.options?.map((option) => (
+                          watchSource?.options?.map((option) => (
                             <MenuItem key={option.value} value={option.value}>
                               {option.label}
                             </MenuItem>
@@ -1868,50 +2156,65 @@ const FieldEditModal = ({
                 <Checkbox
                   checked={formData.required}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, required: e.target.checked }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      required: e.target.checked,
+                    }))
                   }
                 />
               }
-              label="Required Field"
+              label="Citizen must answer this (required)"
             />
             <FormControlLabel
               control={<Checkbox onChange={handleDistrictCheckboxChange} />}
-              label="Is District"
+              label="Fill options with the district list"
             />
           </>
         )}
 
-        {/* Select Options (no dependentTable here) */}
+        {/* ===== Dropdown options ===== */}
         {formData.type === "select" && (
           <>
-            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-              Select Options
-            </Typography>
+            <SectionTitle
+              helpTitle="Dropdown options"
+              helpText="The list of choices the citizen can pick. Options can be typed manually, or change based on another field's answer."
+            >
+              Dropdown options
+            </SectionTitle>
             <FormControl fullWidth margin="dense">
-              <InputLabel id="options-type-label">Options Type</InputLabel>
+              <InputLabel id="options-type-label">
+                How are the options decided?
+              </InputLabel>
               <Select
                 labelId="options-type-label"
                 value={formData.optionsType || ""}
-                label="Options Type"
+                label="How are the options decided?"
                 onChange={(e) =>
                   setFormData((prev) => ({
                     ...prev,
                     optionsType: e.target.value,
-                    dependentOn: e.target.value === "dependent" ? dependentOn : "",
-                    dependentOptions: e.target.value === "dependent" ? {} : undefined,
-                    options: e.target.value === "independent" ? [] : prev.options,
+                    dependentOn:
+                      e.target.value === "dependent" ? dependentOn : "",
+                    dependentOptions:
+                      e.target.value === "dependent" ? {} : undefined,
+                    options:
+                      e.target.value === "independent" ? [] : prev.options,
                   }))
                 }
               >
                 <MenuItem value="">Please Select</MenuItem>
-                <MenuItem value="independent">Independent</MenuItem>
-                {sections && <MenuItem value="dependent">Dependent</MenuItem>}
+                <MenuItem value="independent">Same options always</MenuItem>
+                {sections && (
+                  <MenuItem value="dependent">
+                    Options change by another field
+                  </MenuItem>
+                )}
               </Select>
             </FormControl>
             {formData.optionsType === "independent" && (
               <TextField
                 fullWidth
-                label="Options (semicolon-separated)"
+                label="Options (separate with ;)"
                 value={optionInputText}
                 onChange={(e) => setOptionInputText(e.target.value)}
                 onBlur={() => {
@@ -1923,31 +2226,37 @@ const FieldEditModal = ({
                         toast.error("Options cannot include 'withhold'.");
                         return null;
                       }
-                      return cleaned ? { value: cleaned, label: cleaned } : null;
+                      return cleaned
+                        ? { value: cleaned, label: cleaned }
+                        : null;
                     })
                     .filter((opt) => opt !== null);
                   setFormData((prev) => ({ ...prev, options: newOptions }));
                 }}
                 margin="dense"
-                placeholder="Type options separated by semicolons"
+                placeholder="Example: General;OBC;SC;ST"
                 helperText="Use semicolons (;) to separate options."
               />
             )}
             {formData.optionsType === "dependent" && !isWorkflowContext && (
               <>
                 <FormControl fullWidth margin="dense">
-                  <InputLabel id="dependent-on-label">Dependent On</InputLabel>
+                  <InputLabel id="dependent-on-label">
+                    Options change based on
+                  </InputLabel>
                   <Select
                     labelId="dependent-on-label"
                     value={dependentOn || ""}
-                    label="Dependent On"
+                    label="Options change based on"
                     onChange={(e) => {
                       const newDependentOn = e.target.value;
                       setDependentOn(newDependentOn);
                       setFormData((prev) => ({
                         ...prev,
                         dependentOn: newDependentOn,
-                        dependentOptions: newDependentOn ? {} : prev.dependentOptions,
+                        dependentOptions: newDependentOn
+                          ? {}
+                          : prev.dependentOptions,
                       }));
                     }}
                   >
@@ -1961,23 +2270,24 @@ const FieldEditModal = ({
                     ))}
                   </Select>
                 </FormControl>
-
                 {dependentOn && (
                   <>
                     {(() => {
-                      const selectedField = selectableFields.find((f) => f.id === dependentOn);
-                      if (selectedField?.options?.length > 0) {
-                        return selectedField.options.map((option) => (
+                      const depSource = selectableFields.find(
+                        (f) => f.id === dependentOn,
+                      );
+                      if (depSource?.options?.length > 0) {
+                        return depSource.options.map((option) => (
                           <TextField
                             key={option.value}
                             fullWidth
-                            label={`Options for ${option.label} (semicolon-separated)`}
+                            label={`Options when "${option.label}" (separate with ;)`}
                             value={
                               dependentOptionInputs[option.value] ??
                               (formData.dependentOptions?.[option.value]
                                 ? formData.dependentOptions[option.value]
-                                  .map((opt) => opt.label)
-                                  .join(";")
+                                    .map((opt) => opt.label)
+                                    .join(";")
                                 : "")
                             }
                             onChange={(e) => {
@@ -1990,11 +2300,17 @@ const FieldEditModal = ({
                                 .split(";")
                                 .map((optStr) => {
                                   const cleaned = optStr.trim();
-                                  if (cleaned.toLowerCase().includes("withhold")) {
-                                    toast.error("Options cannot include 'withhold'.");
+                                  if (
+                                    cleaned.toLowerCase().includes("withhold")
+                                  ) {
+                                    toast.error(
+                                      "Options cannot include 'withhold'.",
+                                    );
                                     return null;
                                   }
-                                  return cleaned ? { value: cleaned, label: cleaned } : null;
+                                  return cleaned
+                                    ? { value: cleaned, label: cleaned }
+                                    : null;
                                 })
                                 .filter(Boolean);
                               setFormData((prev) => ({
@@ -2013,13 +2329,12 @@ const FieldEditModal = ({
                       return (
                         <TextField
                           fullWidth
-                          label={`Dependent Options for ${selectedField?.label || "Selected Field"
-                            } (semicolon-separated)`}
+                          label={`Options for "${depSource?.label || "Selected field"}" (separate with ;)`}
                           value={
                             formData.dependentOptions?.["default"]
                               ? formData.dependentOptions["default"]
-                                .map((opt) => opt.label)
-                                .join(";")
+                                  .map((opt) => opt.label)
+                                  .join(";")
                               : ""
                           }
                           onChange={(e) => {
@@ -2027,16 +2342,25 @@ const FieldEditModal = ({
                               .split(";")
                               .map((optStr) => {
                                 const cleaned = optStr.trim();
-                                if (cleaned.toLowerCase().includes("withhold")) {
-                                  toast.error("Options cannot include 'withhold'.");
+                                if (
+                                  cleaned.toLowerCase().includes("withhold")
+                                ) {
+                                  toast.error(
+                                    "Options cannot include 'withhold'.",
+                                  );
                                   return null;
                                 }
-                                return cleaned ? { value: cleaned, label: cleaned } : null;
+                                return cleaned
+                                  ? { value: cleaned, label: cleaned }
+                                  : null;
                               })
                               .filter((opt) => opt !== null);
                             setFormData((prev) => ({
                               ...prev,
-                              dependentOptions: { ...prev.dependentOptions, default: newOptions },
+                              dependentOptions: {
+                                ...prev.dependentOptions,
+                                default: newOptions,
+                              },
                             }));
                           }}
                           margin="dense"
@@ -2050,28 +2374,34 @@ const FieldEditModal = ({
             )}
             <FormControlLabel
               control={<Checkbox onChange={handleDistrictCheckboxChange} />}
-              label="Is District"
+              label="Fill options with the district list"
             />
             <FormControlLabel
               control={
                 <Checkbox
                   checked={formData.required}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, required: e.target.checked }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      required: e.target.checked,
+                    }))
                   }
                 />
               }
-              label="Required Field"
+              label="Citizen must answer this (required)"
             />
           </>
         )}
 
-        {/* Enclosure */}
+        {/* ===== Attachment settings ===== */}
         {formData.type === "enclosure" && (
           <>
-            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-              Enclosure Options
-            </Typography>
+            <SectionTitle
+              helpTitle="Attachment group"
+              text="An attachment group lets the citizen upload several related documents together."
+            >
+              Attachment settings
+            </SectionTitle>
             {!isWorkflowContext && (
               <FormControlLabel
                 control={
@@ -2087,13 +2417,15 @@ const FieldEditModal = ({
                     }
                   />
                 }
-                label="Is Dependent on Another Field?"
+                label="Only ask for these documents in certain cases"
               />
             )}
             {formData.isDependentEnclosure && !isWorkflowContext && (
               <>
                 <FormControl fullWidth margin="dense">
-                  <InputLabel id="dependent-field-label">Dependent Field</InputLabel>
+                  <InputLabel id="dependent-field-label">
+                    Watch which field?
+                  </InputLabel>
                   <Select
                     labelId="dependent-field-label"
                     value={formData.dependentField || ""}
@@ -2118,13 +2450,13 @@ const FieldEditModal = ({
                 {formData.dependentField && (
                   <FormControl fullWidth margin="dense">
                     <InputLabel id="dependent-values-label">
-                      Dependent Values (Select Multiple)
+                      Ask for documents when answer is
                     </InputLabel>
                     {(() => {
-                      const selectedField = selectableFields.find(
-                        (f) => f.id === formData.dependentField
+                      const depSource = selectableFields.find(
+                        (f) => f.id === formData.dependentField,
                       );
-                      if (selectedField?.options?.length > 0) {
+                      if (depSource?.options?.length > 0) {
                         return (
                           <Select
                             labelId="dependent-values-label"
@@ -2140,13 +2472,15 @@ const FieldEditModal = ({
                               selected
                                 .map(
                                   (val) =>
-                                    selectedField.options.find((opt) => opt.value === val)?.label
+                                    depSource.options.find(
+                                      (opt) => opt.value === val,
+                                    )?.label,
                                 )
                                 .filter((label) => label)
                                 .join(";")
                             }
                           >
-                            {selectedField.options.map((option) => (
+                            {depSource.options.map((option) => (
                               <MenuItem key={option.value} value={option.value}>
                                 {option.label}
                               </MenuItem>
@@ -2157,7 +2491,7 @@ const FieldEditModal = ({
                       return (
                         <TextField
                           fullWidth
-                          label="Condition for Dependent Field"
+                          label="Condition for the watched field"
                           value={formData.dependentValues?.[0] || ""}
                           onChange={(e) =>
                             setFormData((prev) => ({
@@ -2176,7 +2510,7 @@ const FieldEditModal = ({
             )}
             <TextField
               fullWidth
-              label="Default Options (semicolon-separated)"
+              label="Document names (separate with ;)"
               value={optionInputText}
               onChange={(e) => setOptionInputText(e.target.value)}
               onBlur={() => {
@@ -2194,39 +2528,64 @@ const FieldEditModal = ({
                 setFormData((prev) => ({ ...prev, options: newOptions }));
               }}
               margin="dense"
-              placeholder="Type options separated by semicolons"
+              placeholder="Example: Aadhaar Copy;Income Certificate"
             />
             <TextField
               fullWidth
-              label="File Type Allowed"
+              label="Allowed file types"
               value={formData.accept}
-              onChange={(e) => setFormData((prev) => ({ ...prev, accept: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, accept: e.target.value }))
+              }
               margin="dense"
               placeholder="e.g., image/*, .pdf"
             />
           </>
         )}
 
-        {/* File */}
+        {/* ===== File upload ===== */}
         {formData.type === "file" && (
           <TextField
             fullWidth
-            label="File Type Allowed"
+            label="Allowed file types"
             value={formData.accept}
-            onChange={(e) => setFormData((prev) => ({ ...prev, accept: e.target.value }))}
+            onChange={(e) =>
+              setFormData((prev) => ({ ...prev, accept: e.target.value }))
+            }
             margin="dense"
             placeholder="e.g., image/*, .pdf"
+            helperText="Leave empty to allow any file type."
           />
         )}
 
+        {/* ===== Apply button + save-model hint ===== */}
         <Button
           fullWidth
           variant="contained"
           onClick={saveChanges}
-          sx={{ marginTop: 3 }}
+          sx={{
+            marginTop: 3,
+            textTransform: "none",
+            fontWeight: 700,
+            py: 1.25,
+            bgcolor: "#2562E9",
+            "&:hover": { bgcolor: "#1D4ED8" },
+          }}
         >
-          Save Changes
+          Apply to Form
         </Button>
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            textAlign: "center",
+            mt: 1,
+            color: "#64748B",
+          }}
+        >
+          This updates the form canvas. Press "Save Service" at the bottom of
+          the builder page to publish your changes.
+        </Typography>
       </DialogContent>
     </Dialog>
   );

@@ -53,19 +53,29 @@ namespace SahayataNidhi.Controllers
                 string applicationId = form["applicationId"].ToString() ?? "";
 
                 // Input validation
-                if (string.IsNullOrEmpty(bankName) || string.IsNullOrEmpty(ifscCode) || string.IsNullOrEmpty(accNo))
+                if (string.IsNullOrEmpty(bankName)
+                    || string.IsNullOrEmpty(ifscCode)
+                    || string.IsNullOrEmpty(accNo))
                 {
                     return Json(new { status = false });
                 }
 
-                // PostgreSQL function call using FromSqlInterpolated
+                // serviceId must be an integer
+                if (!int.TryParse(form["serviceId"].ToString(), out int serviceId) || serviceId <= 0)
+                {
+                    return Json(new { status = false, error = "serviceId is required." });
+                }
+
+                // PostgreSQL function call — positional arguments
+                // Signature: get_duplicate_acc_no(p_serviceid, p_account_number, p_ifsc_code, p_bank_name)
                 var applications = dbcontext.CitizenApplications
                     .FromSqlInterpolated($@"
-                        SELECT * FROM get_duplicate_acc_no(
-                            {accNo}, 
-                            {bankName}, 
-                            {ifscCode}
-                        )")
+                SELECT * FROM get_duplicate_acc_no(
+                    {serviceId},
+                    {accNo},
+                    {ifscCode},
+                    {bankName}
+                )")
                     .ToList();
 
                 if (applications.Count == 0)
@@ -75,10 +85,12 @@ namespace SahayataNidhi.Controllers
 
                 // Exclude current application from the duplicates
                 var otherApplications = applications
-                    .Where(app => string.IsNullOrWhiteSpace(applicationId) || app.Referencenumber != applicationId)
+                    .Where(app => string.IsNullOrWhiteSpace(applicationId)
+                               || app.Referencenumber != applicationId)
                     .ToList();
 
-                _logger.LogInformation($"----------- Found {otherApplications.Count} other applications for account {accNo}. -----------------");
+                _logger.LogInformation(
+                    $"----------- Found {otherApplications.Count} other applications for account {accNo}. -----------------");
 
                 // If no other applications, then not a duplicate
                 if (otherApplications.Count == 0)
@@ -87,13 +99,29 @@ namespace SahayataNidhi.Controllers
                 }
 
                 // If any of the other applications are NOT rejected, it's a duplicate
-                if (otherApplications.Any(app => app.Status != "Rejected"))
+                bool hasNonRejected = false;
+
+                foreach (var app in otherApplications)
+                {
+                    _logger.LogInformation(
+                        $"App Status [{app.Status}] for Ref {app.Referencenumber}");
+
+                    if (!string.Equals(app.Status?.Trim(), "Rejected",
+                                       StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasNonRejected = true;
+                        break;
+                    }
+                }
+
+                if (hasNonRejected)
                 {
                     return Json(new { status = true });
                 }
 
                 // All are rejected → not considered duplicate
                 return Json(new { status = false });
+
             }
             catch (Exception ex)
             {
@@ -102,6 +130,24 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+        private static string FormatBytes(long bytes)
+        {
+            string[] units = { "B", "KB", "MB", "GB", "TB" };
+            double size = bytes;
+            int unit = 0;
+
+            while (size >= 1024 && unit < units.Length - 1)
+            {
+                size /= 1024;
+                unit++;
+            }
+
+            // Show one decimal only when it adds information (e.g. 1.5 MB),
+            // otherwise show an integer (e.g. 100 KB, 600 KB).
+            return size == Math.Floor(size)
+                ? $"{size:0} {units[unit]}"
+                : $"{size:0.##} {units[unit]}";
+        }
         [HttpPost]
         public IActionResult Validate([FromForm] IFormCollection file)
         {
@@ -118,10 +164,24 @@ namespace SahayataNidhi.Controllers
             var uploadedFile = file.Files[0];
             string fileType = file["fileType"].ToString();
 
+            // ✅ Optional flag — when true, PDFs are allowed up to 1 MB
+            //    instead of the default MaxPdfFile limit. Sent by the officer
+            //    upload UI when a "Legacy Application Document" is being attached.
+            bool isLegacyDocument = false;
+            var legacyFlagRaw = file["legacyDocument"].ToString();
+            if (!string.IsNullOrWhiteSpace(legacyFlagRaw) &&
+                bool.TryParse(legacyFlagRaw, out bool parsedLegacy))
+            {
+                isLegacyDocument = parsedLegacy;
+            }
+
+            // 1 MB ceiling for legacy documents
+            const long LegacyPdfMaxBytes = 1 * 1024 * 1024;
+
             using (var fileStream = uploadedFile.OpenReadStream())
             {
                 byte[] fileHeader = new byte[4];
-                fileStream.ReadExactly(fileHeader, 0, 4); // Read first 4 bytes of the file
+                fileStream.ReadExactly(fileHeader, 0, 4);
                 string fileExtension = Path.GetExtension(uploadedFile.FileName)?.ToLower()!;
 
                 // Check if the file type is an image
@@ -146,10 +206,18 @@ namespace SahayataNidhi.Controllers
                         return Json(new { isValid = false, errorMessage = "The uploaded file is not a valid PDF." });
                     }
 
-                    // If it's a valid PDF, check the file size
-                    if (uploadedFile.Length < MinPdfFile || uploadedFile.Length > MaxPdfFile)
+                    // ✅ Legacy document: allow up to 1 MB. Otherwise use the default limit.
+                    long effectiveMax = isLegacyDocument ? LegacyPdfMaxBytes : MaxPdfFile;
+
+                    if (uploadedFile.Length < MinPdfFile || uploadedFile.Length > effectiveMax)
                     {
-                        return Json(new { isValid = false, errorMessage = "PDF file size must be between 100KB and 200KB." });
+                        return Json(new
+                        {
+                            isValid = false,
+                            errorMessage = isLegacyDocument
+                                ? $"Legacy document PDF size must be between {FormatBytes(MinPdfFile)} and {FormatBytes(effectiveMax)}."
+                                : $"PDF file size must be between {FormatBytes(MinPdfFile)} and {FormatBytes(effectiveMax)}."
+                        });
                     }
                 }
                 else
@@ -161,7 +229,6 @@ namespace SahayataNidhi.Controllers
             // If all checks pass, return success
             return Json(new { isValid = true, message = "" });
         }
-
         private static bool IsValidImage(byte[] header, string fileExtension)
         {
             // PNG: 89 50 4E 47 (hex) / JPG: FF D8 FF E0 or FF D8 FF E1

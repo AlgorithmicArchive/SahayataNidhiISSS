@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Button,
@@ -14,37 +14,97 @@ import {
   Switch,
   Chip,
   Grid,
-  Card,
-  CardContent,
   CircularProgress,
+  ListSubheader,
+  Divider,
+  Alert,
+  FormControlLabel,
 } from "@mui/material";
+
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
 import axiosInstance from "../../axiosConfig";
+
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import HttpIcon from "@mui/icons-material/Http";
-import ApiIcon from "@mui/icons-material/Api";
+import WebhookIcon from "@mui/icons-material/Webhook";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import GavelIcon from "@mui/icons-material/Gavel";
+import BlockIcon from "@mui/icons-material/Block";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 
 // ----------------------------------------------------------------------
-// MappingNode component – updated for the new structure
+// Trigger Configurations
 // ----------------------------------------------------------------------
-const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFields, level = 0 }) => {
-  const [key, setKey] = useState(node.key || "");
-  const [mapping, setMapping] = useState(node.mapping || null);
-  const [isObject, setIsObject] = useState(!!node.children);
-  const [children, setChildren] = useState(node.children || {});
+const TRIGGERS = {
+  APPLICATION_SANCTIONED: {
+    label: "Application Sanctioned",
+    icon: <CheckCircleOutlineIcon />,
+    table: "citizen_applications",
+    description: "Triggered when a citizen application is sanctioned.",
+    includeFormFields: true,
+  },
+  CORRIGENDUM_SANCTIONED: {
+    label: "Corrigendum Sanctioned",
+    icon: <GavelIcon />,
+    table: "corrigendum",
+    description: "Triggered when a corrigendum is sanctioned.",
+    includeFormFields: false,
+  },
+  WITHHELD_APPROVED: {
+    label: "Withheld Approved",
+    icon: <BlockIcon />,
+    table: "withheld_applications",
+    description: "Triggered when a withheld application is approved/released.",
+    includeFormFields: false,
+  },
+};
 
-  useEffect(() => {
-    setKey(node.key || "");
-    setMapping(node.mapping || null);
-    setIsObject(!!node.children);
-    setChildren(node.children || {});
-  }, [node]);
+// ----------------------------------------------------------------------
+// Helpers
+// ----------------------------------------------------------------------
+const parseBool = (value, fallback = true) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value.toLowerCase() !== "false";
+  return fallback;
+};
+
+const parseIntSafe = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : fallback;
+};
+
+// ----------------------------------------------------------------------
+// MappingNode component (Native Select - Bulletproof Fix)
+// ----------------------------------------------------------------------
+const MappingNode = ({
+  node,
+  path = [],
+  onUpdate,
+  onAddChild,
+  onRemove,
+  availableSources,
+  level = 0,
+}) => {
+  const key = node.key || "";
+  const mapping = node.mapping || null;
+  const isObject = !!node.children;
+  const children = node.children || {};
+
+  const groupedSources = useMemo(() => {
+    const groups = {};
+    availableSources.forEach((src) => {
+      if (!groups[src.group]) groups[src.group] = [];
+      groups[src.group].push(src);
+    });
+    return groups;
+  }, [availableSources]);
 
   const handleKeyChange = (e) => {
     const newKey = e.target.value;
-    setKey(newKey);
     onUpdate(path, {
       key: newKey,
       mapping: isObject ? undefined : mapping,
@@ -53,32 +113,19 @@ const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFiel
   };
 
   const updateMapping = (newMapping) => {
-    setMapping(newMapping);
-    onUpdate(path, {
-      key,
-      mapping: newMapping,
-      children: undefined,
-    });
+    onUpdate(path, { key, mapping: newMapping, children: undefined });
   };
 
-  const handleFieldSelect = (fieldName) => {
-    const field = formFields.find(f => f.name === fieldName);
-    if (!field) return;
-    // Auto‑set type and column based on the field's section
-    const sourceType = field.section === "Column" ? "column" : "json";
-    const sourceColumn = field.section === "Column" ? "" : field.section; // you might map section to actual column name
-    updateMapping({
-      sourceField: fieldName,
-      sourceType,
-      sourceColumn,
-    });
+  const getCurrentSourceValue = () => {
+    if (!mapping || !mapping.sourceField) return "";
+    if (mapping.sourceType === "column") return `col:${mapping.sourceField}`;
+    if (mapping.sourceType === "lookup")
+      return `lookup:${mapping.lookupTable || ""}:${mapping.sourceField}`;
+    return `form:${mapping.sourceField}`;
   };
 
   const handleToggle = (e) => {
     const newIsObject = e.target.checked;
-    setIsObject(newIsObject);
-    setMapping(null);
-    setChildren({});
     onUpdate(path, {
       key,
       mapping: undefined,
@@ -88,22 +135,11 @@ const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFiel
 
   const handleAddChild = () => {
     const newChildKey = `child_${Object.keys(children).length + Date.now()}`;
-    const newChild = {
-      key: `key_${Object.keys(children).length + 1}`,
-      mapping: undefined,
-      children: undefined,
-    };
-    setChildren((prev) => ({ ...prev, [newChildKey]: newChild }));
     onAddChild(path, newChildKey);
   };
 
   const handleChildUpdate = (childPath, childNode) => {
     const childKey = childPath[childPath.length - 1];
-    setChildren((prev) => {
-      const newChildren = { ...prev };
-      newChildren[childKey] = childNode;
-      return newChildren;
-    });
     onUpdate(path, {
       key,
       mapping: undefined,
@@ -114,7 +150,6 @@ const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFiel
   const handleRemoveChild = (childKey) => {
     const newChildren = { ...children };
     delete newChildren[childKey];
-    setChildren(newChildren);
     onUpdate(path, {
       key,
       mapping: undefined,
@@ -127,93 +162,123 @@ const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFiel
       sx={{
         ml: level * 3,
         mb: 2,
-        p: 1.5,
-        borderLeft: level > 0 ? "3px solid" : "none",
-        borderLeftColor: level > 0 ? "primary.light" : "transparent",
-        bgcolor: level % 2 === 0 ? "background.paper" : "grey.50",
-        borderRadius: 1,
+        p: 2,
+        borderLeft: level > 0 ? "3px solid #2562E9" : "none",
+        bgcolor: level % 2 === 0 ? "#FFFFFF" : "#F8FAFC",
+        borderRadius: 2,
+        border: "1px solid #E2E8F0",
       }}
     >
-      <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <Box
+        sx={{
+          display: "flex",
+          gap: 2,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
         <TextField
-          label="Key"
+          label="JSON Key"
           value={key}
           onChange={handleKeyChange}
-          variant="outlined"
           placeholder="e.g., sanctionedAt"
           size="small"
           sx={{ flex: 1, minWidth: 150 }}
         />
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 120 }}>
-          <Typography variant="body2" color="text.secondary">
+
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            minWidth: 120,
+            mt: 1,
+          }}
+        >
+          <Typography
+            variant="body2"
+            color={isObject ? "#2562E9" : "#64748B"}
+            fontWeight={600}
+          >
             Value
           </Typography>
+
           <Switch
             checked={isObject}
             onChange={handleToggle}
             size="small"
             color="primary"
           />
-          <Typography variant="body2" color="text.secondary">
+
+          <Typography
+            variant="body2"
+            color={isObject ? "#64748B" : "#2562E9"}
+            fontWeight={600}
+          >
             Object
           </Typography>
         </Box>
+
         {isObject ? (
           <Tooltip title="Add Child Key">
-            <IconButton onClick={handleAddChild} size="small" sx={{ color: "primary.main" }}>
+            <IconButton
+              onClick={handleAddChild}
+              size="small"
+              sx={{ color: "#2562E9", mt: 0.5 }}
+            >
               <AddIcon />
             </IconButton>
           </Tooltip>
         ) : (
-          <>
-            <FormControl size="small" sx={{ flex: 2, minWidth: 200 }} variant="outlined">
-              <InputLabel id={`field-select-${path.join("-")}`}>Source Field</InputLabel>
-              <Select
-                labelId={`field-select-${path.join("-")}`}
-                value={mapping?.sourceField || ""}
-                label="Source Field"
-                onChange={(e) => handleFieldSelect(e.target.value)}
-              >
-                <MenuItem value="">
-                  <em>Select a field</em>
-                </MenuItem>
-                {formFields.map((field) => (
-                  <MenuItem key={field.id} value={field.name}>
-                    {field.label} ({field.name}) {field.section && `[${field.section}]`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" sx={{ width: 100 }} variant="outlined">
-              <InputLabel id={`type-select-${path.join("-")}`}>Type</InputLabel>
-              <Select
-                labelId={`type-select-${path.join("-")}`}
-                value={mapping?.sourceType || "json"}
-                label="Type"
-                onChange={(e) => updateMapping({ ...mapping, sourceType: e.target.value })}
-              >
-                <MenuItem value="column">column</MenuItem>
-                <MenuItem value="json">json</MenuItem>
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Column"
-              value={mapping?.sourceColumn || ""}
-              onChange={(e) => updateMapping({ ...mapping, sourceColumn: e.target.value })}
-              size="small"
-              placeholder="e.g., WorkFlow"
-              sx={{ flex: 1, minWidth: 150 }}
-            />
-          </>
+          <FormControl
+            size="small"
+            sx={{ flex: 2, minWidth: 250 }}
+            variant="outlined"
+          >
+            <InputLabel shrink>Map to Source Column / Field</InputLabel>
+            <Select
+              native // ✅ Bypasses MUI's buggy custom menu entirely
+              value={getCurrentSourceValue()}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                const selected = availableSources.find((s) => s.value === val);
+                if (selected) {
+                  updateMapping({
+                    sourceField: selected.sourceField,
+                    sourceType: selected.sourceType,
+                    sourceColumn: selected.sourceColumn,
+                    lookupTable: selected.lookupTable || "",
+                  });
+                }
+              }}
+              label="Map to Source Column / Field"
+            >
+              <option value="">Select a source</option>
+              {Object.entries(groupedSources).map(([group, items]) => (
+                <optgroup key={group} label={group}>
+                  {items.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </Select>
+          </FormControl>
         )}
+
         <Tooltip title="Remove Mapping">
-          <IconButton onClick={() => onRemove(path)} size="small" sx={{ color: "error.main" }}>
+          <IconButton
+            onClick={() => onRemove(path)}
+            size="small"
+            sx={{ color: "#DC2626", mt: 0.5 }}
+          >
             <DeleteIcon />
           </IconButton>
         </Tooltip>
       </Box>
+
       {isObject &&
         Object.entries(children).map(([childKey, childNode]) => (
           <MappingNode
@@ -223,61 +288,81 @@ const MappingNode = ({ node, path = [], onUpdate, onAddChild, onRemove, formFiel
             onUpdate={handleChildUpdate}
             onAddChild={onAddChild}
             onRemove={() => handleRemoveChild(childKey)}
-            formFields={formFields}
+            availableSources={availableSources}
             level={level + 1}
           />
         ))}
     </Box>
   );
 };
-
 // ----------------------------------------------------------------------
-// Utility: convert API field mappings (action‑keyed object) to internal format
+// Utility: convert API field mappings to internal format
 // ----------------------------------------------------------------------
 const convertFromApiFormat = (apiMappings) => {
+  if (!apiMappings || typeof apiMappings !== "object") return {};
+
   const result = {};
+
   const convertNode = (obj, parentKey) => {
-    const nodeKey = `${parentKey}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const nodeKey = `${parentKey}_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 8)}`;
+
     if (typeof obj === "string") {
-      // Old format fallback – treat as column type (or you could discard)
       return {
         key: parentKey,
-        mapping: {
-          sourceField: obj,
-          sourceType: "column",
-          sourceColumn: "",
-        },
+        mapping: { sourceField: obj, sourceType: "column", sourceColumn: "" },
       };
-    } else if (typeof obj === "object" && obj !== null) {
-      // Check if it's a leaf with field/type/respectiveColumn
-      if (obj.hasOwnProperty("field") && obj.hasOwnProperty("type") && obj.hasOwnProperty("respectiveColumn")) {
+    }
+
+    if (typeof obj === "object" && obj !== null) {
+      if (
+        obj.hasOwnProperty("field") &&
+        obj.hasOwnProperty("type") &&
+        obj.hasOwnProperty("respectiveColumn")
+      ) {
         return {
           key: parentKey,
           mapping: {
             sourceField: obj.field,
             sourceType: obj.type,
             sourceColumn: obj.respectiveColumn,
+            lookupTable: obj.lookupTable || "",
           },
         };
-      } else {
-        // It's a nested object (children)
-        const children = {};
-        Object.entries(obj).forEach(([key, value]) => {
-          children[`child_${key}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`] = convertNode(value, key);
-        });
-        return { key: parentKey, children };
       }
+
+      const children = {};
+
+      Object.entries(obj).forEach(([key, value]) => {
+        children[
+          `child_${key}_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 8)}`
+        ] = convertNode(value, key);
+      });
+
+      return { key: parentKey, children };
     }
-    return { key: parentKey, mapping: { sourceField: "", sourceType: "json", sourceColumn: "" } };
+
+    return {
+      key: parentKey,
+      mapping: { sourceField: "", sourceType: "json", sourceColumn: "" },
+    };
   };
 
   Object.entries(apiMappings).forEach(([action, mapping]) => {
     const actionMappings = {};
+
     Object.entries(mapping).forEach(([key, value]) => {
-      actionMappings[`key_${key}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`] = convertNode(value, key);
+      actionMappings[
+        `key_${key}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+      ] = convertNode(value, key);
     });
+
     result[action] = actionMappings;
   });
+
   return result;
 };
 
@@ -287,287 +372,376 @@ const convertFromApiFormat = (apiMappings) => {
 export default function CreateWebService() {
   const [services, setServices] = useState([]);
   const [selectedServiceId, setSelectedServiceId] = useState("");
-  const [formFields, setFormFields] = useState([]);            // base form fields
-  const [actionFields, setActionFields] = useState({});        // fields keyed by action (Corrigendum, Withheld)
-  const [loadingActionFields, setLoadingActionFields] = useState(false);
+
+  const [webServicesList, setWebServicesList] = useState([]);
+  const [selectedWebServiceId, setSelectedWebServiceId] = useState(null);
+  const [formFields, setFormFields] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [tableColumns, setTableColumns] = useState([]);
+
   const [webServiceConfig, setWebServiceConfig] = useState({
-    webServiceId: "",
+    id: "",
     webServiceName: "",
     apiEndPoint: "",
-    onAction: [],
-    fieldMappings: {},        // { "Sanction": {...}, "Corrigendum": {...}, "Withheld": {...} }
+    triggerEvent: "",
+    fieldMappings: {},
     headers: [],
+    retryEnabled: true,
+    maxAttempts: 3,
+    retryDelaySeconds: 5,
   });
 
-  // Actions that get their own mapping card
-  const specialActions = ["Sanction", "Corrigendum", "Withheld"];
+  // --------------------------------------------------------------------
+  // Fetch table columns based on selected trigger
+  // --------------------------------------------------------------------
+  useEffect(() => {
+    if (
+      !webServiceConfig.triggerEvent ||
+      !TRIGGERS[webServiceConfig.triggerEvent]
+    ) {
+      setTableColumns([]);
+      return;
+    }
 
-  // Configuration per action: whether to include base form fields in the dropdown
-  const actionConfig = {
-    Sanction: { includeBaseFields: true },
-    Corrigendum: { includeBaseFields: false },
-    Withheld: { includeBaseFields: false },
-  };
+    const tableName = TRIGGERS[webServiceConfig.triggerEvent].table;
 
-  // Fetch services on mount
+    async function fetchColumns() {
+      try {
+        const response = await axiosInstance.get(
+          `/Designer/GetTableColumns?tableName=${tableName}`,
+        );
+
+        if (response.data.status) {
+          setTableColumns(response.data.columns);
+        } else {
+          setTableColumns([]);
+        }
+      } catch (err) {
+        console.error("Error fetching table columns", err);
+        setTableColumns([]);
+      }
+    }
+
+    fetchColumns();
+  }, [webServiceConfig.triggerEvent]);
+
+  // --------------------------------------------------------------------
+  // Fetch services
+  // --------------------------------------------------------------------
   useEffect(() => {
     async function fetchServices() {
       try {
         const response = await axiosInstance.get("/Base/GetServices");
+
         if (response.data.status && response.data.services) {
           setServices(response.data.services);
-        } else {
-          toast.error("Failed to fetch services: No services found");
         }
       } catch (err) {
-        console.error("Fetch services error:", err);
         toast.error("Error fetching services");
       }
     }
+
     fetchServices();
   }, []);
 
   // --------------------------------------------------------------------
-  // Fetch existing web service config AND form fields when service changes
+  // Fetch web services and form fields when selected service changes
   // --------------------------------------------------------------------
   useEffect(() => {
     if (!selectedServiceId) {
+      setWebServicesList([]);
+      setSelectedWebServiceId(null);
       setFormFields([]);
-      setActionFields({});
-      setWebServiceConfig({
-        webServiceId: "",
-        webServiceName: "",
-        apiEndPoint: "",
-        onAction: [],
-        fieldMappings: {},
-        headers: [],
-      });
       return;
     }
 
-    async function fetchWebServiceConfig() {
-      try {
-        const configResponse = await axiosInstance.get(`/Designer/GetWebService?serviceId=${selectedServiceId}`);
-        if (configResponse.data.status && configResponse.data.config) {
-          const config = configResponse.data.config;
-          let parsedFieldMappings = {};
-          try {
-            const raw = JSON.parse(config.fieldMappings || "{}");
-            // If stored format is flat (old), wrap it under "Sanction" or keep as is?
-            // For safety, we check if any of the special action keys exist. If not, we assume it's a flat mapping.
-            if (raw && typeof raw === "object") {
-              const hasSpecialKey = specialActions.some(action => raw[action] !== undefined);
-              if (!hasSpecialKey && Object.keys(raw).length > 0) {
-                // Assume flat mapping – assign it to "Sanction" (or whichever action is selected later)
-                parsedFieldMappings = { Sanction: raw };
-              } else {
-                parsedFieldMappings = raw;
-              }
-            }
-          } catch (e) {
-            parsedFieldMappings = {};
-          }
+    async function fetchData() {
+      setLoading(true);
 
-          setWebServiceConfig({
-            webServiceId: config.id || "",
-            webServiceName: config.webServiceName || "",
-            apiEndPoint: config.apiEndpoint ? config.apiEndpoint.replace(/^"|"$/g, '') : "",
-            onAction: config.onAction ? JSON.parse(config.onAction) : [],
-            fieldMappings: convertFromApiFormat(parsedFieldMappings),
-            headers: config.headers ? JSON.parse(config.headers) : [],
-          });
-        } else {
-          setWebServiceConfig({
-            webServiceId: "",
-            webServiceName: "",
-            apiEndPoint: "",
-            onAction: [],
-            fieldMappings: {},
-            headers: [],
-          });
-          toast.info("No existing configuration found for this service");
-        }
-      } catch (err) {
-        console.error("Fetch web service config error:", err);
-        toast.error("Error fetching web service configuration");
-        setWebServiceConfig({
-          webServiceId: "",
-          webServiceName: "",
-          apiEndPoint: "",
-          onAction: [],
-          fieldMappings: {},
-          headers: [],
-        });
-      }
-    }
-
-    // Fetch form elements from dedicated endpoint
-    async function fetchFormElements() {
       try {
-        const response = await axiosInstance.get(`/Designer/GetFormElements?serviceId=${selectedServiceId}`);
-        if (response.data.status) {
-          // Combine section fields and column names
-          const sectionFields = Array.isArray(response.data.sections)
-            ? response.data.sections.flatMap((section) =>
-              (section.fields || []).map((field) => ({
-                name: field.name,
-                label: field.label,
-                section: section.sectionName || "Unknown Section",
-              }))
-            )
+        const formRes = await axiosInstance.get(
+          `/Designer/GetFormElements?serviceId=${selectedServiceId}`,
+        );
+
+        if (formRes.data.status) {
+          const sectionFields = Array.isArray(formRes.data.sections)
+            ? formRes.data.sections.flatMap((section) =>
+                (section.fields || []).map((field) => ({
+                  name: field.name,
+                  label: field.label,
+                  section: section.sectionName || "Unknown",
+                })),
+              )
             : [];
 
-          const columnFields = Array.isArray(response.data.columnNames)
-            ? response.data.columnNames.map((colName) => ({
-              name: colName,
-              label: colName,
-              section: "Column",
-            }))
-            : [];
-
-          // Deduplicate by field name
           const uniqueMap = new Map();
-          [...sectionFields, ...columnFields].forEach((field) => {
-            if (!uniqueMap.has(field.name)) {
-              uniqueMap.set(field.name, field);
-            }
+
+          sectionFields.forEach((field) => {
+            if (!uniqueMap.has(field.name)) uniqueMap.set(field.name, field);
           });
 
-          const fields = Array.from(uniqueMap.values()).map((field) => ({
-            id: field.name,
-            name: field.name,
-            label: field.label,
-            type: "text",
-            path: field.section === "Column" ? `Column > ${field.label}` : `${field.section} > ${field.label}`,
-            section: field.section,
-          }));
+          setFormFields(
+            Array.from(uniqueMap.values()).map((f) => ({
+              id: f.name,
+              name: f.name,
+              label: f.label,
+              section: f.section,
+            })),
+          );
+        }
 
-          setFormFields(fields);
+        const wsRes = await axiosInstance.get(
+          `/Designer/GetWebServices?serviceId=${selectedServiceId}`,
+        );
+
+        let list = [];
+
+        if (wsRes.data.status) {
+          list =
+            wsRes.data.configs ||
+            (wsRes.data.config ? [wsRes.data.config] : []);
+        }
+
+        setWebServicesList(list);
+
+        if (list.length > 0) {
+          loadWebService(list[0]);
         } else {
-          toast.error(response.data.message || "Failed to load form fields");
-          setFormFields([]);
+          createNewWebService();
         }
       } catch (err) {
-        console.error("Fetch form elements error:", err);
-        toast.error("Error loading form fields");
-        setFormFields([]);
+        console.error(err);
+        toast.error("Error fetching data");
+      } finally {
+        setLoading(false);
       }
     }
 
-    fetchWebServiceConfig();
-    fetchFormElements();
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServiceId]);
 
   // --------------------------------------------------------------------
-  // Fetch action‑specific fields for all selected special actions
+  // Load existing web service
   // --------------------------------------------------------------------
-  useEffect(() => {
-    if (!selectedServiceId) {
-      setActionFields({});
-      return;
+  const loadWebService = (ws) => {
+    setSelectedWebServiceId(ws.id);
+
+    let parsedFieldMappings = {};
+
+    try {
+      parsedFieldMappings = JSON.parse(ws.fieldMappings || "{}");
+    } catch (e) {
+      parsedFieldMappings = {};
     }
 
-    const selectedActions = webServiceConfig.onAction || [];
-    const actionsToFetch = selectedActions.filter(action =>
-      specialActions.includes(action)
-    );
+    let parsedHeaders = [];
 
-    if (actionsToFetch.length === 0) {
-      setActionFields({});
-      return;
+    try {
+      parsedHeaders = ws.headers ? JSON.parse(ws.headers) : [];
+    } catch (e) {
+      parsedHeaders = [];
     }
 
-    const fetchActionFields = async () => {
-      setLoadingActionFields(true);
-      try {
-        const promises = actionsToFetch.map(action =>
-          axiosInstance.get(`/Designer/GetActionFields`, {
-            params: { actionTaken: action }
-          })
-        );
-
-        const results = await Promise.all(promises);
-        const fieldsByAction = {};
-        results.forEach((res, index) => {
-          const action = actionsToFetch[index];
-          const rawFields = res.data.fields || [];
-          const transformed = rawFields.map(f => ({
-            id: f.name,
-            name: f.name,
-            label: f.label,
-            type: "text",
-            path: `${f.section || "Action"} > ${f.label}`,
-            section: f.section || "Action",
-          }));
-          fieldsByAction[action] = transformed;
-        });
-
-        setActionFields(fieldsByAction);
-      } catch (err) {
-        console.error("Error fetching action fields:", err);
-        toast.error("Could not load fields for selected actions");
-      } finally {
-        setLoadingActionFields(false);
-      }
+    const triggerMap = {
+      Sanction: "APPLICATION_SANCTIONED",
+      Corrigendum: "CORRIGENDUM_SANCTIONED",
+      Withheld: "WITHHELD_APPROVED",
+      Submission: "APPLICATION_SANCTIONED",
+      Rejection: "APPLICATION_SANCTIONED",
+      Amendment: "CORRIGENDUM_SANCTIONED",
     };
 
-    fetchActionFields();
-  }, [selectedServiceId, webServiceConfig.onAction]);
+    let rawTrigger = "";
 
-  // Combine base fields and action fields for a given action, respecting config
-  const getAllFieldsForAction = (action) => {
-    const config = actionConfig[action] || { includeBaseFields: false };
-    const base = config.includeBaseFields ? formFields : [];
-    const actionSpecific = actionFields[action] || [];
-    const combined = [...base, ...actionSpecific];
-    // Deduplicate by field name (base first)
-    const unique = Array.from(new Map(combined.map(f => [f.name, f])).values());
-    return unique;
+    try {
+      rawTrigger = ws.onAction ? JSON.parse(ws.onAction)[0] || "" : "";
+    } catch (e) {
+      rawTrigger = ws.onAction || "";
+    }
+
+    const mappedTrigger = triggerMap[rawTrigger] || rawTrigger;
+
+    const migratedMappings = {};
+
+    Object.entries(parsedFieldMappings).forEach(([key, value]) => {
+      const newKey = triggerMap[key] || key;
+      migratedMappings[newKey] = value;
+    });
+
+    setWebServiceConfig({
+      id: ws.id || "",
+      webServiceName: ws.webServiceName || "",
+      apiEndPoint: ws.apiEndpoint ? ws.apiEndpoint.replace(/^"|"$/g, "") : "",
+      triggerEvent: mappedTrigger,
+      fieldMappings: convertFromApiFormat(migratedMappings),
+      headers: parsedHeaders,
+      retryEnabled: parseBool(ws.retryEnabled, true),
+      maxAttempts: parseIntSafe(ws.maxAttempts, 3),
+      retryDelaySeconds: parseIntSafe(ws.retryDelaySeconds, 5),
+    });
   };
 
-  // Handlers for basic inputs
+  // --------------------------------------------------------------------
+  // Create new web service
+  // --------------------------------------------------------------------
+  const createNewWebService = () => {
+    setSelectedWebServiceId("new_" + Date.now());
+
+    setWebServiceConfig({
+      id: "",
+      webServiceName: "",
+      apiEndPoint: "",
+      triggerEvent: "",
+      fieldMappings: {},
+      headers: [],
+      retryEnabled: true,
+      maxAttempts: 3,
+      retryDelaySeconds: 5,
+    });
+  };
+
+  // --------------------------------------------------------------------
+  // Available mapping sources
+  // --------------------------------------------------------------------
+  const availableSources = useMemo(() => {
+    const trigger = webServiceConfig.triggerEvent;
+
+    if (!trigger || !TRIGGERS[trigger]) return [];
+
+    const config = TRIGGERS[trigger];
+    const sources = [];
+
+    if (tableColumns.length > 0) {
+      tableColumns.forEach((col) => {
+        sources.push({
+          value: `col:${col.name}`,
+          label: `${col.name} (${col.type})`,
+          group: `Table: ${config.table}`,
+          sourceType: "column",
+          sourceColumn: col.name,
+          sourceField: col.name,
+        });
+      });
+    }
+
+    if (config.includeFormFields && formFields.length > 0) {
+      formFields.forEach((f) => {
+        sources.push({
+          value: `form:${f.name}`,
+          label: f.label,
+          group: "Form Fields (JSON)",
+          sourceType: "json",
+          sourceColumn: f.section,
+          sourceField: f.name,
+        });
+      });
+    }
+
+    const lookups = [
+      {
+        field: "District",
+        table: "district",
+        label: "District Name (via District ID)",
+      },
+      {
+        field: "Tehsil",
+        table: "tehsil",
+        label: "Tehsil Name (via Tehsil ID)",
+      },
+      {
+        field: "division",
+        table: "division",
+        label: "Division Name (via Division ID)",
+      },
+    ];
+
+    lookups.forEach((lookup) => {
+      sources.push({
+        value: `lookup:${lookup.table}:${lookup.field}`,
+        label: lookup.label,
+        group: "Database Lookups (ID → Name)",
+        sourceType: "lookup",
+        lookupTable: lookup.table,
+        sourceField: lookup.field,
+        sourceColumn: "",
+      });
+    });
+
+    return sources;
+  }, [webServiceConfig.triggerEvent, formFields, tableColumns]);
+
+  // --------------------------------------------------------------------
+  // Input handlers
+  // --------------------------------------------------------------------
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setWebServiceConfig((prev) => ({ ...prev, [name]: value }));
-  };
 
-  // --------------------------------------------------------------------
-  // Headers management
-  // --------------------------------------------------------------------
-  const addHeader = () => {
     setWebServiceConfig((prev) => ({
       ...prev,
-      headers: [...prev.headers, { key: "", value: "" }],
+      [name]: value,
     }));
   };
+
+  const handleRetryInputChange = (e) => {
+    const { name, type, checked, value } = e.target;
+
+    const newValue =
+      type === "checkbox"
+        ? checked
+        : type === "number"
+          ? value === ""
+            ? ""
+            : Number(value)
+          : value;
+
+    setWebServiceConfig((prev) => ({
+      ...prev,
+      [name]: newValue,
+    }));
+  };
+
+  const addHeader = () =>
+    setWebServiceConfig((prev) => ({
+      ...prev,
+      headers: [...prev.headers, { key: "", value: "", showValue: false }],
+    }));
 
   const updateHeader = (index, field, newValue) => {
     setWebServiceConfig((prev) => {
       const updated = [...prev.headers];
       updated[index] = { ...updated[index], [field]: newValue };
-      return { ...prev, headers: updated };
+
+      return {
+        ...prev,
+        headers: updated,
+      };
     });
   };
 
-  const removeHeader = (index) => {
+  const removeHeader = (index) =>
     setWebServiceConfig((prev) => ({
       ...prev,
       headers: prev.headers.filter((_, i) => i !== index),
     }));
-  };
 
   // --------------------------------------------------------------------
-  // Field mappings management – per action
+  // Mapping handlers
   // --------------------------------------------------------------------
-  const addRootMappingForAction = (action) => {
+  const addRootMapping = () => {
+    const trigger = webServiceConfig.triggerEvent;
+    if (!trigger) return;
+
     setWebServiceConfig((prev) => {
-      const currentMappings = prev.fieldMappings[action] || {};
+      const currentMappings = prev.fieldMappings[trigger] || {};
+
       const newKey = `key_${Object.keys(currentMappings).length + Date.now()}`;
+
       return {
         ...prev,
         fieldMappings: {
           ...prev.fieldMappings,
-          [action]: {
+          [trigger]: {
             ...currentMappings,
             [newKey]: {
               key: `key_${Object.keys(currentMappings).length + 1}`,
@@ -580,123 +754,113 @@ export default function CreateWebService() {
     });
   };
 
-  const updateMappingForAction = (action, path, node) => {
+  const updateMapping = (path, node) => {
+    const trigger = webServiceConfig.triggerEvent;
+
     setWebServiceConfig((prev) => {
-      const actionMappings = JSON.parse(JSON.stringify(prev.fieldMappings[action] || {}));
+      const actionMappings = JSON.parse(
+        JSON.stringify(prev.fieldMappings[trigger] || {}),
+      );
+
       let current = actionMappings;
+
       for (let i = 0; i < path.length - 1; i++) {
         current = current[path[i]].children;
       }
+
       if (path.length > 0) {
         current[path[path.length - 1]] = node;
       }
+
       return {
         ...prev,
         fieldMappings: {
           ...prev.fieldMappings,
-          [action]: actionMappings,
+          [trigger]: actionMappings,
         },
       };
     });
   };
 
-  const addChildForAction = (action, path, childKey) => {
+  const addChild = (path, childKey) => {
+    const trigger = webServiceConfig.triggerEvent;
+
     setWebServiceConfig((prev) => {
-      const actionMappings = JSON.parse(JSON.stringify(prev.fieldMappings[action] || {}));
+      const actionMappings = JSON.parse(
+        JSON.stringify(prev.fieldMappings[trigger] || {}),
+      );
+
       let current = actionMappings;
+
       for (const key of path) {
         current = current[key].children;
       }
+
       current[childKey] = {
         key: `key_${Object.keys(current).length + 1}`,
         mapping: null,
         children: undefined,
       };
+
       return {
         ...prev,
         fieldMappings: {
           ...prev.fieldMappings,
-          [action]: actionMappings,
+          [trigger]: actionMappings,
         },
       };
     });
   };
 
-  const removeMappingForAction = (action, path) => {
+  const removeMapping = (path) => {
+    const trigger = webServiceConfig.triggerEvent;
+
     setWebServiceConfig((prev) => {
-      const actionMappings = JSON.parse(JSON.stringify(prev.fieldMappings[action] || {}));
+      const actionMappings = JSON.parse(
+        JSON.stringify(prev.fieldMappings[trigger] || {}),
+      );
+
       let current = actionMappings;
+
       if (path.length === 1) {
         delete actionMappings[path[0]];
       } else {
         for (let i = 0; i < path.length - 1; i++) {
           current = current[path[i]].children || {};
         }
+
         delete current[path[path.length - 1]];
       }
+
       return {
         ...prev,
         fieldMappings: {
           ...prev.fieldMappings,
-          [action]: actionMappings,
+          [trigger]: actionMappings,
         },
       };
     });
-    toast.info(`Removed mapping from ${action}: ${path.join(".")}`);
   };
 
-  // Validate mappings per action
-  const validateMappingsForAction = (action, mappings) => {
-    const allFields = getAllFieldsForAction(action);
-    const validateNode = (node, nodePath) => {
-      if (!node.key.trim()) {
-        toast.error(`${action}: Empty key at path: ${nodePath.join(".")}`);
-        return false;
-      }
-      if (node.mapping) {
-        const { sourceField, sourceType, sourceColumn } = node.mapping;
-        if (!sourceField) {
-          toast.error(`${action}: Missing source field at path: ${nodePath.join(".")}`);
-          return false;
-        }
-        if (!sourceType) {
-          toast.error(`${action}: Missing source type at path: ${nodePath.join(".")}`);
-          return false;
-        }
-        // Optionally validate that sourceField exists in allFields
-        if (!allFields.some(f => f.name === sourceField)) {
-          toast.error(`${action}: Invalid source field '${sourceField}' at path: ${nodePath.join(".")}`);
-          return false;
-        }
-        // sourceColumn can be empty if type is 'column'? Adjust as needed.
-      }
-      if (node.children) {
-        for (const [childKey, childNode] of Object.entries(node.children)) {
-          if (!validateNode(childNode, [...nodePath, childKey])) {
-            return false;
-          }
-        }
-      }
-      return true;
-    };
-    for (const [key, node] of Object.entries(mappings)) {
-      if (!validateNode(node, [key])) return false;
-    }
-    return true;
-  };
-
-  // Convert mappings to API format (action‑keyed object) with the new structure
+  // --------------------------------------------------------------------
+  // Convert internal mapping format to API format
+  // --------------------------------------------------------------------
   const convertToApiFormat = (mappingsByAction) => {
     const result = {};
+
     const convertNode = (node, target) => {
       if (node.mapping) {
         target[node.key] = {
           field: node.mapping.sourceField,
           type: node.mapping.sourceType,
           respectiveColumn: node.mapping.sourceColumn,
+          ...(node.mapping.lookupTable
+            ? { lookupTable: node.mapping.lookupTable }
+            : {}),
         };
       } else if (node.children) {
         target[node.key] = {};
+
         for (const childNode of Object.values(node.children)) {
           convertNode(childNode, target[node.key]);
         }
@@ -705,359 +869,583 @@ export default function CreateWebService() {
 
     Object.entries(mappingsByAction).forEach(([action, actionMappings]) => {
       const actionResult = {};
+
       for (const node of Object.values(actionMappings)) {
         convertNode(node, actionResult);
       }
+
       result[action] = actionResult;
     });
+
     return result;
   };
 
-  // Save configuration
+  // --------------------------------------------------------------------
+  // Save
+  // --------------------------------------------------------------------
   const handleSave = async () => {
     if (!selectedServiceId) {
-      toast.error("Please select a service");
-      return;
-    }
-    if (!webServiceConfig.apiEndPoint.trim()) {
-      toast.error("API endpoint is required");
-      return;
-    }
-    if (webServiceConfig.onAction.length === 0) {
-      toast.error("Please select at least one action");
-      return;
+      return toast.error("Please select a service");
     }
 
-    // Validate each selected special action has mappings and they are valid
-    const selectedSpecial = webServiceConfig.onAction.filter(a => specialActions.includes(a));
-    for (const action of selectedSpecial) {
-      const mappings = webServiceConfig.fieldMappings[action] || {};
-      if (Object.keys(mappings).length === 0) {
-        toast.error(`Please add at least one field mapping for ${action}`);
-        return;
+    if (!webServiceConfig.apiEndPoint.trim()) {
+      return toast.error("API endpoint is required");
+    }
+
+    if (!webServiceConfig.triggerEvent) {
+      return toast.error("Please select a Trigger Event");
+    }
+
+    const trigger = webServiceConfig.triggerEvent;
+    const mappings = webServiceConfig.fieldMappings[trigger] || {};
+
+    const maxAttempts = Number(webServiceConfig.maxAttempts);
+    const retryDelaySeconds = Number(webServiceConfig.retryDelaySeconds);
+
+    if (webServiceConfig.retryEnabled) {
+      if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+        return toast.error("Max attempts must be at least 1");
       }
-      if (!validateMappingsForAction(action, mappings)) {
-        return;
+
+      if (!Number.isInteger(retryDelaySeconds) || retryDelaySeconds < 0) {
+        return toast.error("Retry delay cannot be negative");
       }
     }
 
     const payload = {
-      webServiceId: webServiceConfig.webServiceId,
+      id: webServiceConfig.id,
       serviceId: selectedServiceId,
       webServiceName: webServiceConfig.webServiceName,
-      apiEndPoint: JSON.stringify(webServiceConfig.apiEndPoint),
-      onAction: JSON.stringify(webServiceConfig.onAction),
-      fieldMappings: JSON.stringify(convertToApiFormat(webServiceConfig.fieldMappings)),
+      apiEndPoint: webServiceConfig.apiEndPoint.trim(),
+      onAction: JSON.stringify([trigger]),
+      fieldMappings: JSON.stringify(
+        convertToApiFormat({ [trigger]: mappings }),
+      ),
       headers: JSON.stringify(webServiceConfig.headers),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      retryEnabled: String(webServiceConfig.retryEnabled),
+      maxAttempts: String(webServiceConfig.retryEnabled ? maxAttempts : 1),
+      retryDelaySeconds: String(
+        webServiceConfig.retryEnabled ? retryDelaySeconds : 0,
+      ),
     };
 
     const formdata = new FormData();
+
     Object.keys(payload).forEach((key) => {
       formdata.append(key, payload[key]);
     });
 
     try {
-      const response = await axiosInstance.post("/Designer/SaveWebService", formdata);
+      const response = await axiosInstance.post(
+        "/Designer/SaveWebService",
+        formdata,
+      );
+
       if (response.data.status) {
-        toast.success("Web service configuration saved successfully!");
-        setWebServiceConfig({
-          webServiceId: "",
-          webServiceName: "",
-          apiEndPoint: "",
-          onAction: [],
-          fieldMappings: {},
-          headers: [],
-        });
-        setSelectedServiceId("");
+        toast.success("Web service saved successfully!");
+
+        const wsRes = await axiosInstance.get(
+          `/Designer/GetWebServices?serviceId=${selectedServiceId}`,
+        );
+
+        if (wsRes.data.status) {
+          const list =
+            wsRes.data.configs ||
+            (wsRes.data.config ? [wsRes.data.config] : []);
+
+          setWebServicesList(list);
+
+          if (list.length > 0) {
+            loadWebService(list[list.length - 1]);
+          }
+        }
       } else {
-        toast.error(response.data.message || "Failed to save configuration");
+        toast.error(response.data.message || "Failed to save");
       }
     } catch (err) {
-      console.error("Save configuration error:", err);
-      toast.error(err.response?.data?.message || "Error saving configuration");
+      console.error(err);
+      toast.error("Error saving configuration");
     }
   };
 
-  const actionOptions = [
-    "Submission",
-    "Rejection",
-    "Sanction",
-    "Corrigendum",
-    "Amendment",
-    "Withheld",
-  ];
-
-  // Selected actions that should have mapping cards
-  const selectedSpecialActions = webServiceConfig.onAction.filter(a => specialActions.includes(a));
-
+  // --------------------------------------------------------------------
+  // Render
+  // --------------------------------------------------------------------
   return (
-    <Box sx={{ bgcolor: "grey.100", minHeight: "100vh", py: 4 }}>
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        pauseOnHover
-        theme="colored"
-      />
-      <Grid container justifyContent="center">
-        <Grid item xs={12} md={10} lg={8}>
-          <Paper
-            elevation={3}
-            sx={{
-              borderRadius: 3,
-              overflow: "hidden",
-              background: "linear-gradient(145deg, #ffffff 0%, #f5f7fa 100%)",
-            }}
-          >
-            {/* Header */}
+    <Box sx={{ bgcolor: "#F8FAFC", minHeight: "100vh", py: 4 }}>
+      <ToastContainer position="top-right" autoClose={3000} theme="colored" />
+
+      <Box sx={{ maxWidth: 1200, mx: "auto", px: 3 }}>
+        {/* Header */}
+        <Box sx={{ mb: 4 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
             <Box
               sx={{
-                p: 4,
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                color: "white",
+                width: 56,
+                height: 56,
+                borderRadius: 2,
+                bgcolor: "#EFF6FF",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                <ApiIcon sx={{ mr: 1, verticalAlign: "middle" }} />
-                Web Service Configuration
-              </Typography>
-              <Typography variant="subtitle1" sx={{ mt: 1, opacity: 0.9 }}>
-                Connect your service to external APIs with custom mappings and headers
-              </Typography>
+              <WebhookIcon sx={{ fontSize: 32, color: "#2562E9" }} />
             </Box>
 
-            <Box sx={{ p: 4 }}>
-              {/* Service & Basic Info Card */}
-              <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                    1. Service & Basic Info
-                  </Typography>
-                  <Grid container spacing={3}>
-                    <Grid item xs={12}>
-                      <FormControl fullWidth variant="outlined">
-                        <InputLabel id="service-select-label">Select Service</InputLabel>
-                        <Select
-                          labelId="service-select-label"
-                          value={selectedServiceId}
-                          label="Select Service"
-                          onChange={(e) => setSelectedServiceId(e.target.value)}
+            <Box>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 800,
+                  color: "#0F172A",
+                  letterSpacing: "-0.5px",
+                }}
+              >
+                Web Service Configuration
+              </Typography>
+
+              <Typography variant="body1" sx={{ color: "#64748B" }}>
+                Map external API payloads to internal database tables and form
+                fields
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        <Paper
+          elevation={0}
+          sx={{
+            p: 4,
+            borderRadius: 3,
+            border: "1px solid #E2E8F0",
+            bgcolor: "white",
+          }}
+        >
+          {/* Service Selection */}
+          <FormControl fullWidth sx={{ mb: 4 }}>
+            <InputLabel>Select Service</InputLabel>
+            <Select
+              value={selectedServiceId}
+              label="Select Service"
+              onChange={(e) => setSelectedServiceId(e.target.value)}
+            >
+              <MenuItem value="">
+                <em>Select a service</em>
+              </MenuItem>
+
+              {services.map((service) => (
+                <MenuItem key={service.serviceId} value={service.serviceId}>
+                  {service.serviceName}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {/* Web Services Tabs */}
+          {selectedServiceId && (
+            <Box
+              sx={{
+                mb: 4,
+                display: "flex",
+                gap: 1,
+                flexWrap: "wrap",
+                alignItems: "center",
+                borderBottom: "1px solid #E2E8F0",
+                pb: 2,
+              }}
+            >
+              {webServicesList.map((ws) => (
+                <Chip
+                  key={ws.id}
+                  label={ws.webServiceName || `Webhook ${ws.id}`}
+                  onClick={() => loadWebService(ws)}
+                  color={selectedWebServiceId === ws.id ? "primary" : "default"}
+                  variant={
+                    selectedWebServiceId === ws.id ? "filled" : "outlined"
+                  }
+                  sx={{ fontWeight: 600 }}
+                />
+              ))}
+
+              <Button
+                startIcon={<AddIcon />}
+                onClick={createNewWebService}
+                variant="outlined"
+                size="small"
+                sx={{
+                  textTransform: "none",
+                  borderColor: "#CBD5E1",
+                  color: "#475569",
+                }}
+              >
+                New Web Service
+              </Button>
+            </Box>
+          )}
+
+          {loading ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+              <CircularProgress />
+            </Box>
+          ) : selectedServiceId && selectedWebServiceId ? (
+            <Grid container spacing={4}>
+              {/* Basic Info & Trigger */}
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Web Service Name"
+                  name="webServiceName"
+                  value={webServiceConfig.webServiceName}
+                  onChange={handleInputChange}
+                  placeholder="e.g., Payment Gateway"
+                  sx={{ mb: 3 }}
+                />
+
+                <TextField
+                  fullWidth
+                  label="API Endpoint"
+                  name="apiEndPoint"
+                  value={webServiceConfig.apiEndPoint}
+                  onChange={handleInputChange}
+                  placeholder="https://api.example.com/endpoint"
+                  InputProps={{
+                    startAdornment: (
+                      <HttpIcon sx={{ mr: 1, color: "#94A3B8" }} />
+                    ),
+                  }}
+                  sx={{ mb: 3 }}
+                />
+
+                <FormControl fullWidth>
+                  <InputLabel>Trigger Event</InputLabel>
+                  <Select
+                    name="triggerEvent"
+                    value={webServiceConfig.triggerEvent}
+                    label="Trigger Event"
+                    onChange={handleInputChange}
+                  >
+                    <MenuItem value="">
+                      <em>Select Trigger</em>
+                    </MenuItem>
+
+                    {Object.entries(TRIGGERS).map(([key, val]) => (
+                      <MenuItem key={key} value={key}>
+                        <Box
+                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
                         >
-                          <MenuItem value="">
-                            <em>Select a service</em>
-                          </MenuItem>
-                          {services.map((service) => (
-                            <MenuItem key={service.serviceId} value={service.serviceId}>
-                              {service.serviceName}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
+                          {val.icon} {val.label}
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+
+                  {webServiceConfig.triggerEvent &&
+                    TRIGGERS[webServiceConfig.triggerEvent] && (
+                      <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
+                        <Typography variant="caption" fontWeight={600}>
+                          Source Table:{" "}
+                          <code>
+                            {TRIGGERS[webServiceConfig.triggerEvent].table}
+                          </code>
+                        </Typography>
+
+                        <Typography variant="caption" display="block">
+                          {TRIGGERS[webServiceConfig.triggerEvent].description}
+                        </Typography>
+                      </Alert>
+                    )}
+                </FormControl>
+
+                {/* Retry Policy */}
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    mt: 3,
+                    borderRadius: 2,
+                    border: "1px solid #E2E8F0",
+                    bgcolor: "#F8FAFC",
+                  }}
+                >
+                  <Typography
+                    variant="subtitle2"
+                    fontWeight={700}
+                    sx={{ mb: 1 }}
+                  >
+                    Retry Policy
+                  </Typography>
+
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={webServiceConfig.retryEnabled}
+                        onChange={handleRetryInputChange}
+                        name="retryEnabled"
+                        color="primary"
+                      />
+                    }
+                    label="Enable automatic retry on failure"
+                  />
+
+                  <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                    <Grid item xs={12} sm={6}>
                       <TextField
                         fullWidth
-                        label="Web Service Name"
-                        name="webServiceName"
-                        value={webServiceConfig.webServiceName}
-                        onChange={handleInputChange}
-                        variant="outlined"
-                        placeholder="e.g., Payment Gateway"
+                        type="number"
+                        label="Max Attempts"
+                        name="maxAttempts"
+                        value={webServiceConfig.maxAttempts}
+                        onChange={handleRetryInputChange}
+                        disabled={!webServiceConfig.retryEnabled}
+                        helperText="Total attempts including first request"
+                        inputProps={{ min: 1, max: 20 }}
+                        size="small"
                       />
                     </Grid>
-                    <Grid item xs={12} md={6}>
+
+                    <Grid item xs={12} sm={6}>
                       <TextField
                         fullWidth
-                        label="API Endpoint"
-                        name="apiEndPoint"
-                        value={webServiceConfig.apiEndPoint}
-                        onChange={handleInputChange}
-                        variant="outlined"
-                        placeholder="https://api.example.com/endpoint"
-                        InputProps={{
-                          startAdornment: <HttpIcon sx={{ mr: 1, color: "action.active" }} />,
-                        }}
+                        type="number"
+                        label="Delay Between Attempts (seconds)"
+                        name="retryDelaySeconds"
+                        value={webServiceConfig.retryDelaySeconds}
+                        onChange={handleRetryInputChange}
+                        disabled={!webServiceConfig.retryEnabled}
+                        helperText="Wait time before next attempt"
+                        inputProps={{ min: 0, max: 3600 }}
+                        size="small"
                       />
                     </Grid>
                   </Grid>
-                </CardContent>
-              </Card>
+                </Paper>
+              </Grid>
 
-              {/* Actions Card */}
-              <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
-                    2. Trigger Actions
-                  </Typography>
-                  <FormControl fullWidth variant="outlined">
-                    <InputLabel id="action-select-label">Actions</InputLabel>
-                    <Select
-                      labelId="action-select-label"
-                      name="onAction"
-                      multiple
-                      value={webServiceConfig.onAction}
-                      onChange={handleInputChange}
-                      label="Actions"
-                      renderValue={(selected) => (
-                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                          {selected.map((value) => (
-                            <Chip key={value} label={value} size="small" />
-                          ))}
-                        </Box>
-                      )}
-                    >
-                      {actionOptions.map((action) => (
-                        <MenuItem key={action} value={action}>
-                          {action}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </CardContent>
-              </Card>
-
-              {/* Headers Card */}
-              <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
-                <CardContent>
-                  <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                      3. HTTP Headers
-                    </Typography>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<AddIcon />}
-                      onClick={addHeader}
-                      disabled={!selectedServiceId}
-                    >
-                      Add Header
-                    </Button>
-                  </Box>
-                  {webServiceConfig.headers.length === 0 ? (
-                    <Typography color="text.secondary" sx={{ fontStyle: "italic" }}>
-                      No headers added. Click "Add Header" to include API keys or custom headers.
-                    </Typography>
-                  ) : (
-                    <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      {webServiceConfig.headers.map((header, index) => (
-                        <Box key={index} sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                          <TextField
-                            label="Header Key"
-                            value={header.key}
-                            onChange={(e) => updateHeader(index, "key", e.target.value)}
-                            placeholder="e.g., X-API-Key"
-                            size="small"
-                            sx={{ flex: 1 }}
-                          />
-                          <TextField
-                            label="Header Value"
-                            value={header.value}
-                            onChange={(e) => updateHeader(index, "value", e.target.value)}
-                            placeholder="your-api-key"
-                            size="small"
-                            sx={{ flex: 1 }}
-                          />
-                          <IconButton onClick={() => removeHeader(index)} size="small" color="error">
-                            <DeleteIcon />
-                          </IconButton>
-                        </Box>
-                      ))}
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Field Mappings – separate card per selected special action */}
-              {loadingActionFields && (
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
-                  <CircularProgress size={20} />
-                  <Typography variant="body2" color="text.secondary">
-                    Loading action‑specific fields...
-                  </Typography>
-                </Box>
-              )}
-
-              {selectedSpecialActions.length === 0 ? (
-                <Card variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
-                  <CardContent>
-                    <Typography color="text.secondary" sx={{ fontStyle: "italic" }}>
-                      Select Sanction, Corrigendum, or Withheld actions to configure field mappings.
-                    </Typography>
-                  </CardContent>
-                </Card>
-              ) : (
-                selectedSpecialActions.map((action) => (
-                  <Card key={action} variant="outlined" sx={{ mb: 4, borderRadius: 2 }}>
-                    <CardContent>
-                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
-                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                          {action} Field Mappings
-                        </Typography>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<AddIcon />}
-                          onClick={() => addRootMappingForAction(action)}
-                          disabled={!selectedServiceId || getAllFieldsForAction(action).length === 0}
-                        >
-                          Add Mapping
-                        </Button>
-                      </Box>
-
-                      {Object.keys(webServiceConfig.fieldMappings[action] || {}).length === 0 ? (
-                        <Typography color="text.secondary" sx={{ fontStyle: "italic" }}>
-                          No field mappings for {action}. Click "Add Mapping" to start.
-                        </Typography>
-                      ) : (
-                        Object.entries(webServiceConfig.fieldMappings[action] || {}).map(([key, node]) => (
-                          <MappingNode
-                            key={key}
-                            node={node}
-                            path={[key]}
-                            onUpdate={(path, node) => updateMappingForAction(action, path, node)}
-                            onAddChild={(path, childKey) => addChildForAction(action, path, childKey)}
-                            onRemove={(path) => removeMappingForAction(action, path)}
-                            formFields={getAllFieldsForAction(action)}
-                          />
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-
-              {/* Save Button */}
-              <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={handleSave}
+              {/* Headers */}
+              <Grid item xs={12} md={6}>
+                <Box
                   sx={{
-                    px: 6,
-                    py: 1.5,
-                    borderRadius: 2,
-                    textTransform: "none",
-                    fontWeight: 600,
-                    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                    "&:hover": {
-                      background: "linear-gradient(135deg, #5a67d8 0%, #6b46a0 100%)",
-                      transform: "translateY(-2px)",
-                      boxShadow: "0 6px 12px rgba(102,126,234,0.3)",
-                    },
-                    transition: "all 0.2s",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    mb: 2,
                   }}
                 >
-                  Save Configuration
-                </Button>
-              </Box>
+                  <Typography
+                    variant="h6"
+                    sx={{ fontWeight: 700, color: "#0F172A" }}
+                  >
+                    HTTP Headers
+                  </Typography>
+
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={addHeader}
+                    sx={{ textTransform: "none" }}
+                  >
+                    Add
+                  </Button>
+                </Box>
+
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    maxHeight: 330,
+                    overflowY: "auto",
+                    pr: 1,
+                  }}
+                >
+                  {webServiceConfig.headers.map((header, index) => (
+                    <Box
+                      key={index}
+                      sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                    >
+                      <TextField
+                        label="Key"
+                        value={header.key}
+                        onChange={(e) =>
+                          updateHeader(index, "key", e.target.value)
+                        }
+                        size="small"
+                        sx={{ flex: 1 }}
+                      />
+
+                      <TextField
+                        label="Value"
+                        type={header.showValue ? "text" : "password"}
+                        value={header.value}
+                        onChange={(e) =>
+                          updateHeader(index, "value", e.target.value)
+                        }
+                        size="small"
+                        sx={{ flex: 1 }}
+                        InputProps={{
+                          endAdornment: (
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                updateHeader(
+                                  index,
+                                  "showValue",
+                                  !header.showValue,
+                                )
+                              }
+                              edge="end"
+                              aria-label="toggle header value visibility"
+                              sx={{ mr: 0.5 }}
+                            >
+                              {header.showValue ? (
+                                <VisibilityOffIcon fontSize="small" />
+                              ) : (
+                                <VisibilityIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          ),
+                        }}
+                      />
+
+                      <IconButton
+                        onClick={() => removeHeader(index)}
+                        size="small"
+                        sx={{ color: "#DC2626" }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Box>
+                  ))}
+
+                  {webServiceConfig.headers.length === 0 && (
+                    <Typography
+                      variant="body2"
+                      color="#94A3B8"
+                      sx={{ fontStyle: "italic" }}
+                    >
+                      No headers added.
+                    </Typography>
+                  )}
+                </Box>
+              </Grid>
+
+              {/* Field Mappings */}
+              {webServiceConfig.triggerEvent &&
+                TRIGGERS[webServiceConfig.triggerEvent] && (
+                  <Grid item xs={12}>
+                    <Divider sx={{ my: 2 }} />
+
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        mb: 3,
+                      }}
+                    >
+                      <Typography
+                        variant="h6"
+                        sx={{ fontWeight: 700, color: "#0F172A" }}
+                      >
+                        Payload Mapping (
+                        {TRIGGERS[webServiceConfig.triggerEvent].label})
+                      </Typography>
+
+                      <Button
+                        variant="contained"
+                        size="small"
+                        startIcon={<AddIcon />}
+                        onClick={addRootMapping}
+                        sx={{
+                          textTransform: "none",
+                          bgcolor: "#2562E9",
+                          "&:hover": { bgcolor: "#1D4ED8" },
+                        }}
+                      >
+                        Add Root Key
+                      </Button>
+                    </Box>
+
+                    {Object.keys(
+                      webServiceConfig.fieldMappings[
+                        webServiceConfig.triggerEvent
+                      ] || {},
+                    ).length === 0 ? (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 4,
+                          textAlign: "center",
+                          bgcolor: "#F8FAFC",
+                          border: "2px dashed #CBD5E1",
+                        }}
+                      >
+                        <Typography color="#64748B">
+                          No mappings defined. Click "Add Root Key" to start
+                          building your JSON payload.
+                        </Typography>
+                      </Paper>
+                    ) : (
+                      Object.entries(
+                        webServiceConfig.fieldMappings[
+                          webServiceConfig.triggerEvent
+                        ] || {},
+                      ).map(([key, node]) => (
+                        <MappingNode
+                          key={key}
+                          node={node}
+                          path={[key]}
+                          onUpdate={updateMapping}
+                          onAddChild={addChild}
+                          onRemove={removeMapping}
+                          availableSources={availableSources}
+                        />
+                      ))
+                    )}
+                  </Grid>
+                )}
+
+              {/* Save Button */}
+              <Grid item xs={12}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    mt: 4,
+                    pt: 3,
+                    borderTop: "1px solid #E2E8F0",
+                  }}
+                >
+                  <Button
+                    variant="contained"
+                    size="large"
+                    onClick={handleSave}
+                    sx={{
+                      px: 6,
+                      py: 1.5,
+                      bgcolor: "#10B981",
+                      "&:hover": { bgcolor: "#059669" },
+                      textTransform: "none",
+                      fontWeight: 700,
+                      boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+                    }}
+                  >
+                    Save Configuration
+                  </Button>
+                </Box>
+              </Grid>
+            </Grid>
+          ) : (
+            <Box sx={{ textAlign: "center", py: 8 }}>
+              <Typography color="#94A3B8">
+                Select a service above to configure web services.
+              </Typography>
             </Box>
-          </Paper>
-        </Grid>
-      </Grid>
+          )}
+        </Paper>
+      </Box>
     </Box>
   );
 }

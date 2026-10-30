@@ -6,4 +6,7 @@ public class MainStatusCounts
     public int RejectCount { get; set; }
     public int SanctionedCount { get; set; }
 
+    // NEW: Counts for pension eligibility
+    public int WithheldCount { get; set; }
+    public int EligibleForPensionCount { get; set; }
 }

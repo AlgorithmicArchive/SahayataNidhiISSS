@@ -23,6 +23,208 @@ namespace SahayataNidhi.Controllers
 {
     public partial class BaseController
     {
+
+        [HttpGet]
+        public async Task<IActionResult> GetWebServiceLogById([FromQuery] int id)
+        {
+            try
+            {
+                var log = await dbcontext.WebserviceLogs
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == id);
+
+                if (log == null)
+                    return NotFound(new { status = false, message = "Log not found" });
+
+                return Ok(new
+                {
+                    status = true,
+                    data = log
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching web service log details");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult GetWebServices(int serviceId)
+        {
+            try
+            {
+                var webServices = dbcontext.Webservice
+                    .Where(ws => ws.Serviceid == serviceId)
+                    .Select(ws => new
+                    {
+                        id = ws.Id,
+                        serviceId = ws.Serviceid,
+                        webServiceName = ws.Webservicename,
+                        apiEndpoint = ws.Apiendpoint,
+                        onAction = ws.Onaction,
+                        fieldMappings = ws.Fieldmappings,
+                        headers = ws.Headers,
+                        createdAt = ws.Createdat,
+                        updatedAt = ws.Updatedat,
+
+                        // ✅ Include retry configuration fields for the UI
+                        retryEnabled = ws.Retryenabled,
+                        maxAttempts = ws.Maxattempts,
+                        retryDelaySeconds = ws.Retrydelayseconds
+                    })
+                    .ToList();
+
+                return Json(new
+                {
+                    status = true,
+                    configs = webServices
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching web services");
+                return Json(new { status = false, message = $"Error: {ex.Message}" });
+            }
+        }
+
+
+
+
+        [HttpGet]
+        public async Task<IActionResult> GetWebServiceLogs([FromQuery] int? webserviceId = null, [FromQuery] int pageIndex = 0, [FromQuery] int pageSize = 20, [FromQuery] string? searchQuery = null)
+        {
+            try
+            {
+                var columns = new List<object>
+                {
+                    new { header = "S.No",           accessorKey = "sno",            size = 50  },
+                    new { header = "Timestamp",      accessorKey = "createdAt",      size = 180 },
+                    new { header = "Trigger",        accessorKey = "triggerName",    size = 150 },
+                    new { header = "Reference No",   accessorKey = "referenceNumber",size = 150 },
+                    new { header = "Attempt",        accessorKey = "attemptNumber",  size = 80  },
+                    new { header = "Status",         accessorKey = "statusDisplay",  size = 150 },
+                    new { header = "Duration (ms)",  accessorKey = "durationMs",     size = 120 }
+                };
+
+                if (!webserviceId.HasValue || webserviceId.Value <= 0)
+                {
+                    return Ok(new { status = true, data = new List<object>(), columns, totalRecords = 0 });
+                }
+
+                var query = dbcontext.WebserviceLogs.Where(x => x.Webserviceid == webserviceId.Value);
+
+                if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    query = query.Where(x =>
+                        (x.Referencenumber != null && x.Referencenumber.Contains(searchQuery)) ||
+                        (x.Triggername != null && x.Triggername.Contains(searchQuery)) ||
+                        (x.Errormessage != null && x.Errormessage.Contains(searchQuery))
+                    );
+                }
+
+                var totalRecords = await query.CountAsync();
+
+                var rawData = await query
+                    .OrderByDescending(x => x.Createdat)
+                    .Skip(pageIndex * pageSize)
+                    .Take(pageSize)
+                    .Select(x => new
+                    {
+                        id = x.Id,
+                        createdAt = x.Createdat,
+                        triggerName = x.Triggername,
+                        referenceNumber = x.Referencenumber,
+                        attemptNumber = x.Attemptnumber,
+                        statusDisplay = x.Issuccess
+                                            ? $"Success ({x.Responsestatuscode})"
+                                            : $"Failed ({x.Responsestatuscode})",
+                        durationMs = x.Durationms,
+                        isSuccess = x.Issuccess
+                    })
+                    .ToListAsync();
+
+                // ── Which (referenceNumber, triggerName) pairs have EVER succeeded? ────
+                // Only inspect reference numbers that actually appear as failures on this
+                // page — cheaper than scanning the whole table, and sufficient because
+                // the button only appears on records in this page.
+                var failedRefs = rawData
+                    .Where(x => !x.isSuccess && !string.IsNullOrEmpty(x.referenceNumber))
+                    .Select(x => x.referenceNumber!)
+                    .Distinct()
+                    .ToList();
+
+                var succeededCombos = new HashSet<(string Ref, string Trigger)>();
+                if (failedRefs.Count > 0)
+                {
+                    var successRows = await dbcontext.WebserviceLogs
+                        .Where(x => x.Webserviceid == webserviceId.Value
+                                 && x.Issuccess
+                                 && x.Referencenumber != null
+                                 && failedRefs.Contains(x.Referencenumber))
+                        .Select(x => new { x.Referencenumber, x.Triggername })
+                        .Distinct()
+                        .ToListAsync();
+
+                    foreach (var row in successRows)
+                    {
+                        succeededCombos.Add((row.Referencenumber!, row.Triggername ?? string.Empty));
+                    }
+                }
+
+                // ── Project with custom actions ─────────────────────────────────────────
+                var data = rawData.Select((x, i) =>
+                {
+                    bool hasSucceeded = !string.IsNullOrEmpty(x.referenceNumber)
+                                     && succeededCombos.Contains(
+                                            (x.referenceNumber, x.triggerName ?? string.Empty));
+
+                    // ✅ Resend on ANY failed record — regardless of attempt number —
+                    //    but ONLY if the logical operation has never succeeded.
+                    bool showResend = !x.isSuccess && !hasSucceeded;
+
+                    var actions = new List<object>();
+                    if (showResend)
+                    {
+                        actions.Add(new
+                        {
+                            name = "Resend",
+                            tooltip = "Manually resend this failed request",
+                            actionFunction = "resendRequest",
+                            color = "#F59E0B"
+                        });
+                    }
+                    actions.Add(new
+                    {
+                        name = "View Details",
+                        tooltip = "View Request & Response",
+                        actionFunction = "viewLogDetails",
+                        color = "#2562E9"
+                    });
+
+                    return new
+                    {
+                        sno = (pageIndex * pageSize) + i + 1,
+                        x.id,
+                        x.createdAt,
+                        x.triggerName,
+                        x.referenceNumber,
+                        x.attemptNumber,
+                        x.statusDisplay,
+                        x.durationMs,
+                        customActions = actions
+                    };
+                }).ToList();
+
+                return Ok(new { status = true, data, columns, totalRecords });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching web service logs");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
         [HttpGet]
         public async Task<IActionResult> DisplayFile(string fileName)
         {
@@ -134,23 +336,7 @@ namespace SahayataNidhi.Controllers
         }
 
 
-        public string GetFieldValue(string fieldName, dynamic data)
-        {
-            foreach (var section in data)
-            {
-                if (section.First is JArray fields)
-                {
-                    foreach (var field in fields)
-                    {
-                        if (field["name"] != null && field["name"]?.ToString() == fieldName)
-                        {
-                            return field["value"]?.ToString() ?? "";
-                        }
-                    }
-                }
-            }
-            return "";
-        }
+        public string GetFieldValue(string fieldName, dynamic data) => _referenceData.GetFieldValue(fieldName, data);
 
         [HttpGet]
         public IActionResult GetDepartments()
@@ -163,7 +349,20 @@ namespace SahayataNidhi.Controllers
         public IActionResult GetDesignations(string departmentId)
         {
             _logger.LogInformation($"------- Department ID: {departmentId} --------");
-            var designations = dbcontext.Officersdesignations.Where(des => des.Departmentid == Convert.ToInt32(departmentId)).ToList();
+            var designations = dbcontext.Officersdesignations
+                .Where(des => des.Departmentid == Convert.ToInt32(departmentId))
+                .Select(d => new
+                {
+                    Uuid = d.Uuid,
+                    DepartmentId = d.Departmentid,
+                    Designation = d.Designation,
+                    DesignationShort = d.Designationshort,
+                    // NOTE: Project explicitly so the JSON key is `accessLevel`.
+                    // Returning the raw entity would serialize the C# property
+                    // `Accesslevel` as `accesslevel`, which the frontend does not read.
+                    AccessLevel = d.Accesslevel
+                })
+                .ToList();
             return Json(new { status = true, designations });
         }
 
@@ -195,7 +394,10 @@ namespace SahayataNidhi.Controllers
                     serviceName = s.Servicename,
                     nameShort = s.Nameshort,
                     departmentId = s.Departmentid,
-                    formElement = s.Formelement
+                    formElement = s.Formelement,
+                    // Required by CreateWorkFlow.jsx: on service selection it loads the
+                    // saved workflow locally from this field, avoiding a separate request.
+                    officerEditableField = s.Officereditablefield
                 }).ToArray();
                 return Json(new { status = true, services = service });
             }
@@ -319,11 +521,7 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetAreaList(
-     string table,
-     int parentId,
-     int? officeTypeId = null,
-     bool isOfficeField = false)
+        public IActionResult GetAreaList(string table, int parentId, int? officeTypeId = null, bool isOfficeField = false)
         {
             table = table?.ToLowerInvariant() ?? "";
 
@@ -569,8 +767,6 @@ namespace SahayataNidhi.Controllers
                 return stream.ToArray();
             }
         }
-
-
 
 
         private static PageSize GetOptimalPageSize(int columnCount, out float fontSize, out float margin)
@@ -916,6 +1112,12 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpGet]
+        public IActionResult GetBankdId(string Bankname)
+        {
+            int bankId = dbcontext.Bank.FirstOrDefault(b => b.Bankname == Bankname)!.Id;
+            return Json(new { bankId });
+        }
+
         [HttpGet]
         public IActionResult RedirectToCitizen(string username, bool isCitizen)
         {

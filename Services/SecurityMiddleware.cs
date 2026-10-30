@@ -1,15 +1,9 @@
 using System.Security.Cryptography;
 
-public class SecurityMiddleware
+public class SecurityMiddleware(RequestDelegate next, IConfiguration config)
 {
-    private readonly RequestDelegate _next;
-    private readonly IConfiguration _config;
-
-    public SecurityMiddleware(RequestDelegate next, IConfiguration config)
-    {
-        _next = next;
-        _config = config;
-    }
+    private readonly RequestDelegate _next = next;
+    private readonly IConfiguration _config = config;
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -71,9 +65,17 @@ public class SecurityMiddleware
             return;
         }
 
-        // 5. Remove server fingerprinting
-        context.Response.Headers.Remove("Server");
-        context.Response.Headers.Remove("X-Powered-By");
+        // 5. Remove server fingerprinting.
+        // Hooked via OnStarting so this runs immediately before headers are
+        // actually written to the response — guarantees removal even if a
+        // downstream middleware/component re-adds these headers after this
+        // point in the pipeline (removing them here, before _next(), does not).
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers.Remove("Server");
+            context.Response.Headers.Remove("X-Powered-By");
+            return Task.CompletedTask;
+        });
 
         await _next(context);
     }

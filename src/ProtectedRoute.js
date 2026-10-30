@@ -14,7 +14,7 @@ const ProtectedRoute = ({ requiredRoles }) => {
 
     // If no token or not verified, redirect to appropriate page
     if (!token) {
-      navigate("/login", { replace: true });
+      navigate("/", { replace: true });
       return;
     }
 

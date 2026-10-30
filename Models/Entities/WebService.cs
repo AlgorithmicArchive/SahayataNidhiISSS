@@ -25,5 +25,13 @@ public partial class Webservice
 
     public string? Headers { get; set; }
 
+    public bool Retryenabled { get; set; }
+
+    public int Maxattempts { get; set; }
+
+    public int Retrydelayseconds { get; set; }
+
     public virtual Services Service { get; set; } = null!;
+
+    public virtual ICollection<WebserviceLogs> WebserviceLogs { get; set; } = new List<WebserviceLogs>();
 }

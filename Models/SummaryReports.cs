@@ -1,4 +1,4 @@
-public class TehsilWiseReportDto
+public class SummaryReports
 {
     public string? Tehsilname { get; set; }
     public long Totalapplicationssubmitted { get; set; }

@@ -16,9 +16,21 @@ import {
   FormLabel,
   Autocomplete,
   Alert,
+  Paper,
+  Divider,
+  Stack,
+  Chip,
 } from "@mui/material";
-import { styled } from "@mui/system";
-import { Delete as DeleteIcon } from "@mui/icons-material";
+import {
+  Delete as DeleteIcon,
+  EditNote,
+  Add,
+  PictureAsPdf,
+  CheckCircleOutline,
+  History,
+  UploadFile,
+  Description,
+} from "@mui/icons-material";
 import ServiceSelectionForm from "../../components/ServiceSelectionForm";
 import { fetchServiceList } from "../../assets/fetch";
 import axiosInstance from "../../axiosConfig";
@@ -29,46 +41,6 @@ import {
 import { useLocation } from "react-router-dom";
 import { MaterialReactTable } from "material-react-table";
 import BasicModal from "../../components/BasicModal";
-import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
-
-const StyledContainer = styled(Container)({
-  background: "linear-gradient(135deg, #ffffff 0%, #f0f4f8 100%)",
-  padding: "32px",
-  borderRadius: "16px",
-  boxShadow: "0 8px 30px rgba(0, 0, 0, 0.15)",
-  maxWidth: "800px",
-  marginTop: "40px",
-});
-
-const StyledButton = styled(Button)({
-  background: "linear-gradient(45deg, #1976d2 30%, #2196f3 90%)",
-  color: "#fff",
-  fontWeight: "600",
-  padding: "12px 24px",
-  borderRadius: "8px",
-  transition: "transform 0.3s ease, box-shadow 0.3s ease",
-  "&:hover": {
-    transform: "translateY(-2px)",
-    boxShadow: "0 4px 15px rgba(25, 118, 210, 0.4)",
-  },
-});
-
-const StyledFormControl = styled(FormControl)({
-  minWidth: "200px",
-  "& .MuiInputBase-root": {
-    borderRadius: "8px",
-    backgroundColor: "#fff",
-    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
-  },
-});
-
-const FileNameTypography = styled(Typography)({
-  cursor: "pointer",
-  color: "#1976d2",
-  "&:hover": {
-    textDecoration: "underline",
-  },
-});
 
 const MaterialTable = ({ columns, data, viewType }) => {
   return (
@@ -81,10 +53,10 @@ const MaterialTable = ({ columns, data, viewType }) => {
       enableSorting={false}
       muiTablePaperProps={{
         sx: {
-          borderRadius: "12px",
+          borderRadius: "8px",
           background: "#ffffff",
-          border: "1px solid #b3cde0",
-          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.05)",
+          border: "1px solid #e2e8f0",
+          boxShadow: "none",
         },
       }}
       muiTableContainerProps={{
@@ -92,13 +64,15 @@ const MaterialTable = ({ columns, data, viewType }) => {
       }}
       muiTableHeadCellProps={{
         sx: {
-          background: "#e6f0fa",
-          color: "#1f2937",
+          background: "#f8fafc",
+          color: "#475569",
           fontWeight: 600,
-          fontSize: { xs: 12, md: 14 },
-          borderBottom: "2px solid #b3cde0",
-          borderRight: "1px solid #b3cde0",
-          "&:last-child": { borderRight: "none" },
+          fontSize: "0.75rem",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          borderBottom: "1px solid #e2e8f0",
+          borderRight: "none",
+          py: 1.5,
         },
       }}
       muiTableBodyRowProps={{
@@ -111,38 +85,23 @@ const MaterialTable = ({ columns, data, viewType }) => {
       }}
       muiTableBodyCellProps={{
         sx: {
-          color: "#1f2937",
-          background: "#ffffff",
-          fontSize: { xs: 12, md: 14 },
-          borderRight: "1px solid #b3cde0",
-          borderBottom: "1px solid #b3cde0",
-          "&:last-child": { borderRight: "none" },
-        },
-      }}
-      muiTableFooterRowProps={{
-        sx: { borderTop: "2px solid #b3cde0" },
-      }}
-      muiTablePaginationProps={{
-        rowsPerPageOptions: [10, 25, 50],
-        showFirstButton: true,
-        showLastButton: true,
-        sx: {
-          color: "#1f2937",
-          background: "#ffffff",
-          borderTop: "1px solid #b3cde0",
-          fontSize: { xs: 12, md: 14 },
+          color: "#1e293b",
+          background: "transparent",
+          fontSize: "0.875rem",
+          borderRight: "none",
+          borderBottom: "1px solid #f1f5f9",
+          py: 1.5,
         },
       }}
       renderEmptyRowsFallback={() => (
-        <Box
-          sx={{
-            textAlign: "center",
-            py: 4,
-            color: "rgb(107, 114, 128)",
-            fontSize: { xs: 14, md: 16 },
-          }}
-        >
-          No {viewType?.toLowerCase() || ""} history available.
+        <Box sx={{ textAlign: "center", py: 6, color: "#94a3b8" }}>
+          <History sx={{ fontSize: 40, mb: 1, color: "#cbd5e1" }} />
+          <Typography
+            variant="body1"
+            sx={{ fontWeight: 500, color: "#64748b" }}
+          >
+            No {viewType?.toLowerCase() || "history"} available.
+          </Typography>
         </Box>
       )}
     />
@@ -164,13 +123,9 @@ export default function IssueDocumentChange() {
   const [remarks, setRemarks] = useState("");
   const [wordCount, setWordCount] = useState(0);
   const MAX_WORDS = 50;
-  // REMOVED: files and serverFiles states
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({});
-  const [touched, setTouched] = useState({
-    remarks: false,
-    type: false,
-  });
+  const [touched, setTouched] = useState({ remarks: false, type: false });
   const [nextOfficer, setNextOfficer] = useState("");
   const [columns, setColumns] = useState([]);
   const [data, setData] = useState([]);
@@ -193,11 +148,14 @@ export default function IssueDocumentChange() {
   const [existingCorrigendumId, setExistingCorrigendumId] = useState(null);
   const [canEditExisting, setCanEditExisting] = useState(false);
 
+  const [bankOptions, setBankOptions] = useState([
+    { label: "Please Select", value: "Please Select" },
+  ]);
+
   const location = useLocation();
   const { ReferenceNumber, ServiceId, applicationId, applicationType } =
     location.state || {};
 
-  // Field names for area hierarchy
   const fieldNames = [
     { name: "District", childname: "Tehsil", respectiveTable: "Tehsil" },
     {
@@ -254,8 +212,38 @@ export default function IssueDocumentChange() {
     },
   ];
 
-  // Helper variable to check if user can edit the document
   const canEditDocument = !existingCorrigendumId || canEditExisting;
+
+  const fetchBanks = useCallback(async () => {
+    try {
+      const response = await axiosInstance.get("/Base/GetBanks");
+      if (!response.data?.status) {
+        throw new Error("Failed to fetch banks");
+      }
+      const banks = (response.data.data || [])
+        .map((bank) => {
+          const id =
+            bank.id ?? bank.bankid ?? bank.bankId ?? bank.Bankid ?? bank.BankId;
+          const name =
+            bank.bankname ??
+            bank.bankName ??
+            bank.Bankname ??
+            bank.BankName ??
+            bank.name ??
+            bank.Name;
+          if (name === undefined || name === null) return null;
+          const value = name;
+          return { value: String(value), label: String(name) };
+        })
+        .filter(Boolean);
+      setBankOptions([
+        { label: "Please Select", value: "Please Select" },
+        ...banks,
+      ]);
+    } catch (error) {
+      console.error("Error fetching banks:", error);
+    }
+  }, []);
 
   const resetFormState = useCallback(() => {
     setCanIssue(false);
@@ -282,70 +270,59 @@ export default function IssueDocumentChange() {
     resetFormState();
   }, [resetFormState]);
 
-  // Also trigger check when existingCorrigendumId is set
   useEffect(() => {
-    if (existingCorrigendumId && (referenceNumber || ReferenceNumber) && (serviceId || ServiceId)) {
+    if (
+      existingCorrigendumId &&
+      (referenceNumber || ReferenceNumber) &&
+      (serviceId || ServiceId)
+    ) {
       handleCheckIfDocumentChange();
     }
   }, [existingCorrigendumId]);
 
-  // Automatically load data when component mounts
   useEffect(() => {
     const loadInitialData = async () => {
       setIsInitialLoad(true);
-
       try {
         await fetchServiceList(setServices);
+        await fetchBanks();
       } catch (error) {
         console.error("Failed to load services:", error);
       }
-
       if (ReferenceNumber && ServiceId) {
         setReferenceNumber(ReferenceNumber);
         setServiceId(ServiceId);
-
         if (applicationId) {
           setIsEdit(true);
           setExistingCorrigendumId(applicationId);
         }
-
         if (applicationType) {
           setType(applicationType);
         }
-
         await handleCheckIfDocumentChange();
         setIsInitialLoad(false);
       } else {
         setIsInitialLoad(false);
       }
     };
-
     loadInitialData();
   }, []);
 
-  // Handle area change function
   const handleAreaChange = useCallback(
     async (corrigendumIndex, changedFieldName, value) => {
       try {
         const match = fieldNames.find((f) => f.name === changedFieldName);
-        if (!match) {
-          console.warn(`Field "${changedFieldName}" not found in fieldNames.`);
-          return;
-        }
-
+        if (!match) return;
         const pleaseSelectOption = [
           { label: "Please Select", value: "Please Select" },
         ];
-
         if (value === "Please Select") {
-          // Reset child fields when parent is "Please Select"
           let childFieldNames =
             typeof match.childname === "object"
               ? match.childname.Urban || match.childname.Rural || []
               : [match.childname];
           if (!Array.isArray(childFieldNames))
             childFieldNames = [childFieldNames];
-
           childFieldNames.forEach((childFieldName) => {
             setFormElements((prevSections) => {
               const newSections = JSON.parse(JSON.stringify(prevSections));
@@ -358,7 +335,6 @@ export default function IssueDocumentChange() {
                 (s) => s.section === sectionName,
               );
               if (sectionIndex === -1) return prevSections;
-
               newSections[sectionIndex].fields = newSections[
                 sectionIndex
               ].fields.map((f) => {
@@ -366,22 +342,20 @@ export default function IssueDocumentChange() {
                   return { ...f, options: pleaseSelectOption };
                 if (f.additionalFields) {
                   const updatedAdditionalFields = {};
-                  if (f.additionalFields.Urban) {
+                  if (f.additionalFields.Urban)
                     updatedAdditionalFields.Urban =
                       f.additionalFields.Urban.map((af) =>
                         af.name === childFieldName
                           ? { ...af, options: pleaseSelectOption }
                           : af,
                       );
-                  }
-                  if (f.additionalFields.Rural) {
+                  if (f.additionalFields.Rural)
                     updatedAdditionalFields.Rural =
                       f.additionalFields.Rural.map((af) =>
                         af.name === childFieldName
                           ? { ...af, options: pleaseSelectOption }
                           : af,
                       );
-                  }
                   return {
                     ...f,
                     additionalFields: {
@@ -394,7 +368,6 @@ export default function IssueDocumentChange() {
               });
               return newSections;
             });
-
             setCorrigendumFields((prevFields) => {
               const updatedFields = JSON.parse(JSON.stringify(prevFields));
               const childIndex = updatedFields.findIndex(
@@ -410,7 +383,6 @@ export default function IssueDocumentChange() {
               }
               return updatedFields;
             });
-
             setCorrigendumFields((prevFields) => {
               const updatedFields = JSON.parse(JSON.stringify(prevFields));
               const currentFieldIndex = updatedFields.findIndex(
@@ -437,7 +409,6 @@ export default function IssueDocumentChange() {
           setRenderKey((prev) => prev + 1);
           return;
         }
-
         const sectionName = changedFieldName.includes("Present")
           ? "Present Address Details"
           : changedFieldName.includes("Permanent")
@@ -446,11 +417,7 @@ export default function IssueDocumentChange() {
         const sectionIndex = formElements.findIndex(
           (s) => s.section === sectionName,
         );
-        if (sectionIndex === -1) {
-          console.warn(`Section "${sectionName}" not found in formElements.`);
-          return;
-        }
-
+        if (sectionIndex === -1) return;
         const addressTypeKey = changedFieldName.includes("Present")
           ? "PresentAddressType"
           : changedFieldName.includes("Permanent")
@@ -459,7 +426,6 @@ export default function IssueDocumentChange() {
         const addressType = addressTypeKey
           ? formData[addressTypeKey] || "Urban"
           : "Urban";
-
         let childFieldNames =
           typeof match.childname === "object"
             ? match.childname[addressType] || []
@@ -471,23 +437,14 @@ export default function IssueDocumentChange() {
             ? match.respectiveTable[addressType] || []
             : [match.respectiveTable];
         if (!Array.isArray(tableNames)) tableNames = [tableNames];
-
-        if (!childFieldNames.length || !tableNames.length) {
-          console.warn(
-            `Invalid mapping for ${changedFieldName} (${addressType})`,
-          );
-          return;
-        }
-
+        if (!childFieldNames.length || !tableNames.length) return;
         for (let i = 0; i < childFieldNames.length; i++) {
           const childFieldName = childFieldNames[i];
           const tableName = tableNames[i];
-
           const response = await axiosInstance.get(
             `/Base/GetAreaList?table=${tableName}&parentId=${value}`,
           );
           const areaList = response.data?.data || [];
-
           const uniqueOptions = [];
           const seenValues = new Set();
           areaList.forEach((item) => {
@@ -500,12 +457,10 @@ export default function IssueDocumentChange() {
               });
             }
           });
-
           const newOptions = [
             { label: "Please Select", value: "Please Select" },
             ...uniqueOptions,
           ];
-
           setFormElements((prevSections) => {
             const newSections = JSON.parse(JSON.stringify(prevSections));
             newSections[sectionIndex].fields = newSections[
@@ -515,22 +470,20 @@ export default function IssueDocumentChange() {
                 return { ...f, options: newOptions };
               if (f.additionalFields) {
                 const updatedAdditionalFields = {};
-                if (f.additionalFields.Urban) {
+                if (f.additionalFields.Urban)
                   updatedAdditionalFields.Urban = f.additionalFields.Urban.map(
                     (af) =>
                       af.name === childFieldName
                         ? { ...af, options: newOptions }
                         : af,
                   );
-                }
-                if (f.additionalFields.Rural) {
+                if (f.additionalFields.Rural)
                   updatedAdditionalFields.Rural = f.additionalFields.Rural.map(
                     (af) =>
                       af.name === childFieldName
                         ? { ...af, options: newOptions }
                         : af,
                   );
-                }
                 return {
                   ...f,
                   additionalFields: {
@@ -543,7 +496,6 @@ export default function IssueDocumentChange() {
             });
             return newSections;
           });
-
           setCorrigendumFields((prevFields) => {
             const updatedFields = JSON.parse(JSON.stringify(prevFields));
             const childIndex = updatedFields.findIndex(
@@ -566,7 +518,6 @@ export default function IssueDocumentChange() {
             }
             return updatedFields;
           });
-
           setCorrigendumFields((prevFields) => {
             const updatedFields = JSON.parse(JSON.stringify(prevFields));
             const currentFieldIndex = updatedFields.findIndex(
@@ -575,7 +526,7 @@ export default function IssueDocumentChange() {
             if (
               currentFieldIndex !== -1 &&
               updatedFields[currentFieldIndex].additionalFields?.[
-              updatedFields[currentFieldIndex].newValue
+                updatedFields[currentFieldIndex].newValue
               ]
             ) {
               const addChildIndex = updatedFields[
@@ -589,7 +540,7 @@ export default function IssueDocumentChange() {
                 ][addChildIndex].options = newOptions;
                 const currentChildValue =
                   updatedFields[currentFieldIndex].additionalValues[
-                  childFieldName
+                    childFieldName
                   ] || "";
                 const isValueValid = newOptions.some(
                   (option) =>
@@ -627,8 +578,7 @@ export default function IssueDocumentChange() {
     [formElements, formData, corrigendumFields],
   );
 
-  // Find field config function
-  const findFieldConfig = useCallback(
+  const findFieldConfigRaw = useCallback(
     (fieldName, fieldType = "text", parsedFormElements = null) => {
       parsedFormElements = parsedFormElements || formElements;
       for (const section of parsedFormElements) {
@@ -652,7 +602,7 @@ export default function IssueDocumentChange() {
           for (const key in field.additionalFields) {
             const additional = field.additionalFields[key];
             const found = additional.find((f) => f.name === fieldName);
-            if (found) {
+            if (found)
               return {
                 ...found,
                 type: found.type || fieldType,
@@ -667,13 +617,11 @@ export default function IssueDocumentChange() {
                 accept: found.accept || ".pdf",
                 allowSameAsOldValue: found.allowSameAsOldValue || false,
               };
-            }
           }
-          // Search conditionalAdditionalFields
           for (const key in field.conditionalAdditionalFields) {
             const conditional = field.conditionalAdditionalFields[key];
             const found = conditional.find((f) => f.name === fieldName);
-            if (found) {
+            if (found)
               return {
                 ...found,
                 type: found.type || fieldType,
@@ -688,7 +636,6 @@ export default function IssueDocumentChange() {
                 accept: found.accept || ".pdf",
                 allowSameAsOldValue: found.allowSameAsOldValue || false,
               };
-            }
           }
         }
       }
@@ -709,24 +656,38 @@ export default function IssueDocumentChange() {
     [formElements],
   );
 
-  // Normalize details function
+  const findFieldConfig = useCallback(
+    (fieldName, fieldType = "text", parsedFormElements = null) => {
+      const config = findFieldConfigRaw(
+        fieldName,
+        fieldType,
+        parsedFormElements,
+      );
+      if (fieldName === "BankName" && bankOptions.length > 1) {
+        return {
+          ...config,
+          type: "select",
+          options: bankOptions,
+        };
+      }
+      return config;
+    },
+    [findFieldConfigRaw, bankOptions],
+  );
+
   const normalizeDetails = useCallback(
     (formDetails, parsedFormElements = null) => {
       if (!formDetails || typeof formDetails !== "object") return [];
-
       const sourceElements = parsedFormElements || formElements;
       const allFields = [];
-
       const shouldIncludeField = (config) =>
         config && config.editable !== false;
-
       const pushField = (item, sectionName, config) => {
         const field = {
           label: item.label || item.name,
           name: item.name,
           section: sectionName,
         };
-
         if (config.type === "enclosure") {
           field.oldValue = item.File?.file || item.File || "";
           field.value = item.File?.file || item.File || null;
@@ -734,13 +695,10 @@ export default function IssueDocumentChange() {
           field.oldValue = item.value?.toString() || "";
           field.value = item.value?.toString() || "";
         }
-
         allFields.push(field);
       };
-
       Object.entries(formDetails).forEach(([sectionName, section]) => {
         if (!Array.isArray(section)) return;
-
         section.forEach((item) => {
           const fieldType = getFieldTypeByName(sourceElements, item.name);
           const fieldConfig = findFieldConfig(
@@ -748,11 +706,8 @@ export default function IssueDocumentChange() {
             fieldType || "text",
             formElements,
           );
-
           if (!shouldIncludeField(fieldConfig)) return;
-
           pushField(item, sectionName, fieldConfig);
-
           if (Array.isArray(item.additionalFields)) {
             item.additionalFields.forEach((addField) => {
               const addFieldConfig = findFieldConfig(
@@ -760,15 +715,12 @@ export default function IssueDocumentChange() {
                 addField.type || "text",
                 formElements,
               );
-
               if (!shouldIncludeField(addFieldConfig)) return;
-
               const additionalField = {
                 label: addField.label || addField.name,
                 name: addField.name,
                 section: sectionName,
               };
-
               if (addFieldConfig.type === "enclosure") {
                 additionalField.oldValue =
                   addField.File?.file || addField.File || "";
@@ -778,25 +730,20 @@ export default function IssueDocumentChange() {
                 additionalField.oldValue = addField.value?.toString() || "";
                 additionalField.value = addField.value?.toString() || "";
               }
-
               allFields.push(additionalField);
             });
           }
         });
       });
-
       return allFields;
     },
     [findFieldConfig, formElements],
   );
 
-  // Get field type by name
   function getFieldTypeByName(jsonData, fieldName) {
     function searchFields(fields) {
       for (const field of fields) {
-        if (field.name === fieldName) {
-          return field.type;
-        }
+        if (field.name === fieldName) return field.type;
         if (
           field.additionalFields &&
           Object.keys(field.additionalFields).length > 0
@@ -810,48 +757,38 @@ export default function IssueDocumentChange() {
       }
       return null;
     }
-
     for (const section of jsonData) {
       const result = searchFields(section.fields);
       if (result) return result;
     }
-
     return null;
   }
 
-  // Apply transformations
   const applyTransformations = useCallback((value, transformationFunctions) => {
     let transformedValue = value || "";
     for (const transformFn of transformationFunctions || []) {
-      if (TransformationFunctionsList[transformFn]) {
+      if (TransformationFunctionsList[transformFn])
         transformedValue =
           TransformationFunctionsList[transformFn](transformedValue);
-      }
     }
     return transformedValue;
   }, []);
 
-  // Validate UDID number
   const validateUdidNumber = useCallback(
     async (udidNumber, referenceNumber) => {
       try {
         const response = await axiosInstance.get(
           "/Officer/GetIfSameUdidNumber",
-          {
-            params: { referenceNumber, udidNumber },
-          },
+          { params: { referenceNumber, udidNumber } },
         );
         const data = response.data;
-        if (data.status) {
-          return null;
-        } else {
+        if (data.status) return null;
+        else
           return (
             data.message ||
             "UDID Number doesn't match the existing one in the record."
           );
-        }
       } catch (error) {
-        console.error("Error validating UDID number:", error);
         return (
           error.response?.data?.message ||
           "Error validating UDID number. Please try again."
@@ -861,71 +798,52 @@ export default function IssueDocumentChange() {
     [],
   );
 
-  // Validate field
   const validateField = useCallback(
     async (field, value, formData, referenceNumber) => {
       const fieldConfig = findFieldConfig(field.name);
-
       const skipSameValueCheckFields = [
         "UdidCardNumber",
         "KindOfDisability",
         "PercentageOfDisability",
       ];
-
       if (fieldConfig.type === "enclosure") {
-        if (
-          value &&
-          field.oldValue?.file &&
-          value.name === field.oldValue.file
-        ) {
+        if (value && field.oldValue?.file && value.name === field.oldValue.file)
           return {
             transformedValue: value,
             error: "New file cannot be the same as the old file",
           };
-        }
         if (value) {
-          if (!(value instanceof File)) {
-            return {
-              transformedValue: value,
-              error: "Invalid file format",
-            };
-          }
+          if (!(value instanceof File))
+            return { transformedValue: value, error: "Invalid file format" };
           const validTypes = fieldConfig.accept
             ? fieldConfig.accept.split(",").map((t) => t.trim())
             : [".pdf"];
           const fileExtension = value.name
             ? `.${value.name.split(".").pop().toLowerCase()}`
             : "";
-          if (!validTypes.includes(fileExtension)) {
+          if (!validTypes.includes(fileExtension))
             return {
               transformedValue: value,
               error: `File must be one of: ${validTypes.join(", ")}`,
             };
-          }
-          if (value.size > 5 * 1024 * 1024) {
-            return {
-              transformedValue: value,
-              error: "File size exceeds 5MB",
-            };
-          }
+          if (value.size > 5 * 1024 * 1024)
+            return { transformedValue: value, error: "File size exceeds 5MB" };
         }
-        return {
-          transformedValue: value,
-          error: null,
-        };
+        return { transformedValue: value, error: null };
       }
-
+      const sameValue =
+        fieldConfig.type === "date"
+          ? isSameDate(value, field.oldValue)
+          : value === field.oldValue;
       if (
         !skipSameValueCheckFields.includes(field.name) &&
         !fieldConfig.allowSameAsOldValue &&
-        value === field.oldValue
-      ) {
+        sameValue
+      )
         return {
           transformedValue: value,
           error: "New value cannot be the same as old value",
         };
-      }
-
       const validationResult = await runValidations(
         {
           ...fieldConfig,
@@ -935,35 +853,31 @@ export default function IssueDocumentChange() {
         formData,
         referenceNumber,
       );
-      if (validationResult !== true) {
-        return {
-          transformedValue: value,
-          error: validationResult,
-        };
+      if (field.name === "IfscCode") {
+        const isInvalid =
+          (typeof validationResult === "object" &&
+            validationResult !== null &&
+            validationResult.status === false) ||
+          typeof validationResult === "string";
+        if (isInvalid) {
+          return { transformedValue: value, error: null };
+        }
       }
-
+      if (validationResult !== true)
+        return { transformedValue: value, error: validationResult };
       if (field.name === "UdidCardNumber" && value) {
         const udidValidationResult = await validateUdidNumber(
           value,
           referenceNumber,
         );
-        if (udidValidationResult !== null) {
-          return {
-            transformedValue: value,
-            error: udidValidationResult,
-          };
-        }
+        if (udidValidationResult !== null)
+          return { transformedValue: value, error: udidValidationResult };
       }
-
-      return {
-        transformedValue: value,
-        error: null,
-      };
+      return { transformedValue: value, error: null };
     },
     [findFieldConfig, validateUdidNumber],
   );
 
-  // Validate remarks
   const validateRemarks = useCallback((value) => {
     if (!value.trim()) return "Remarks are required";
     const words = value
@@ -975,22 +889,31 @@ export default function IssueDocumentChange() {
     return null;
   }, []);
 
-  // --- NEW: Validate supporting document for a field
-  const validateSupportingDocument = useCallback((field) => {
+  const validateSupportingDocument = useCallback((field, allFields) => {
+    if (field.groupId) {
+      const groupIndices = allFields
+        .map((f, i) => (f.groupId === field.groupId ? i : -1))
+        .filter((i) => i !== -1);
+      const lastIndex = groupIndices[groupIndices.length - 1];
+      const currentIndex = allFields.indexOf(field);
+      if (lastIndex !== currentIndex) {
+        return null;
+      }
+    }
     if (!field.supportingDocument) {
-      return "Supporting document is required for this field.";
+      return field.groupId
+        ? "Supporting document is required for this group of fields."
+        : "Supporting document is required for this field.";
     }
     return null;
   }, []);
 
-  // Validate type
   const validateType = useCallback((value) => {
     return ["Corrigendum", "Correction"].includes(value)
       ? null
       : "Please select a valid type (Corrigendum, Correction)";
   }, []);
 
-  // Revalidate all fields (including supporting documents)
   const revalidateAllFields = useCallback(
     async (
       updatedFields,
@@ -999,7 +922,6 @@ export default function IssueDocumentChange() {
       validateRemarksAndFiles = false,
     ) => {
       const newErrors = {};
-
       for (const field of updatedFields) {
         if (field.newValue) {
           const { error } = await validateField(
@@ -1010,8 +932,7 @@ export default function IssueDocumentChange() {
           );
           newErrors[field.name] = error;
 
-          // Validate supporting document
-          const docError = validateSupportingDocument(field);
+          const docError = validateSupportingDocument(field, updatedFields);
           newErrors[`${field.name}-doc`] = docError;
 
           for (const additionalFieldName in field.additionalValues) {
@@ -1035,7 +956,6 @@ export default function IssueDocumentChange() {
           }
         }
       }
-
       if (validateRemarksAndFiles) {
         newErrors.remarks = validateRemarks(remarks);
         newErrors.type = validateType(type);
@@ -1052,18 +972,50 @@ export default function IssueDocumentChange() {
     ],
   );
 
-  // Main function to check for document change
+  function toYMD(input) {
+    if (!input) return null;
+    const s = String(input).trim();
+    let m;
+    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))
+      return { year: +m[1], month: +m[2], day: +m[3] };
+    if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))
+      return { year: +m[3], month: +m[2], day: +m[1] };
+    return null;
+  }
+
+  function isSameDate(a, b) {
+    const x = toYMD(a);
+    const y = toYMD(b);
+    if (!x || !y) return false;
+    return x.year === y.year && x.month === y.month && x.day === y.day;
+  }
+
+  const getFormDetailValue = useCallback((fieldName, details) => {
+    if (!details || typeof details !== "object") return null;
+    for (const section of Object.values(details)) {
+      if (Array.isArray(section)) {
+        for (const item of section) {
+          if (item.name === fieldName) return item.value;
+          if (Array.isArray(item.additionalFields)) {
+            for (const addField of item.additionalFields) {
+              if (addField.name === fieldName) return addField.value;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }, []);
+
   const handleCheckIfDocumentChange = useCallback(async () => {
     if (!existingCorrigendumId && !type) {
-      if (!applicationType) {
+      if (!applicationType)
         setErrors((prev) => ({
           ...prev,
           type: "Please select a type (Corrigendum or Correction)",
         }));
-      }
       return;
     }
-
     if (!existingCorrigendumId && (!referenceNumber || !serviceId)) {
       setResponseMessage({
         message: "Please provide both reference number and service.",
@@ -1071,37 +1023,28 @@ export default function IssueDocumentChange() {
       });
       return;
     }
-
     setLoading(true);
     setResponseMessage({ message: "", type: "" });
-
     try {
       const params = existingCorrigendumId
         ? {
-          referenceNumber: ReferenceNumber || referenceNumber,
-          serviceId: ServiceId || serviceId,
-          applicationId: existingCorrigendumId,
-          type: type || applicationType,
-        }
-        : {
-          referenceNumber,
-          serviceId,
-          type: type || applicationType,
-        };
-
+            referenceNumber: ReferenceNumber || referenceNumber,
+            serviceId: ServiceId || serviceId,
+            applicationId: existingCorrigendumId,
+            type: type || applicationType,
+          }
+        : { referenceNumber, serviceId, type: type || applicationType };
       const response = await axiosInstance.get(
         "/Officer/GetApplicationForCorrigendum",
         { params },
       );
       const result = response.data;
-
       if (result.status) {
         let parsedFormElements = [];
         if (typeof result.formElements === "string") {
           try {
             parsedFormElements = JSON.parse(result.formElements);
           } catch (error) {
-            console.error("Error parsing formElements:", error);
             setResponseMessage({
               message: "Invalid form elements data from server.",
               type: "error",
@@ -1110,9 +1053,9 @@ export default function IssueDocumentChange() {
             setLoading(false);
             return;
           }
-        } else if (Array.isArray(result.formElements)) {
+        } else if (Array.isArray(result.formElements))
           parsedFormElements = result.formElements;
-        } else {
+        else {
           setResponseMessage({
             message: "Unexpected form elements format from server.",
             type: "error",
@@ -1121,17 +1064,16 @@ export default function IssueDocumentChange() {
           setLoading(false);
           return;
         }
-
         setFormElements(parsedFormElements);
         setFormDetailsFields(
           normalizeDetails(result.formDetails, parsedFormElements),
         );
         setFormDetails(result.formDetails || {});
-
-        const canIssueNow = result.canEdit || result.isCurrentOfficer ||
+        const canIssueNow =
+          result.canEdit ||
+          result.isCurrentOfficer ||
           (result.corrigendumType === type && !result.existingCorrigendumId);
         setCanIssue(canIssueNow);
-
         if (result.existingCorrigendumId) {
           setIsEdit(true);
           setExistingCorrigendumId(result.existingCorrigendumId);
@@ -1143,28 +1085,45 @@ export default function IssueDocumentChange() {
           setIsEdit(false);
           setCanEditExisting(true);
         }
-
         setNextOfficer(result.nextOfficer);
 
-        const mappedAllowedFields = result.allowedForDetails.map((item) => {
-          if (item.isGroup) {
-            return {
-              label: item.label,
-              name: item.name || item.label,
-              isGroup: true,
-              fields: item.fields,
-              value: `group|${item.label}`,
-            };
-          } else {
-            return {
-              label: item.label,
-              name: item.name,
-              type: item.type || "text",
-              isGroup: false,
-              value: `${item.label}|${item.name}`,
-            };
-          }
-        });
+        const mappedAllowedFields = result.allowedForDetails
+          .filter((item) => {
+            if (item.label === "UDID" || item.name === "UDID") {
+              const pensionType = getFormDetailValue(
+                "PensionType",
+                result.formDetails,
+              );
+              const kindOfDisability = getFormDetailValue(
+                "KindOfDisability",
+                result.formDetails,
+              );
+
+              return (
+                pensionType === "PHYSICALLY CHALLENGED PERSON" &&
+                kindOfDisability === "TEMPORARY"
+              );
+            }
+            return true;
+          })
+          .map((item) => {
+            if (item.isGroup)
+              return {
+                label: item.label,
+                name: item.name || item.label,
+                isGroup: true,
+                fields: item.fields,
+                value: `group|${item.label}`,
+              };
+            else
+              return {
+                label: item.label,
+                name: item.name,
+                type: item.type || "text",
+                isGroup: false,
+                value: `${item.label}|${item.name}`,
+              };
+          });
         setAllowedFormFields(mappedAllowedFields);
 
         if (isEdit || result.existingCorrigendumId) {
@@ -1173,28 +1132,28 @@ export default function IssueDocumentChange() {
           setType(result.corrigendumType || type || applicationType);
           const words = result.remarks
             ? result.remarks
-              .trim()
-              .split(/\s+/)
-              .filter((word) => word.length > 0)
+                .trim()
+                .split(/\s+/)
+                .filter((word) => word.length > 0)
             : [];
           setWordCount(words.length);
           setRemarks(result.remarks || "");
         }
-
         let newCorrigendumFields = [];
         let newErrors = {};
-        if ((isEdit || result.existingCorrigendumId) && result.corrigendumFields) {
+        if (
+          (isEdit || result.existingCorrigendumId) &&
+          result.corrigendumFields
+        ) {
           let corrigendumFieldsData =
             typeof result.corrigendumFields === "string"
               ? JSON.parse(result.corrigendumFields)
               : result.corrigendumFields;
-
           let index = 0;
           for (const [name, fieldData] of Object.entries(
             corrigendumFieldsData,
           )) {
             if (name === "Files") continue;
-
             const isGroup =
               typeof fieldData === "object" && !fieldData.new_value;
             if (isGroup) {
@@ -1207,15 +1166,14 @@ export default function IssueDocumentChange() {
                 const formDetail = normalizeDetails(result.formDetails).find(
                   (item) => item.name === subName,
                 );
-                if (!formDetail) continue;
-
-                let oldValue = formDetail.oldValue || "";
+                let oldValue = formDetail ? formDetail.oldValue : "";
                 if (fieldConfig.type === "enclosure") {
-                  oldValue = formDetail.oldValue || "";
+                  oldValue = formDetail
+                    ? formDetail.oldValue
+                    : { file: null, label: subName };
                 }
-
                 const newField = {
-                  label: formDetail.label,
+                  label: formDetail ? formDetail.label : subName,
                   name: subName,
                   oldValue,
                   newValue:
@@ -1234,17 +1192,17 @@ export default function IssueDocumentChange() {
                     fieldConfig.conditionalAdditionalFields || {},
                   accept: fieldConfig.accept || ".pdf",
                   supportingDocument: subFieldData.supporting_document || null,
+                  groupId: name,
                 };
-
                 if (
                   subFieldData.new_value &&
                   fieldConfig.conditionalAdditionalFields?.[
-                  subFieldData.new_value
+                    subFieldData.new_value
                   ]
                 ) {
                   const conditionalFields =
                     fieldConfig.conditionalAdditionalFields[
-                    subFieldData.new_value
+                      subFieldData.new_value
                     ];
                   for (const condField of conditionalFields) {
                     const condFormDetail = normalizeDetails(
@@ -1273,12 +1231,11 @@ export default function IssueDocumentChange() {
                         condField.conditionalAdditionalFields || {},
                       accept: condField.accept || ".pdf",
                       supportingDocument: null,
+                      groupId: name,
                     });
                   }
                 }
-
                 newCorrigendumFields.push(newField);
-
                 const { error } = await validateField(
                   newField,
                   newField.newValue,
@@ -1297,15 +1254,14 @@ export default function IssueDocumentChange() {
               const formDetail = normalizeDetails(result.formDetails).find(
                 (item) => item.name === name,
               );
-              if (!formDetail) continue;
-
-              let oldValue = formDetail.oldValue || "";
+              let oldValue = formDetail ? formDetail.oldValue : "";
               if (fieldConfig.type === "enclosure") {
-                oldValue = formDetail.oldValue || "";
+                oldValue = formDetail
+                  ? formDetail.oldValue
+                  : { file: null, label: name };
               }
-
               const newField = {
-                label: formDetail.label,
+                label: formDetail ? formDetail.label : name,
                 name,
                 oldValue,
                 newValue:
@@ -1325,7 +1281,6 @@ export default function IssueDocumentChange() {
                 accept: fieldConfig.accept || ".pdf",
                 supportingDocument: fieldData.supporting_document || null,
               };
-
               if (
                 fieldData.new_value &&
                 fieldConfig.conditionalAdditionalFields?.[fieldData.new_value]
@@ -1362,9 +1317,7 @@ export default function IssueDocumentChange() {
                   });
                 }
               }
-
               newCorrigendumFields.push(newField);
-
               const { error } = await validateField(
                 newField,
                 newField.newValue,
@@ -1376,28 +1329,24 @@ export default function IssueDocumentChange() {
             }
           }
         }
-
         setCorrigendumFields(newCorrigendumFields);
         setErrors(newErrors);
-
         const newFormData = {};
         normalizeDetails(result.formDetails).forEach((item) => {
           newFormData[item.name] = item.value || (item.File ? item.File : "");
         });
         setFormData(newFormData);
-
         if (result.existingCorrigendumId) {
-          if (result.canEdit) {
+          if (result.canEdit)
             setResponseMessage({
               message: `Found an existing ${type.toLowerCase()} at your level. You can now edit and forward it.`,
               type: "info",
             });
-          } else {
+          else
             setResponseMessage({
               message: `Found an existing ${type.toLowerCase()}. You can view but not edit it.`,
               type: "warning",
             });
-          }
         } else if (existingCorrigendumId) {
           setResponseMessage({
             message: `No existing ${type.toLowerCase()} found with the provided ID. You can create a new one.`,
@@ -1443,30 +1392,19 @@ export default function IssueDocumentChange() {
     formData,
     validateField,
     applicationType,
+    getFormDetailValue,
   ]);
 
-  // Find nested field value
   const findNestedFieldValue = (formDetails, fieldName) => {
     if (formDetails && typeof formDetails === "object") {
       for (const [sectionName, section] of Object.entries(formDetails)) {
-        if (!Array.isArray(section)) {
-          continue;
-        }
-
+        if (!Array.isArray(section)) continue;
         for (const field of section) {
-          if (field.name === fieldName) {
-            const val = field.value ?? field.File ?? "";
-            return val;
-          }
-
+          if (field.name === fieldName) return field.value ?? field.File ?? "";
           if (field.additionalFields) {
             const searchAdditional = (fields, depth = 1) => {
               for (const sub of fields) {
-                if (sub.name === fieldName) {
-                  const val = sub.value ?? sub.File ?? "";
-                  return val;
-                }
-
+                if (sub.name === fieldName) return sub.value ?? sub.File ?? "";
                 if (sub.additionalFields) {
                   const nested = searchAdditional(
                     sub.additionalFields,
@@ -1477,51 +1415,32 @@ export default function IssueDocumentChange() {
               }
               return null;
             };
-
             const nestedValue = searchAdditional(field.additionalFields);
             if (nestedValue) return nestedValue;
           }
         }
       }
     }
-
     return "";
   };
 
-  // Handle new value change
   const handleNewValueChange = useCallback(
     (index, value, additionalFieldName = null, skipStateUpdate = false) => {
       const field = corrigendumFields[index];
-      if (!field) {
-        console.error(`Field at index ${index} not found in corrigendumFields`);
-        return;
-      }
-
+      if (!field) return;
       let transformedValue;
       const changedFieldName = additionalFieldName || field.name;
       const changedField = additionalFieldName
         ? (field.additionalFields[field.newValue] || []).find(
-          (f) => f.name === additionalFieldName,
-        )
+            (f) => f.name === additionalFieldName,
+          )
         : field;
-
-      if (!changedField) {
-        console.warn(
-          `Field ${additionalFieldName || field.name} not found in corrigendumFields`,
-        );
-        return;
-      }
-
+      if (!changedField) return;
       if (additionalFieldName) {
         const additionalFieldConfig = (
           field.additionalFields[field.newValue] || []
         ).find((f) => f.name === additionalFieldName);
-        if (!additionalFieldConfig) {
-          console.warn(
-            `Additional field config not found for ${additionalFieldName}`,
-          );
-          return;
-        }
+        if (!additionalFieldConfig) return;
         transformedValue = applyTransformations(
           value,
           additionalFieldConfig.transformationFunctions,
@@ -1534,10 +1453,8 @@ export default function IssueDocumentChange() {
             !validOptions.some(
               (opt) => opt.value.toString() === value.toString(),
             )
-          ) {
-            console.warn(`Invalid value ${value} for ${additionalFieldName}`);
+          )
             return;
-          }
         }
         if (!skipStateUpdate) {
           const tempUpdated = [...corrigendumFields];
@@ -1546,7 +1463,6 @@ export default function IssueDocumentChange() {
             [additionalFieldName]: transformedValue,
           };
           setCorrigendumFields(tempUpdated);
-
           runValidations(
             {
               ...additionalFieldConfig,
@@ -1577,26 +1493,29 @@ export default function IssueDocumentChange() {
             !validOptions.some(
               (opt) => opt.value.toString() === value.toString(),
             )
-          ) {
-            console.warn(`Invalid value ${value} for ${field.name}`);
+          )
             return;
-          }
         }
         if (!skipStateUpdate) {
           const tempUpdated = [...corrigendumFields];
           tempUpdated[index].newValue = transformedValue;
 
-          const conditionalFields =
-            field.additionalFields?.[transformedValue] ||
-            field.conditionalAdditionalFields?.[transformedValue] ||
-            [];
+          // FIX: Include fields from BOTH additionalFields and conditionalAdditionalFields
+          // so they are added as standalone fields instead of inline.
+          const additionalFieldsList =
+            field.additionalFields?.[transformedValue] || [];
+          const conditionalFieldsList =
+            field.conditionalAdditionalFields?.[transformedValue] || [];
+          const conditionalFields = [
+            ...additionalFieldsList,
+            ...conditionalFieldsList,
+          ];
 
           const existingConditionalFieldNames = corrigendumFields.map(
             (f) => f.name,
           );
           const fieldsToAdd = [];
           const fieldsToRemove = [];
-
           corrigendumFields.forEach((f, i) => {
             if (
               i !== index &&
@@ -1608,11 +1527,9 @@ export default function IssueDocumentChange() {
                   .flat()
                   .some((cf) => cf.name === f.name)) &&
               !conditionalFields.some((cf) => cf.name === f.name)
-            ) {
+            )
               fieldsToRemove.push(i);
-            }
           });
-
           conditionalFields.forEach((condField) => {
             if (!existingConditionalFieldNames.includes(condField.name)) {
               const oldValue = findNestedFieldValue(
@@ -1637,41 +1554,32 @@ export default function IssueDocumentChange() {
                   condField.conditionalAdditionalFields || {},
                 accept: condField.accept || ".pdf",
                 supportingDocument: null,
+                groupId: field.groupId || null,
               };
               fieldsToAdd.push(newField);
-
               validateField(
                 newField,
                 newField.newValue,
                 formData,
                 referenceNumber,
               ).then(({ error }) => {
-                setErrors((prev) => ({
-                  ...prev,
-                  [newField.name]: error,
-                }));
+                setErrors((prev) => ({ ...prev, [newField.name]: error }));
               });
             }
           });
-
           let newCorrigendumFields = tempUpdated.filter(
             (_, i) => !fieldsToRemove.includes(i),
           );
           newCorrigendumFields = [...newCorrigendumFields, ...fieldsToAdd];
           setCorrigendumFields(newCorrigendumFields);
-
           validateField(
             field,
             transformedValue,
             formData,
             referenceNumber,
           ).then(({ error }) => {
-            setErrors((prev) => ({
-              ...prev,
-              [field.name]: error,
-            }));
+            setErrors((prev) => ({ ...prev, [field.name]: error }));
           });
-
           revalidateAllFields(
             newCorrigendumFields,
             { ...formData, [changedFieldName]: transformedValue },
@@ -1682,21 +1590,18 @@ export default function IssueDocumentChange() {
           });
         }
       }
-
       setFormData((prev) => ({
         ...prev,
         [changedFieldName]: transformedValue,
       }));
-
       if (
         changedField &&
         changedField.type === "select" &&
         /district|tehsil|muncipality|ward|block|halqapanchayat|village/i.test(
           changedFieldName,
         )
-      ) {
+      )
         handleAreaChange(index, changedFieldName, transformedValue);
-      }
     },
     [
       corrigendumFields,
@@ -1709,27 +1614,17 @@ export default function IssueDocumentChange() {
     ],
   );
 
-  // Handle new value blur
   const handleNewValueBlur = useCallback(
     async (index, value, additionalFieldName = null) => {
       const updated = [...corrigendumFields];
       const field = updated[index];
-      if (!field) {
-        console.error(`Field at index ${index} not found in corrigendumFields`);
-        return;
-      }
-
+      if (!field) return;
       let error;
       if (additionalFieldName) {
         const additionalFieldConfig = (
           field.additionalFields[field.newValue] || []
         ).find((f) => f.name === additionalFieldName);
-        if (!additionalFieldConfig) {
-          console.warn(
-            `Additional field config not found for ${additionalFieldName}`,
-          );
-          return;
-        }
+        if (!additionalFieldConfig) return;
         const validationResult = await runValidations(
           {
             ...additionalFieldConfig,
@@ -1755,7 +1650,6 @@ export default function IssueDocumentChange() {
         error = result.error;
         setErrors((prev) => ({ ...prev, [field.name]: error }));
       }
-
       const newErrors = await revalidateAllFields(
         updated,
         formData,
@@ -1773,7 +1667,6 @@ export default function IssueDocumentChange() {
     ],
   );
 
-  // Add corrigendum field
   const handleAddCorrigendumField = useCallback(() => {
     if (!selectedField) {
       setErrors((prev) => ({
@@ -1792,23 +1685,23 @@ export default function IssueDocumentChange() {
       }));
       return;
     }
-
     const newFields = [];
 
-    const addFieldToCorrigendum = (field) => {
+    const addFieldToCorrigendum = (field, groupId = null) => {
       if (corrigendumFields.some((f) => f.name === field.name)) return;
       const formDetail = formDetailsFields.find((d) => d.name === field.name);
-      if (!formDetail) return;
       const fieldConfig = findFieldConfig(field.name, field.type || "text");
       if (!fieldConfig) return;
 
-      let oldValue = formDetail.oldValue || "";
+      let oldValue = formDetail ? formDetail.oldValue : "";
       if (fieldConfig.type === "enclosure") {
-        oldValue = formDetail.oldValue || { file: null, label: field.name };
+        oldValue = formDetail
+          ? formDetail.oldValue
+          : { file: null, label: field.name };
       }
 
       newFields.push({
-        label: formDetail.label,
+        label: fieldConfig.label || field.label || field.name,
         name: field.name,
         oldValue,
         newValue: fieldConfig.type === "enclosure" ? null : "",
@@ -1823,11 +1716,14 @@ export default function IssueDocumentChange() {
         additionalFields: fieldConfig.additionalFields || {},
         accept: fieldConfig.accept || ".pdf",
         supportingDocument: null,
+        groupId: groupId,
       });
     };
 
     if (selectedOption.isGroup) {
-      selectedOption.fields.forEach(addFieldToCorrigendum);
+      selectedOption.fields.forEach((f) =>
+        addFieldToCorrigendum(f, selectedOption.name || selectedOption.label),
+      );
     } else {
       addFieldToCorrigendum(selectedOption);
     }
@@ -1840,7 +1736,6 @@ export default function IssueDocumentChange() {
         referenceNumber,
       ).then((newErrors) => setErrors(newErrors));
     }
-
     setSelectedField("");
     setErrors((prev) => ({ ...prev, selectedField: null }));
   }, [
@@ -1854,7 +1749,6 @@ export default function IssueDocumentChange() {
     revalidateAllFields,
   ]);
 
-  // Delete field
   const handleDeleteField = useCallback(
     (index) => {
       const updatedFields = corrigendumFields.filter((_, i) => i !== index);
@@ -1869,28 +1763,23 @@ export default function IssueDocumentChange() {
     [corrigendumFields, formData, referenceNumber, revalidateAllFields],
   );
 
-  // --- NEW: handlers for per‑field supporting documents ---
   const handleSupportingDocumentChange = (index, file) => {
     const updated = [...corrigendumFields];
-    updated[index].supportingDocument = file; // store File object
+    updated[index].supportingDocument = file;
     setCorrigendumFields(updated);
-
-    // Clear error for this field's document
-    setErrors((prev) => ({
-      ...prev,
-      [`${updated[index].name}-doc`]: null,
-    }));
+    setErrors((prev) => ({ ...prev, [`${updated[index].name}-doc`]: null }));
   };
 
   const handleRemoveSupportingDocument = (index) => {
     const updated = [...corrigendumFields];
     updated[index].supportingDocument = null;
     setCorrigendumFields(updated);
-
-    // Set error again
     setErrors((prev) => ({
       ...prev,
-      [`${updated[index].name}-doc`]: validateSupportingDocument(updated[index]),
+      [`${updated[index].name}-doc`]: validateSupportingDocument(
+        updated[index],
+        updated,
+      ),
     }));
   };
 
@@ -1918,9 +1807,7 @@ export default function IssueDocumentChange() {
       if (!isEdit && !isInitialLoad && type !== newType) {
         resetFormState();
         setType(newType);
-      } else {
-        setType(newType);
-      }
+      } else setType(newType);
     },
     [isEdit, isInitialLoad, type, resetFormState],
   );
@@ -1936,9 +1823,7 @@ export default function IssueDocumentChange() {
       if (!isEdit && !isInitialLoad && serviceId !== newServiceId) {
         resetFormState();
         setServiceId(newServiceId);
-      } else {
-        setServiceId(newServiceId);
-      }
+      } else setServiceId(newServiceId);
     },
     [isEdit, isInitialLoad, serviceId, resetFormState],
   );
@@ -1949,9 +1834,7 @@ export default function IssueDocumentChange() {
       if (!isEdit && !isInitialLoad && referenceNumber !== newReferenceNumber) {
         resetFormState();
         setReferenceNumber(newReferenceNumber);
-      } else {
-        setReferenceNumber(newReferenceNumber);
-      }
+      } else setReferenceNumber(newReferenceNumber);
     },
     [isEdit, isInitialLoad, referenceNumber, resetFormState],
   );
@@ -1989,16 +1872,15 @@ export default function IssueDocumentChange() {
             : field.newValue,
         additional_values: field.additionalValues || {},
         supporting_document: field.supportingDocument
-          ? (typeof field.supportingDocument === 'string'
+          ? typeof field.supportingDocument === "string"
             ? field.supportingDocument
-            : field.supportingDocument.name)
-          : null
+            : field.supportingDocument.name
+          : null,
       };
       return acc;
     }, {});
   }, [corrigendumFields]);
 
-  // Submit document change
   const handleSubmitDocumentChange = useCallback(async () => {
     if (!type) {
       setErrors((prev) => ({
@@ -2007,7 +1889,6 @@ export default function IssueDocumentChange() {
       }));
       return;
     }
-
     if (corrigendumFields.length === 0) {
       setErrors((prev) => ({
         ...prev,
@@ -2015,9 +1896,7 @@ export default function IssueDocumentChange() {
       }));
       return;
     }
-
     setTouched((prev) => ({ ...prev, remarks: true, type: true }));
-
     const newErrors = await revalidateAllFields(
       corrigendumFields,
       formData,
@@ -2026,25 +1905,32 @@ export default function IssueDocumentChange() {
     );
     setErrors(newErrors);
 
-    // --- NEW: Check if any field is missing a supporting document
-    const hasMissingDoc = corrigendumFields.some(
-      (field) => !field.supportingDocument
-    );
+    const missingGroupDoc = corrigendumFields.some((field) => {
+      if (field.groupId) {
+        const groupIndices = corrigendumFields
+          .map((f, i) => (f.groupId === field.groupId ? i : -1))
+          .filter((i) => i !== -1);
+        const lastIndex = groupIndices[groupIndices.length - 1];
+        return (
+          lastIndex === corrigendumFields.indexOf(field) &&
+          !field.supportingDocument
+        );
+      }
+      return !field.supportingDocument;
+    });
 
     const hasEmptyNewValue = corrigendumFields.some((field) => !field.newValue);
-
     const hasValidationErrors = Object.values(newErrors).some(
       (error) => error !== null && error !== undefined,
     );
 
-    if (hasMissingDoc) {
+    if (missingGroupDoc) {
       setErrors((prev) => ({
         ...prev,
-        corrigendumFields: `All fields must have a supporting document uploaded.`,
+        corrigendumFields: `All fields or groups must have a supporting document uploaded.`,
       }));
       return;
     }
-
     if (hasEmptyNewValue) {
       setErrors((prev) => ({
         ...prev,
@@ -2052,7 +1938,6 @@ export default function IssueDocumentChange() {
       }));
       return;
     }
-
     if (hasValidationErrors) {
       setErrors((prev) => ({
         ...prev,
@@ -2060,7 +1945,6 @@ export default function IssueDocumentChange() {
       }));
       return;
     }
-
     setLoading(true);
     setResponseMessage({ message: "", type: "" });
     try {
@@ -2068,12 +1952,6 @@ export default function IssueDocumentChange() {
       try {
         JSON.parse(JSON.stringify(corrigendumObject));
       } catch (error) {
-        console.error(
-          "Error validating corrigendumObject:",
-          error,
-          "Object:",
-          corrigendumObject,
-        );
         setResponseMessage({
           message: `Invalid ${type.toLowerCase()} fields format.`,
           type: "error",
@@ -2081,7 +1959,6 @@ export default function IssueDocumentChange() {
         setLoading(false);
         return;
       }
-
       const formDataToSend = new FormData();
       formDataToSend.append("referenceNumber", referenceNumber);
       formDataToSend.append("remarks", remarks);
@@ -2091,23 +1968,23 @@ export default function IssueDocumentChange() {
         "corrigendumFields",
         JSON.stringify(corrigendumObject),
       );
-      if (existingCorrigendumId) formDataToSend.append("applicationId", existingCorrigendumId);
-
-      // --- NEW: Append per‑field supporting documents
+      if (existingCorrigendumId)
+        formDataToSend.append("applicationId", existingCorrigendumId);
       corrigendumFields.forEach((field) => {
-        if (field.supportingDocument && typeof field.supportingDocument !== 'string') {
-          formDataToSend.append(`fieldSupportingDocuments[${field.name}]`, field.supportingDocument);
-        }
+        if (
+          field.supportingDocument &&
+          typeof field.supportingDocument !== "string"
+        )
+          formDataToSend.append(
+            `fieldSupportingDocuments[${field.name}]`,
+            field.supportingDocument,
+          );
       });
-
       const response = await axiosInstance.post(
         "/Officer/SubmitDocumentChange",
         formDataToSend,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
+        { headers: { "Content-Type": "multipart/form-data" } },
       );
-
       if (response.data.status) {
         setSuccessDetails({
           message: response.data.message || `${type} submitted successfully!`,
@@ -2115,7 +1992,6 @@ export default function IssueDocumentChange() {
           type: type,
         });
         setShowSuccessMessage(true);
-
         setTimeout(() => {
           resetFormState();
           setReferenceNumber("");
@@ -2135,12 +2011,6 @@ export default function IssueDocumentChange() {
         });
       }
     } catch (error) {
-      console.error(
-        "Error submitting document change:",
-        error,
-        "Response:",
-        error.response?.data,
-      );
       setResponseMessage({
         message:
           error.response?.data?.message ||
@@ -2161,6 +2031,7 @@ export default function IssueDocumentChange() {
     generateCorrigendumObject,
     resetFormState,
     revalidateAllFields,
+    validateSupportingDocument,
   ]);
 
   if (loading) {
@@ -2172,10 +2043,10 @@ export default function IssueDocumentChange() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          bgcolor: "#f0f4f8",
+          bgcolor: "#F8FAFC",
         }}
       >
-        <CircularProgress size={60} sx={{ color: "#1976d2" }} />
+        <CircularProgress size={60} sx={{ color: "#2562E9" }} />
       </Box>
     );
   }
@@ -2186,224 +2057,322 @@ export default function IssueDocumentChange() {
         sx={{
           minHeight: "100vh",
           display: "flex",
-          justifyContent: "center",
           alignItems: "center",
-          background:
-            "linear-gradient(to bottom, #75aecfff 0%, #417ac5ff 100%)",
-          padding: "40px",
+          justifyContent: "center",
+          bgcolor: "#F8FAFC",
+          p: 3,
         }}
       >
-        <StyledContainer>
+        <Paper
+          sx={{
+            p: 6,
+            maxWidth: 500,
+            width: "100%",
+            textAlign: "center",
+            borderRadius: 3,
+            border: "1px solid #E2E8F0",
+          }}
+        >
           <Box
             sx={{
-              textAlign: "center",
+              width: 80,
+              height: 80,
+              borderRadius: "50%",
+              bgcolor: "#D1FAE5",
               display: "flex",
-              flexDirection: "column",
               alignItems: "center",
-              gap: 3,
+              justifyContent: "center",
+              mx: "auto",
+              mb: 3,
             }}
           >
-            <Box
-              sx={{
-                backgroundColor: "#d4edda",
-                border: "1px solid #c3e6cb",
-                borderRadius: "8px",
-                padding: "20px",
-                width: "100%",
-                maxWidth: "500px",
-              }}
-            >
-              <Typography
-                variant="h5"
-                sx={{ color: "#155724", fontWeight: "600", mb: 2 }}
-              >
-                ✅ Success!
-              </Typography>
-              <Typography variant="body1" sx={{ color: "#155724", mb: 2 }}>
-                {successDetails.message}
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ color: "#155724", fontStyle: "italic" }}
-              >
-                Reference Number: {successDetails.referenceNumber}
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ color: "#155724", fontStyle: "italic" }}
-              >
-                Type: {successDetails.type}
-              </Typography>
-            </Box>
-            <StyledButton
-              onClick={handleStartNew}
-              sx={{ mt: 2, minWidth: "200px" }}
-            >
-              Submit Another {successDetails.type || "Document Change"}
-            </StyledButton>
+            <CheckCircleOutline sx={{ fontSize: 48, color: "#059669" }} />
           </Box>
-        </StyledContainer>
+          <Typography
+            variant="h5"
+            sx={{ fontWeight: 700, color: "#0F172A", mb: 1 }}
+          >
+            {successDetails.type} Submitted Successfully
+          </Typography>
+          <Typography variant="body1" sx={{ color: "#475569", mb: 3 }}>
+            {successDetails.message}
+          </Typography>
+          <Divider sx={{ my: 3 }} />
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            sx={{ mb: 1.5 }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              Reference Number:
+            </Typography>
+            <Typography variant="body2" fontWeight={600}>
+              {successDetails.referenceNumber}
+            </Typography>
+          </Stack>
+          <Stack direction="row" justifyContent="space-between" sx={{ mb: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              Type:
+            </Typography>
+            <Typography variant="body2" fontWeight={600}>
+              {successDetails.type}
+            </Typography>
+          </Stack>
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={handleStartNew}
+            sx={{
+              bgcolor: "#2562E9",
+              "&:hover": { bgcolor: "#1D4ED8" },
+              textTransform: "none",
+              fontWeight: 600,
+              py: 1.5,
+              borderRadius: 2,
+            }}
+          >
+            Submit Another {successDetails.type || "Document Change"}
+          </Button>
+        </Paper>
       </Box>
     );
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "flex-start",
-        background: "linear-gradient(to bottom, #75aecfff 0%, #417ac5ff 100%)",
-        padding: "40px",
-      }}
-    >
-      <StyledContainer>
-        <Typography
-          variant="h4"
-          sx={{
-            textAlign: "center",
-            fontWeight: "700",
-            color: "#1976d2",
-            mb: 4,
-            textShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          {isEdit || existingCorrigendumId
-            ? `Edit ${type}`
-            : `Issue ${type || "Corrigendum/Correction"}`}
-        </Typography>
-
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 3,
-          }}
-        >
-          <ServiceSelectionForm
-            services={services}
-            value={serviceId}
-            onServiceSelect={handleServiceChange}
-            disabled={isEdit || existingCorrigendumId}
-          />
-          <StyledFormControl sx={{ width: "100%", maxWidth: "400px" }}>
-            <Autocomplete
-              value={type}
-              onChange={(event, newValue) => {
-                if (!isEdit && !isInitialLoad && type !== newValue) {
-                  resetFormState();
-                  setType(newValue);
-                } else {
-                  setType(newValue);
-                }
-                setTouched((prev) => ({ ...prev, type: true }));
-                const error = validateType(newValue);
-                setErrors((prev) => ({ ...prev, type: error }));
-              }}
-              onBlur={() => {
-                setTouched((prev) => ({ ...prev, type: true }));
-                const error = validateType(type);
-                setErrors((prev) => ({ ...prev, type: error }));
-              }}
-              options={["Corrigendum", "Correction"]}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Type"
-                  error={!!errors.type}
-                  helperText={errors.type}
-                  variant="outlined"
-                />
-              )}
-              disabled={isEdit || existingCorrigendumId}
-              clearOnEscape
-              clearOnBlur
+    <Box sx={{ bgcolor: "#F8FAFC", minHeight: "100vh", py: 4 }}>
+      <Container maxWidth="lg">
+        <Box sx={{ mb: 4 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
+            <Box
               sx={{
-                '& .MuiAutocomplete-inputRoot': {
-                  padding: '8.5px 14px',
-                }
+                width: 48,
+                height: 48,
+                borderRadius: 2,
+                bgcolor: "#EFF6FF",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
-          </StyledFormControl>
-
-          <TextField
-            name="referenceNumber"
-            label="Reference Number"
-            value={referenceNumber}
-            onChange={handleReferenceNumberChange}
-            sx={{
-              width: "100%",
-              maxWidth: "400px",
-              "& .MuiInputBase-root": {
-                borderRadius: "8px",
-                backgroundColor: "#fff",
-                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
-              },
-            }}
-            disabled={isEdit || existingCorrigendumId}
-          />
-
-          {!existingCorrigendumId && (
-            <StyledButton
-              onClick={handleCheckIfDocumentChange}
-              disabled={loading || isEdit || !type}
             >
-              Check Application
-            </StyledButton>
-          )}
-
-          {responseMessage.message && (
-            <Typography
-              sx={{ mt: 2 }}
-              color={
-                responseMessage.type === "error" ? "error" :
-                  responseMessage.type === "warning" ? "warning.main" : "success.main"
-              }
-            >
-              {responseMessage.message}
-            </Typography>
-          )}
+              <EditNote sx={{ fontSize: 28, color: "#2562E9" }} />
+            </Box>
+            <Box>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 800,
+                  color: "#0F172A",
+                  letterSpacing: "-0.5px",
+                }}
+              >
+                {isEdit || existingCorrigendumId
+                  ? `Edit ${type}`
+                  : `Issue ${type || "Corrigendum/Correction"}`}
+              </Typography>
+              <Typography variant="body2" sx={{ color: "#64748B" }}>
+                Update application details and forward for approval
+              </Typography>
+            </Box>
+          </Box>
         </Box>
 
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            mb: 4,
+            borderRadius: 3,
+            border: "1px solid #E2E8F0",
+            bgcolor: "white",
+          }}
+        >
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={4}>
+              <ServiceSelectionForm
+                services={services}
+                value={serviceId}
+                onServiceSelect={handleServiceChange}
+                disabled={isEdit || existingCorrigendumId}
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <Autocomplete
+                value={type}
+                onChange={(event, newValue) => {
+                  if (!isEdit && !isInitialLoad && type !== newValue) {
+                    resetFormState();
+                    setType(newValue);
+                  } else setType(newValue);
+                  setTouched((prev) => ({ ...prev, type: true }));
+                  const error = validateType(newValue);
+                  setErrors((prev) => ({ ...prev, type: error }));
+                }}
+                onBlur={handleTypeBlur}
+                options={["Corrigendum", "Correction"]}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Document Change Type"
+                    error={!!errors.type}
+                    helperText={errors.type}
+                    variant="outlined"
+                  />
+                )}
+                disabled={isEdit || existingCorrigendumId}
+                clearOnEscape
+                clearOnBlur
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <TextField
+                name="referenceNumber"
+                label="Reference Number"
+                value={referenceNumber}
+                onChange={handleReferenceNumberChange}
+                fullWidth
+                disabled={isEdit || existingCorrigendumId}
+                sx={{ "& .MuiOutlinedInput-root": { bgcolor: "white" } }}
+              />
+            </Grid>
+          </Grid>
+          {!existingCorrigendumId && (
+            <Box sx={{ mt: 3, display: "flex", justifyContent: "flex-end" }}>
+              <Button
+                variant="contained"
+                onClick={handleCheckIfDocumentChange}
+                disabled={
+                  loading || isEdit || !type || !referenceNumber || !serviceId
+                }
+                startIcon={
+                  loading ? (
+                    <CircularProgress size={20} color="inherit" />
+                  ) : (
+                    <Description />
+                  )
+                }
+                sx={{
+                  bgcolor: "#2562E9",
+                  "&:hover": { bgcolor: "#1D4ED8" },
+                  textTransform: "none",
+                  fontWeight: 600,
+                  px: 4,
+                }}
+              >
+                Check Application
+              </Button>
+            </Box>
+          )}
+        </Paper>
+
+        {responseMessage.message && (
+          <Alert
+            severity={
+              responseMessage.type === "error"
+                ? "error"
+                : responseMessage.type === "warning"
+                  ? "warning"
+                  : responseMessage.type === "info"
+                    ? "info"
+                    : "success"
+            }
+            sx={{ mb: 4, borderRadius: 2 }}
+          >
+            {responseMessage.message}
+          </Alert>
+        )}
+
         {(isEdit || existingCorrigendumId) && data.length > 0 && (
-          <Box sx={{ mt: 4 }}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              mb: 4,
+              borderRadius: 3,
+              border: "1px solid #E2E8F0",
+              bgcolor: "white",
+            }}
+          >
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 700,
+                color: "#0F172A",
+                mb: 2,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+              }}
+            >
+              <History sx={{ color: "#64748B" }} /> {type} History
+            </Typography>
             <MaterialTable
               columns={columns}
               data={data}
               viewType={`${type} History`}
             />
-          </Box>
+          </Paper>
         )}
 
         {canIssue && (
-          <Box key={renderKey} sx={{ mt: 6 }}>
-            <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Paper
+            key={renderKey}
+            elevation={0}
+            sx={{
+              p: 4,
+              mb: 4,
+              borderRadius: 3,
+              border: "1px solid #E2E8F0",
+              bgcolor: "white",
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                mb: 3,
+                flexWrap: "wrap",
+                gap: 2,
+              }}
+            >
               <Typography
-                variant="h6"
-                sx={{ fontWeight: "600", color: "#333", mb: 3 }}
+                variant="h5"
+                sx={{ fontWeight: 700, color: "#0F172A" }}
               >
-                {type} (Form Details)
+                Form Details
               </Typography>
-              <Typography
-                variant="h6"
-                sx={{ fontWeight: "400", color: "#333", mb: 3 }}
-              >
-                Reference Number: {referenceNumber}
-              </Typography>
+              <Chip
+                label={`Ref: ${referenceNumber}`}
+                color="primary"
+                variant="outlined"
+              />
             </Box>
 
             {canEditDocument && (
-              <Box sx={{ display: "flex", gap: 2, alignItems: "center", mb: 3 }}>
-                <StyledFormControl>
+              <Paper
+                sx={{
+                  p: 2,
+                  mb: 4,
+                  bgcolor: "#F8FAFC",
+                  border: "1px dashed #CBD5E1",
+                  borderRadius: 2,
+                  display: "flex",
+                  gap: 2,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <FormControl
+                  sx={{ minWidth: 250, flex: 1 }}
+                  error={!!errors.selectedField}
+                >
                   <InputLabel>Select a field to change</InputLabel>
                   <Select
                     value={selectedField}
                     onChange={(e) => setSelectedField(e.target.value)}
                     label="Select a field to change"
-                    error={!!errors.selectedField}
                     disabled={!canEditDocument}
+                    sx={{ bgcolor: "white" }}
                   >
                     <MenuItem value="" disabled>
                       Select a field
@@ -2420,344 +2389,598 @@ export default function IssueDocumentChange() {
                       ))}
                   </Select>
                   {errors.selectedField && (
-                    <FormHelperText error>{errors.selectedField}</FormHelperText>
+                    <FormHelperText>{errors.selectedField}</FormHelperText>
                   )}
-                </StyledFormControl>
-                <StyledButton
-                  variant="outlined"
+                </FormControl>
+                <Button
+                  variant="contained"
                   onClick={handleAddCorrigendumField}
-                  disabled={!canEditDocument}
+                  disabled={!canEditDocument || !selectedField}
+                  startIcon={<Add />}
+                  sx={{
+                    bgcolor: "#10B981",
+                    "&:hover": { bgcolor: "#059669" },
+                    textTransform: "none",
+                    fontWeight: 600,
+                    height: 56,
+                  }}
                 >
                   Add Field
-                </StyledButton>
-              </Box>
+                </Button>
+              </Paper>
             )}
 
-            {formDetailsFields.length === 0 && (
-              <Typography color="error" sx={{ mt: 2 }}>
+            {formDetailsFields.length === 0 && canIssue && (
+              <Alert severity="warning" sx={{ mb: 3 }}>
                 No editable fields available for this application.
-              </Typography>
+              </Alert>
             )}
+
             {errors.corrigendumFields && (
-              <Typography color="error" sx={{ mt: 2, mb: 2 }}>
+              <Alert severity="error" sx={{ mb: 3 }}>
                 {errors.corrigendumFields}
-              </Typography>
+              </Alert>
             )}
 
-            {corrigendumFields.map((field, index) => (
-              <Box
-                key={`${field.name}-${index}`}
-                sx={{
-                  display: "flex",
-                  flexDirection: "column",
-                  mb: 3,
-                  backgroundColor: "#f9f9f9",
-                  padding: "16px",
-                  borderRadius: "12px",
-                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
-                  border: "1px solid #e0e0e0",
-                }}
-              >
-                {/* Parent Field Row */}
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} md={3}>
-                    <TextField
-                      label="Field"
-                      value={field.label}
-                      InputProps={{ readOnly: true }}
-                      fullWidth
-                      variant="outlined"
-                      sx={{ backgroundColor: "#fff" }}
-                    />
-                  </Grid>
+            {corrigendumFields.map((field, index) => {
+              const hasError =
+                errors[field.name] || errors[`${field.name}-doc`];
 
-                  <Grid item xs={12} md={4}>
-                    {field.type === "enclosure" ? (
-                      <FormControl fullWidth>
-                        <FormLabel sx={{ fontWeight: 500, color: "#555", mb: 1 }}>
-                          {field.label} (Old)
-                        </FormLabel>
-                        {field.oldValue ? (
+              const isLastInGroup = field.groupId
+                ? (() => {
+                    const groupIndices = corrigendumFields
+                      .map((f, i) => (f.groupId === field.groupId ? i : -1))
+                      .filter((i) => i !== -1);
+                    return (
+                      groupIndices.length > 0 &&
+                      groupIndices[groupIndices.length - 1] === index
+                    );
+                  })()
+                : true;
+
+              return (
+                <Paper
+                  key={`${field.name}-${index}`}
+                  elevation={0}
+                  sx={{
+                    p: 3,
+                    mb: 3,
+                    borderRadius: 2,
+                    border: "1px solid #E2E8F0",
+                    borderLeft: `4px solid ${hasError ? "#DC2626" : "#2562E9"}`,
+                    bgcolor: "#FFFFFF",
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      mb: 2,
+                    }}
+                  >
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 600, color: "#0F172A" }}
+                    >
+                      {field.label}
+                    </Typography>
+                    {canEditDocument && (
+                      <IconButton
+                        color="error"
+                        size="small"
+                        onClick={() => handleDeleteField(index)}
+                        sx={{ "&:hover": { bgcolor: "#FEE2E2" } }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    )}
+                  </Box>
+                  <Divider sx={{ mb: 3 }} />
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} md={6}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: "#64748B",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          mb: 1,
+                          display: "block",
+                        }}
+                      >
+                        Current Value
+                      </Typography>
+                      {field.type === "enclosure" ? (
+                        field.oldValue ? (
                           <Button
                             variant="outlined"
                             onClick={() => handleViewFile(field.oldValue, true)}
-                            startIcon={<PictureAsPdfIcon />}
+                            startIcon={<PictureAsPdf />}
                             fullWidth
                             sx={{
                               textTransform: "none",
-                              borderColor: "#1976D2",
-                              color: "#1976D2",
-                              "&:hover": {
-                                backgroundColor: "#E3F2FD",
-                                borderColor: "#1565C0",
-                              },
+                              borderColor: "#CBD5E1",
+                              color: "#334155",
+                              justifyContent: "flex-start",
                             }}
                           >
                             View Current Document
                           </Button>
                         ) : (
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{
+                              p: 2,
+                              bgcolor: "#F8FAFC",
+                              borderRadius: 1,
+                              border: "1px solid #E2E8F0",
+                            }}
+                          >
                             No document
                           </Typography>
-                        )}
-                      </FormControl>
-                    ) : (
-                      <TextField
-                        label={`${field.label} (Old)`}
-                        value={field.oldValue || "N/A"}
-                        InputProps={{ readOnly: true }}
-                        fullWidth
-                        variant="outlined"
-                        sx={{ backgroundColor: "#fff" }}
-                      />
-                    )}
-                  </Grid>
-
-                  <Grid item xs={12} md={4}>
-                    {field.type === "select" ? (
-                      <FormControl fullWidth error={!!errors[field.name]}>
-                        <InputLabel>{field.label} (New)</InputLabel>
-                        <Select
-                          value={field.newValue || ""}
-                          onChange={(e) => handleNewValueChange(index, e.target.value)}
-                          onBlur={() => handleNewValueBlur(index, field.newValue)}
-                          disabled={!canEditDocument}
-                        >
-                          {field.options.map((option) => (
-                            <MenuItem key={option.value} value={option.value}>
-                              {option.label}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                        {errors[field.name] && (
-                          <FormHelperText>{errors[field.name]}</FormHelperText>
-                        )}
-                      </FormControl>
-                    ) : field.type === "date" ? (
-                      <TextField
-                        label={`${field.label} (New)`}
-                        type="date"
-                        value={field.newValue || ""}
-                        onChange={(e) => handleNewValueChange(index, e.target.value)}
-                        onBlur={() => handleNewValueBlur(index, field.newValue)}
-                        fullWidth
-                        InputLabelProps={{ shrink: true }}
-                        error={!!errors[field.name]}
-                        helperText={errors[field.name]}
-                        disabled={!canEditDocument}
-                      />
-                    ) : field.type === "enclosure" ? (
-                      <TextField
-                        label={`${field.label} (New)`}
-                        type="file"
-                        onChange={(e) =>
-                          handleNewValueChange(index, e.target.files[0])
-                        }
-                        onBlur={() => handleNewValueBlur(index, field.newValue)}
-                        fullWidth
-                        InputProps={{ accept: field.accept || ".pdf" }}
-                        error={!!errors[field.name]}
-                        helperText={errors[field.name] || "Upload new document"}
-                        disabled={!canEditDocument}
-                      />
-                    ) : (
-                      <TextField
-                        label={`${field.label} (New)`}
-                        value={field.newValue || ""}
-                        onChange={(e) => handleNewValueChange(index, e.target.value)}
-                        onBlur={() => handleNewValueBlur(index, field.newValue)}
-                        fullWidth
-                        inputProps={{ maxLength: field.maxLength }}
-                        error={!!errors[field.name]}
-                        helperText={errors[field.name]}
-                        disabled={!canEditDocument}
-                      />
-                    )}
-                  </Grid>
-
-                  <Grid item xs={12} md={1} sx={{ display: "flex", justifyContent: "center" }}>
-                    {canEditDocument && (
-                      <IconButton
-                        color="error"
-                        onClick={() => handleDeleteField(index)}
+                        )
+                      ) : (
+                        <TextField
+                          value={field.oldValue || "N/A"}
+                          InputProps={{ readOnly: true }}
+                          fullWidth
+                          variant="outlined"
+                          sx={{
+                            "& .MuiInputBase-root": { bgcolor: "#F8FAFC" },
+                          }}
+                        />
+                      )}
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <Typography
+                        variant="caption"
                         sx={{
-                          bgcolor: "#ffebee",
-                          "&:hover": { bgcolor: "#ffcdd2" },
+                          color: "#64748B",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          mb: 1,
+                          display: "block",
                         }}
                       >
-                        <DeleteIcon />
-                      </IconButton>
-                    )}
-                  </Grid>
-                </Grid>
-
-                {/* --- NEW: Supporting Document for this field (required) --- */}
-                <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      startIcon={<PictureAsPdfIcon />}
-                      disabled={!canEditDocument}
-                      color={errors[`${field.name}-doc`] ? "error" : "primary"}
-                    >
-                      Supporting Document for {field.label} *
-                      <input
-                        type="file"
-                        accept=".pdf"
-                        hidden
-                        onChange={(e) => handleSupportingDocumentChange(index, e.target.files[0])}
-                      />
-                    </Button>
-                    {field.supportingDocument && (
-                      <>
-                        {typeof field.supportingDocument === 'string' ? (
-                          <FileNameTypography onClick={() => handleViewFile(field.supportingDocument, true)}>
-                            {field.supportingDocument}
-                          </FileNameTypography>
-                        ) : (
-                          <FileNameTypography onClick={() => handleViewFile(field.supportingDocument, false)}>
-                            {field.supportingDocument.name}
-                          </FileNameTypography>
-                        )}
-                        {canEditDocument && (
-                          <IconButton
-                            color="error"
-                            onClick={() => handleRemoveSupportingDocument(index)}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        )}
-                      </>
-                    )}
-                  </Box>
-                  {errors[`${field.name}-doc`] && (
-                    <FormHelperText error sx={{ ml: 1 }}>
-                      {errors[`${field.name}-doc`]}
-                    </FormHelperText>
-                  )}
-                </Box>
-                {/* --- END NEW --- */}
-
-                {/* Render Additional / Conditional Fields */}
-                {field.additionalFields[field.newValue]?.map((addField) => (
-                  <Grid container spacing={2} sx={{ mt: 2 }} key={addField.name}>
-                    <Grid item xs={12} md={3}>
-                      <TextField
-                        label="Field"
-                        value={addField.label || addField.name}
-                        InputProps={{ readOnly: true }}
-                        fullWidth
-                        variant="outlined"
-                        sx={{ backgroundColor: "#fff" }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={4}>
-                      <TextField
-                        label={`${addField.label || addField.name} (Old)`}
-                        value={
-                          findNestedFieldValue(formDetails, addField.name) || "N/A"
-                        }
-                        InputProps={{ readOnly: true }}
-                        fullWidth
-                        variant="outlined"
-                        sx={{ backgroundColor: "#fff" }}
-                      />
-                    </Grid>
-                    <Grid item xs={12} md={5}>
-                      {addField.type === "select" ? (
-                        <FormControl fullWidth error={!!errors[`${field.name}-${addField.name}`]}>
-                          <InputLabel>{addField.label} (New)</InputLabel>
-                          <Select
-                            value={field.additionalValues[addField.name] || ""}
-                            onChange={(e) =>
-                              handleNewValueChange(index, e.target.value, addField.name)
-                            }
-                            onBlur={() =>
-                              handleNewValueBlur(index, field.additionalValues[addField.name], addField.name)
-                            }
-                            disabled={!canEditDocument}
-                          >
-                            {addField.options.map((option) => (
-                              <MenuItem key={option.value} value={option.value}>
-                                {option.label}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                          {errors[`${field.name}-${addField.name}`] && (
-                            <FormHelperText>{errors[`${field.name}-${addField.name}`]}</FormHelperText>
-                          )}
-                        </FormControl>
-                      ) : addField.type === "date" ? (
+                        New Value
+                      </Typography>
+                      {field.type === "select" ? (
+                        (() => {
+                          const opts = field.options || [];
+                          const hasCurrent =
+                            !field.newValue ||
+                            field.newValue === "" ||
+                            opts.some(
+                              (o) => String(o.value) === String(field.newValue),
+                            );
+                          const displayOptions = hasCurrent
+                            ? opts
+                            : [
+                                ...opts,
+                                {
+                                  value: field.newValue,
+                                  label: String(field.newValue),
+                                },
+                              ];
+                          return (
+                            <FormControl fullWidth error={!!errors[field.name]}>
+                              <Select
+                                value={field.newValue || ""}
+                                onChange={(e) =>
+                                  handleNewValueChange(index, e.target.value)
+                                }
+                                onBlur={() =>
+                                  handleNewValueBlur(index, field.newValue)
+                                }
+                                disabled={!canEditDocument}
+                              >
+                                {displayOptions.map((option) => (
+                                  <MenuItem
+                                    key={option.value}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                              {errors[field.name] && (
+                                <FormHelperText>
+                                  {errors[field.name]}
+                                </FormHelperText>
+                              )}
+                            </FormControl>
+                          );
+                        })()
+                      ) : field.type === "date" ? (
                         <TextField
-                          label={`${addField.label} (New)`}
                           type="date"
-                          value={field.additionalValues[addField.name] || ""}
+                          value={field.newValue || ""}
                           onChange={(e) =>
-                            handleNewValueChange(index, e.target.value, addField.name)
+                            handleNewValueChange(index, e.target.value)
                           }
                           onBlur={() =>
-                            handleNewValueBlur(index, field.additionalValues[addField.name], addField.name)
+                            handleNewValueBlur(index, field.newValue)
                           }
                           fullWidth
                           InputLabelProps={{ shrink: true }}
-                          error={!!errors[`${field.name}-${addField.name}`]}
-                          helperText={errors[`${field.name}-${addField.name}`]}
+                          error={!!errors[field.name]}
+                          helperText={errors[field.name]}
                           disabled={!canEditDocument}
                         />
-                      ) : addField.type === "enclosure" ? (
-                        <TextField
-                          label={`${addField.label} (New)`}
-                          type="file"
-                          onChange={(e) =>
-                            handleNewValueChange(index, e.target.files[0], addField.name)
-                          }
+                      ) : field.type === "enclosure" ? (
+                        <Button
+                          variant="outlined"
+                          component="label"
+                          startIcon={<UploadFile />}
                           fullWidth
-                          InputProps={{ accept: addField.accept || ".pdf" }}
-                          error={!!errors[`${field.name}-${addField.name}`]}
-                          helperText={errors[`${field.name}-${addField.name}`] || "Upload new document"}
-                          disabled={!canEditDocument}
-                        />
+                          sx={{
+                            textTransform: "none",
+                            borderColor: errors[field.name]
+                              ? "#DC2626"
+                              : "#2562E9",
+                            color: errors[field.name] ? "#DC2626" : "#2562E9",
+                            py: 1.5,
+                          }}
+                        >
+                          {field.newValue
+                            ? field.newValue.name
+                            : "Upload New Document"}
+                          <input
+                            type="file"
+                            hidden
+                            accept={field.accept || ".pdf"}
+                            onChange={(e) =>
+                              handleNewValueChange(index, e.target.files[0])
+                            }
+                            disabled={!canEditDocument}
+                          />
+                        </Button>
                       ) : (
                         <TextField
-                          label={`${addField.label} (New)`}
-                          value={field.additionalValues[addField.name] || ""}
+                          value={field.newValue || ""}
                           onChange={(e) =>
-                            handleNewValueChange(index, e.target.value, addField.name)
+                            handleNewValueChange(index, e.target.value)
                           }
                           onBlur={() =>
-                            handleNewValueBlur(index, field.additionalValues[addField.name], addField.name)
+                            handleNewValueBlur(index, field.newValue)
                           }
                           fullWidth
-                          error={!!errors[`${field.name}-${addField.name}`]}
-                          helperText={errors[`${field.name}-${addField.name}`]}
+                          inputProps={{ maxLength: field.maxLength }}
+                          error={!!errors[field.name]}
+                          helperText={errors[field.name]}
                           disabled={!canEditDocument}
                         />
                       )}
                     </Grid>
                   </Grid>
-                ))}
-              </Box>
-            ))}
 
-            {/* Remarks Section */}
-            <Box sx={{ position: "relative", mt: 2 }}>
+                  {isLastInGroup && (
+                    <Box
+                      sx={{
+                        mt: 3,
+                        p: 2,
+                        bgcolor: "#F8FAFC",
+                        borderRadius: 2,
+                        border: `1px dashed ${errors[`${field.name}-doc`] ? "#DC2626" : "#CBD5E1"}`,
+                      }}
+                    >
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: "#475569",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          mb: 1.5,
+                          display: "block",
+                        }}
+                      >
+                        Supporting Document{" "}
+                        {field.groupId
+                          ? "(Required for this group)"
+                          : "(Required)"}
+                      </Typography>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <Button
+                          variant="contained"
+                          component="label"
+                          startIcon={<UploadFile />}
+                          disabled={!canEditDocument}
+                          color={
+                            errors[`${field.name}-doc`] ? "error" : "primary"
+                          }
+                          sx={{ textTransform: "none", fontWeight: 600 }}
+                        >
+                          {field.supportingDocument
+                            ? "Change Document"
+                            : "Upload Document"}
+                          <input
+                            type="file"
+                            accept=".pdf"
+                            hidden
+                            onChange={(e) =>
+                              handleSupportingDocumentChange(
+                                index,
+                                e.target.files[0],
+                              )
+                            }
+                          />
+                        </Button>
+                        {field.supportingDocument && (
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                            }}
+                          >
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: "#2562E9",
+                                cursor: "pointer",
+                                textDecoration: "underline",
+                                fontWeight: 500,
+                              }}
+                              onClick={() =>
+                                handleViewFile(
+                                  field.supportingDocument,
+                                  typeof field.supportingDocument === "string",
+                                )
+                              }
+                            >
+                              {typeof field.supportingDocument === "string"
+                                ? field.supportingDocument
+                                : field.supportingDocument.name}
+                            </Typography>
+                            {canEditDocument && (
+                              <IconButton
+                                color="error"
+                                size="small"
+                                onClick={() =>
+                                  handleRemoveSupportingDocument(index)
+                                }
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </Box>
+                        )}
+                      </Box>
+                      {errors[`${field.name}-doc`] && (
+                        <FormHelperText error sx={{ mt: 1 }}>
+                          {errors[`${field.name}-doc`]}
+                        </FormHelperText>
+                      )}
+                    </Box>
+                  )}
+
+                  {field.additionalFields[field.newValue]?.map((addField) => {
+                    // If this field is already a standalone field in corrigendumFields, don't render it inline
+                    if (
+                      corrigendumFields.some((f) => f.name === addField.name)
+                    ) {
+                      return null;
+                    }
+                    return (
+                      <Box
+                        key={addField.name}
+                        sx={{ mt: 3, pt: 3, borderTop: "1px dashed #E2E8F0" }}
+                      >
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: "#64748B",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            mb: 2,
+                            display: "block",
+                          }}
+                        >
+                          Conditional Field: {addField.label || addField.name}
+                        </Typography>
+                        <Grid container spacing={3}>
+                          <Grid item xs={12} md={6}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: "#94A3B8",
+                                fontWeight: 500,
+                                mb: 0.5,
+                                display: "block",
+                              }}
+                            >
+                              Current
+                            </Typography>
+                            <TextField
+                              value={
+                                findNestedFieldValue(
+                                  formDetails,
+                                  addField.name,
+                                ) || "N/A"
+                              }
+                              InputProps={{ readOnly: true }}
+                              fullWidth
+                              variant="outlined"
+                              size="small"
+                              sx={{
+                                "& .MuiInputBase-root": { bgcolor: "#F8FAFC" },
+                              }}
+                            />
+                          </Grid>
+                          <Grid item xs={12} md={6}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: "#94A3B8",
+                                fontWeight: 500,
+                                mb: 0.5,
+                                display: "block",
+                              }}
+                            >
+                              New
+                            </Typography>
+                            {addField.type === "select" ? (
+                              <FormControl
+                                fullWidth
+                                size="small"
+                                error={
+                                  !!errors[`${field.name}-${addField.name}`]
+                                }
+                              >
+                                <Select
+                                  value={
+                                    field.additionalValues[addField.name] || ""
+                                  }
+                                  onChange={(e) =>
+                                    handleNewValueChange(
+                                      index,
+                                      e.target.value,
+                                      addField.name,
+                                    )
+                                  }
+                                  onBlur={() =>
+                                    handleNewValueBlur(
+                                      index,
+                                      field.additionalValues[addField.name],
+                                      addField.name,
+                                    )
+                                  }
+                                  disabled={!canEditDocument}
+                                >
+                                  {addField.options.map((option) => (
+                                    <MenuItem
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                                {errors[`${field.name}-${addField.name}`] && (
+                                  <FormHelperText>
+                                    {errors[`${field.name}-${addField.name}`]}
+                                  </FormHelperText>
+                                )}
+                              </FormControl>
+                            ) : addField.type === "date" ? (
+                              <TextField
+                                type="date"
+                                size="small"
+                                value={
+                                  field.additionalValues[addField.name] || ""
+                                }
+                                onChange={(e) =>
+                                  handleNewValueChange(
+                                    index,
+                                    e.target.value,
+                                    addField.name,
+                                  )
+                                }
+                                onBlur={() =>
+                                  handleNewValueBlur(
+                                    index,
+                                    field.additionalValues[addField.name],
+                                    addField.name,
+                                  )
+                                }
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                                error={
+                                  !!errors[`${field.name}-${addField.name}`]
+                                }
+                                helperText={
+                                  errors[`${field.name}-${addField.name}`]
+                                }
+                                disabled={!canEditDocument}
+                              />
+                            ) : addField.type === "enclosure" ? (
+                              <Button
+                                variant="outlined"
+                                component="label"
+                                size="small"
+                                startIcon={<UploadFile />}
+                                fullWidth
+                                sx={{ textTransform: "none" }}
+                              >
+                                Upload
+                                <input
+                                  type="file"
+                                  hidden
+                                  accept={addField.accept || ".pdf"}
+                                  onChange={(e) =>
+                                    handleNewValueChange(
+                                      index,
+                                      e.target.files[0],
+                                      addField.name,
+                                    )
+                                  }
+                                  disabled={!canEditDocument}
+                                />
+                              </Button>
+                            ) : (
+                              <TextField
+                                size="small"
+                                value={
+                                  field.additionalValues[addField.name] || ""
+                                }
+                                onChange={(e) =>
+                                  handleNewValueChange(
+                                    index,
+                                    e.target.value,
+                                    addField.name,
+                                  )
+                                }
+                                onBlur={() =>
+                                  handleNewValueBlur(
+                                    index,
+                                    field.additionalValues[addField.name],
+                                    addField.name,
+                                  )
+                                }
+                                fullWidth
+                                error={
+                                  !!errors[`${field.name}-${addField.name}`]
+                                }
+                                helperText={
+                                  errors[`${field.name}-${addField.name}`]
+                                }
+                                disabled={!canEditDocument}
+                              />
+                            )}
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    );
+                  })}
+                </Paper>
+              );
+            })}
+
+            <Box sx={{ mt: 4, position: "relative" }}>
+              <Typography
+                variant="h6"
+                sx={{ fontWeight: 600, color: "#0F172A", mb: 2 }}
+              >
+                Officer Remarks
+              </Typography>
               <TextField
                 name="remarks"
-                label="Remarks"
+                label="Reason for change / Remarks"
                 value={remarks}
                 onChange={handleRemarksChange}
                 onBlur={handleRemarksBlur}
                 multiline
                 rows={4}
-                sx={{
-                  width: "100%",
-                  "& .MuiInputBase-root": {
-                    borderRadius: "8px",
-                    backgroundColor: "#fff",
-                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
-                  },
-                }}
+                fullWidth
                 error={!!errors.remarks}
                 helperText={errors.remarks || ""}
                 disabled={!canEditDocument}
@@ -2767,9 +2990,16 @@ export default function IssueDocumentChange() {
                 sx={{
                   position: "absolute",
                   bottom: errors.remarks ? 24 : 8,
-                  right: 8,
+                  right: 14,
                   color:
-                    wordCount > MAX_WORDS ? "error.main" : "text.secondary",
+                    wordCount > MAX_WORDS
+                      ? "error.main"
+                      : wordCount > MAX_WORDS * 0.8
+                        ? "warning.main"
+                        : "text.secondary",
+                  fontWeight: 500,
+                  bgcolor: "white",
+                  px: 0.5,
                 }}
               >
                 {wordCount}/{MAX_WORDS} words
@@ -2784,22 +3014,42 @@ export default function IssueDocumentChange() {
             />
 
             {canEditDocument && corrigendumFields.length > 0 && (
-              <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-                <StyledButton
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  mt: 4,
+                  pt: 3,
+                  borderTop: "1px solid #E2E8F0",
+                }}
+              >
+                <Button
+                  variant="contained"
                   onClick={handleSubmitDocumentChange}
                   disabled={loading}
+                  size="large"
+                  sx={{
+                    bgcolor: "#10B981",
+                    "&:hover": { bgcolor: "#059669" },
+                    textTransform: "none",
+                    fontWeight: 700,
+                    px: 6,
+                    py: 1.5,
+                    fontSize: "1rem",
+                    boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)",
+                  }}
                 >
                   {loading ? (
                     <CircularProgress size={24} color="inherit" />
                   ) : (
-                    `Forward ${type} to ${nextOfficer}`
+                    `Forward ${type} to ${nextOfficer || "Next Officer"}`
                   )}
-                </StyledButton>
+                </Button>
               </Box>
             )}
-          </Box>
+          </Paper>
         )}
-      </StyledContainer>
+      </Container>
     </Box>
   );
 }

@@ -16,7 +16,6 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = sessionStorage.getItem("token");
-    console.log("Adding token to request:", token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -26,13 +25,10 @@ axiosInstance.interceptors.request.use(
 );
 
 // Response interceptor - handles 401 (unauthorized) globally
-// Response interceptor - handles 401 (unauthorized) globally
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      console.error("401 received on:", error.config.url);
-
       // Clear everything
       sessionStorage.clear();
       localStorage.clear();

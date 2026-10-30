@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import { useLocation, useNavigate } from "react-router-dom";
 import axiosInstance from "../../axiosConfig";
 import {
@@ -50,7 +51,9 @@ const TableCard = styled(Box)`
   padding: 2rem;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
   width: 100%;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
   &:hover {
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
   }
@@ -308,11 +311,12 @@ export default function ViewApplicationDetails() {
         setApplicationFiles(result.files);
       } catch (error) {
         console.error(
-          `Error fetching ${isCorrection
-            ? "correction"
-            : isAmendment
-              ? "amendment"
-              : "corrigendum"
+          `Error fetching ${
+            isCorrection
+              ? "correction"
+              : isAmendment
+                ? "amendment"
+                : "corrigendum"
           } details:`,
           error,
         );
@@ -385,11 +389,11 @@ export default function ViewApplicationDetails() {
     formData.append(
       "original_path",
       applicationId.replace(/\//g, "_") +
-      (isCorrection
-        ? "_CorrectionSanctionLetter.pdf"
-        : isAmendment
-          ? "_AmendmentSanctionLetter.pdf"
-          : "_CorrigendumSanctionLetter.pdf"),
+        (isCorrection
+          ? "_CorrectionSanctionLetter.pdf"
+          : isAmendment
+            ? "_AmendmentSanctionLetter.pdf"
+            : "_CorrigendumSanctionLetter.pdf"),
     );
     try {
       const response = await fetch("http://localhost:8000/sign", {
@@ -404,8 +408,8 @@ export default function ViewApplicationDetails() {
     } catch (error) {
       throw new Error(
         "Error signing PDF: " +
-        error.message +
-        " Check if Desktop App is started.",
+          error.message +
+          " Check if Desktop App is started.",
       );
     }
   };
@@ -457,7 +461,7 @@ export default function ViewApplicationDetails() {
       if (!updateResponse.data.status) {
         throw new Error(
           "Failed to update PDF on server: " +
-          (updateResponse.data.response || "Unknown error"),
+            (updateResponse.data.response || "Unknown error"),
         );
       }
 
@@ -527,20 +531,22 @@ export default function ViewApplicationDetails() {
       setIsSanctionLetter(true);
     } catch (error) {
       console.error(
-        `Error fetching ${isCorrection
-          ? "correction"
-          : isAmendment
-            ? "amendment"
-            : "corrigendum"
+        `Error fetching ${
+          isCorrection
+            ? "correction"
+            : isAmendment
+              ? "amendment"
+              : "corrigendum"
         } sanction letter:`,
         error,
       );
       toast.error(
-        `Failed to fetch ${isCorrection
-          ? "correction"
-          : isAmendment
-            ? "amendment"
-            : "corrigendum"
+        `Failed to fetch ${
+          isCorrection
+            ? "correction"
+            : isAmendment
+              ? "amendment"
+              : "corrigendum"
         } sanction letter: ` + error.message,
         {
           position: "top-center",
@@ -684,27 +690,21 @@ export default function ViewApplicationDetails() {
           my: 4,
         }}
       >
-        <Typography
-          variant="h5"
-          textAlign="center"
-          gutterBottom
-          sx={{ color: "#1f2937", fontWeight: 700 }}
-        >
-          {isCorrection
-            ? "Correction"
-            : isAmendment
-              ? "Amendment"
-              : "Corrigendum"}{" "}
-          Application Details
-        </Typography>
-        <Typography
-          variant="h6"
-          textAlign="center"
-          color="text.secondary"
-          mb={4}
-        >
-          Reference Number: {referenceNumber}
-        </Typography>
+        <GovPageHeader
+          title={`${
+            isCorrection
+              ? "Correction"
+              : isAmendment
+                ? "Amendment"
+                : "Corrigendum"
+          } Application Details`}
+          hindiTitle="अनुप्रयोग विवरण"
+          subtitle={`Reference Number: ${referenceNumber}`}
+          crumbs={[
+            { label: "Officer", path: "/officer/home" },
+            { label: "Corrigendum Details", path: "" },
+          ]}
+        />
 
         <CollapsibleFormDetails
           formDetails={formDetails}
@@ -722,20 +722,22 @@ export default function ViewApplicationDetails() {
         />
 
         <CollapsibleTable
-          title={`${isCorrection
-            ? "Correction"
-            : isAmendment
-              ? "Amendment"
-              : "Corrigendum"
-            } Fields`}
+          title={`${
+            isCorrection
+              ? "Correction"
+              : isAmendment
+                ? "Amendment"
+                : "Corrigendum"
+          } Fields`}
           columns={fieldColumns}
           data={fieldData}
-          viewType={`${isCorrection
-            ? "correction"
-            : isAmendment
-              ? "amendment"
-              : "corrigendum"
-            } field`}
+          viewType={`${
+            isCorrection
+              ? "correction"
+              : isAmendment
+                ? "amendment"
+                : "corrigendum"
+          } field`}
           open={fieldsOpen}
           setOpen={setFieldsOpen}
           onViewPdf={handleViewPdf}
@@ -788,20 +790,22 @@ export default function ViewApplicationDetails() {
         )}
 
         <CollapsibleTable
-          title={`${isCorrection
-            ? "Correction"
-            : isAmendment
-              ? "Amendment"
-              : "Corrigendum"
-            } Movement History`}
+          title={`${
+            isCorrection
+              ? "Correction"
+              : isAmendment
+                ? "Amendment"
+                : "Corrigendum"
+          } Movement History`}
           columns={columns}
           data={data}
-          viewType={`${isCorrection
-            ? "correction"
-            : isAmendment
-              ? "amendment"
-              : "corrigendum"
-            } history`}
+          viewType={`${
+            isCorrection
+              ? "correction"
+              : isAmendment
+                ? "amendment"
+                : "corrigendum"
+          } history`}
           open={appHistoryOpen}
           setOpen={setAppHistoryOpen}
           onViewPdf={handleViewPdf}

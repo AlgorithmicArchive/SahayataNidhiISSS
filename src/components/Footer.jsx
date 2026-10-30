@@ -1,305 +1,308 @@
-import { Box, Grid, Typography, Link, Divider } from "@mui/material";
-import { Container } from "@mui/material";
+import {
+  Box,
+  Grid,
+  Typography,
+  Link,
+  Divider,
+  Container,
+  IconButton,
+  Tooltip,
+  Chip,
+} from "@mui/material";
 import React from "react";
 import { useNavigate } from "react-router-dom";
+
+// Icons
 import EmailIcon from "@mui/icons-material/Email";
-import SupportIcon from "@mui/icons-material/Support";
 import PhoneIcon from "@mui/icons-material/Phone";
-import ListIcon from "@mui/icons-material/List";
+import LocationOnIcon from "@mui/icons-material/LocationOn";
+import TwitterIcon from "@mui/icons-material/Twitter";
+import FacebookIcon from "@mui/icons-material/Facebook";
+import YouTubeIcon from "@mui/icons-material/YouTube";
+import InstagramIcon from "@mui/icons-material/Instagram";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 
 export default function Footer() {
   const navigate = useNavigate();
+
+  const handleNav = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
+  };
+
+  const linkStyle = {
+    color: "rgba(255, 255, 255, 0.7)",
+    textDecoration: "none",
+    fontSize: "0.9rem",
+    fontWeight: 400,
+    display: "block",
+    mb: 1.5,
+    transition: "all 0.2s ease",
+    "&:hover": {
+      color: "#F9A825", // Brand orange/gold on hover
+      transform: "translateX(4px)",
+    },
+  };
+
+  const sectionTitleStyle = {
+    color: "#F9A825",
+    fontWeight: 700,
+    fontSize: "1.1rem",
+    mb: 2.5,
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    position: "relative",
+    pb: 1,
+    "&::after": {
+      content: '""',
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      width: "40px",
+      height: "3px",
+      bgcolor: "#2563EB",
+      borderRadius: "2px",
+    },
+  };
 
   return (
     <Box
       component="footer"
       sx={{
-        background:
-          "linear-gradient(135deg, #1F2937 0%, #1E3A8A 50%, #1F2937 100%)",
+        background: "linear-gradient(180deg, #0F172A 0%, #1E293B 100%)",
         color: "white",
         position: "relative",
-        overflow: "hidden",
-        py: 8,
+        pt: 8,
+        pb: 0,
+        mt: 8,
+        borderTop: "4px solid",
+        borderImage: "linear-gradient(to right, #2563EB, #F9A825) 1",
       }}
     >
-      {/* Background Pattern */}
-      <Box
-        sx={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.1,
-          backgroundImage: `radial-gradient(circle at 2px 2px, #3B82F6 1px, transparent 0)`,
-          backgroundSize: "40px 40px",
-        }}
-      />
-
-      <Container maxWidth="lg" sx={{ position: "relative", zIndex: 10 }}>
+      <Container maxWidth="lg">
         <Grid container spacing={4}>
-          {/* Logo and Branding */}
-          <Grid item xs={12} md={6}>
+          {/* Column 1: Branding & About */}
+          <Grid item xs={12} md={4}>
             <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-              <Box sx={{ position: "relative", mr: 2 }}>
-                <Box
-                  sx={{
-                    position: "absolute",
-                    inset: 0,
-                    bgcolor: "blue.500",
-                    borderRadius: "50%",
-                    filter: "blur(4px)",
-                    opacity: 0.5,
-                    transition: "opacity 0.3s",
-                    "&:hover": { opacity: 0.75 },
-                  }}
-                />
-                <Box
-                  sx={{
-                    position: "relative",
-                    width: 64,
-                    height: 64,
-                    bgcolor:
-                      "linear-gradient(135deg, #2563EB 0%, #1E40AF 100%)",
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "2px solid",
-                    borderColor: "blue.400",
-                    boxShadow: 3,
-                  }}
+              <Box
+                sx={{
+                  width: 56,
+                  height: 56,
+                  bgcolor: "linear-gradient(135deg, #2563EB 0%, #1E40AF 100%)",
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "2px solid rgba(255,255,255,0.2)",
+                  boxShadow: "0 4px 12px rgba(37, 99, 235, 0.4)",
+                  mr: 2,
+                }}
+              >
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: "bold", color: "white" }}
                 >
-                  <Typography
-                    variant="h6"
-                    sx={{ fontWeight: "bold", color: "white" }}
-                  >
-                    ISSS
-                  </Typography>
-                </Box>
+                  ISSS
+                </Typography>
               </Box>
               <Box>
                 <Typography
                   variant="h5"
-                  sx={{ fontWeight: "bold", color: "white" }}
+                  sx={{ fontWeight: 800, color: "white", lineHeight: 1.2 }}
                 >
                   ISSS Pension
                 </Typography>
-                <Typography variant="body2" sx={{ color: "blue.200" }}>
+                <Typography
+                  variant="body2"
+                  sx={{ color: "rgba(255,255,255,0.6)" }}
+                >
                   Social Welfare Portal
                 </Typography>
               </Box>
             </Box>
-            <Box
-              sx={{
-                bgcolor:
-                  "linear-gradient(to right, rgba(30, 64, 175, 0.3), transparent)",
-                p: 3,
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "blue.700",
-                backdropFilter: "blur(4px)",
-              }}
+
+            <Typography
+              variant="body2"
+              sx={{ color: "rgba(255,255,255,0.7)", mb: 2, lineHeight: 1.7 }}
             >
-              <Typography
-                variant="body1"
-                sx={{ color: "blue.100", mb: 1, fontWeight: "medium" }}
-              >
-                Department of Social Welfare
-                <br />
-                Government of Jammu and Kashmir
-              </Typography>
-              <Typography variant="body2" sx={{ color: "blue.300" }}>
-                @2025 Social Welfare Department
-              </Typography>
+              Facilitating transparent and structured financial assistance for
+              every citizen of Jammu & Kashmir through a digital-first approach.
+            </Typography>
+
+            <Box sx={{ display: "flex", gap: 1.5, mt: 3 }}>
+              {[
+                { icon: <TwitterIcon />, label: "Twitter" },
+                { icon: <FacebookIcon />, label: "Facebook" },
+                { icon: <YouTubeIcon />, label: "YouTube" },
+                { icon: <InstagramIcon />, label: "Instagram" },
+              ].map((social) => (
+                <Tooltip title={social.label} key={social.label}>
+                  <IconButton
+                    sx={{
+                      bgcolor: "rgba(255,255,255,0.05)",
+                      color: "rgba(255,255,255,0.8)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      "&:hover": {
+                        bgcolor: "#2563EB",
+                        color: "white",
+                        transform: "translateY(-2px)",
+                      },
+                      transition: "all 0.3s ease",
+                    }}
+                  >
+                    {social.icon}
+                  </IconButton>
+                </Tooltip>
+              ))}
             </Box>
           </Grid>
 
-          {/* Quick Links */}
-          <Grid item xs={12} md={3}>
-            <Box
-              sx={{
-                bgcolor:
-                  "linear-gradient(135deg, rgba(249, 115, 22, 0.2), rgba(234, 88, 12, 0.1))",
-                p: 3,
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "orange.400",
-                backdropFilter: "blur(4px)",
-              }}
-            >
-              <Typography
-                variant="h6"
-                sx={{
-                  color: "orange.300",
-                  mb: 3,
-                  fontWeight: "bold",
-                  display: "flex",
-                  alignItems: "center",
-                }}
+          {/* Column 2: Portal Links */}
+          <Grid item xs={6} sm={4} md={2}>
+            <Typography sx={sectionTitleStyle}>Portal</Typography>
+            <Box sx={{ display: "flex", flexDirection: "column" }}>
+              <Link
+                href="/user/home"
+                onClick={handleNav("/user/home")}
+                sx={linkStyle}
               >
-                <ListIcon sx={{ mr: 1 }} />
-                Quick Links
-              </Typography>
-              <Box
-                component="ul"
-                sx={{
-                  listStyle: "none",
-                  p: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                }}
+                Home
+              </Link>
+              <Link
+                href="/user/services"
+                onClick={handleNav("/user/services")}
+                sx={linkStyle}
               >
-                {[
-                  // { label: "About", href: "#about" },
-                  // { label: "Support", href: "#support" },
-                  {
-                    label: "Register",
-                    href: "/register",
-                    onClick: () => navigate("/register"),
-                  },
-                ].map((link) => (
-                  <Box component="li" key={link.label}>
-                    <Link
-                      href={link.href}
-                      onClick={(e) => {
-                        if (link.onClick) {
-                          e.preventDefault();
-                          link.onClick();
-                        }
-                      }}
-                      sx={{
-                        color: "gray.300",
-                        textDecoration: "none",
-                        fontSize: "0.875rem",
-                        fontWeight: "medium",
-                        display: "flex",
-                        alignItems: "center",
-                        "&:hover": { color: "orange.300" },
-                        transition: "color 0.3s",
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: 8,
-                          height: 8,
-                          bgcolor: "orange.500",
-                          borderRadius: "50%",
-                          mr: 1,
-                          transition: "background-color 0.3s",
-                          "&:hover": { bgcolor: "orange.300" },
-                        }}
-                      />
-                      {link.label}
-                    </Link>
-                  </Box>
-                ))}
+                Apply for Service
+              </Link>
+              <Link
+                href="/user/initiated"
+                onClick={handleNav("/user/initiated")}
+                sx={linkStyle}
+              >
+                Track Status
+              </Link>
+              <Link
+                href="/feedback"
+                onClick={handleNav("/feedback")}
+                sx={linkStyle}
+              >
+                Feedback
+              </Link>
+              <Link
+                href="/register"
+                onClick={handleNav("/register")}
+                sx={linkStyle}
+              >
+                Register / Login
+              </Link>
+            </Box>
+          </Grid>
+
+          {/* Column 3: Government Info */}
+          <Grid item xs={6} sm={4} md={2}>
+            <Typography sx={sectionTitleStyle}>Information</Typography>
+            <Box sx={{ display: "flex", flexDirection: "column" }}>
+              <Link href="#rti" sx={linkStyle}>
+                RTI
+              </Link>
+              <Link href="#grievance" sx={linkStyle}>
+                Grievance
+              </Link>
+              <Link href="#faq" sx={linkStyle}>
+                Help / FAQ
+              </Link>
+              <Link href="#sitemap" sx={linkStyle}>
+                Sitemap
+              </Link>
+              <Link href="#accessibility" sx={linkStyle}>
+                Accessibility
+              </Link>
+            </Box>
+          </Grid>
+
+          {/* Column 4: Contact Info */}
+          <Grid item xs={12} sm={4} md={4}>
+            <Typography sx={sectionTitleStyle}>Reach Us</Typography>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
+                <LocationOnIcon sx={{ color: "#F9A825", mt: 0.3 }} />
+                <Typography
+                  variant="body2"
+                  sx={{ color: "rgba(255,255,255,0.8)", lineHeight: 1.6 }}
+                >
+                  Directorate of Social Welfare,
+                  <br />
+                  Jammu & Kashmir, India
+                </Typography>
               </Box>
-            </Box>
-          </Grid>
-
-          {/* Contact Info */}
-          <Grid item xs={12} md={3}>
-            <Box
-              sx={{
-                bgcolor:
-                  "linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(29, 78, 216, 0.1))",
-                p: 3,
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "blue.400",
-                backdropFilter: "blur(4px)",
-              }}
-            >
-              <Typography
-                variant="h6"
-                sx={{
-                  color: "blue.300",
-                  mb: 3,
-                  fontWeight: "bold",
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
-                <EmailIcon sx={{ mr: 1 }} />
-                Contact
-              </Typography>
-              <Box
-                component="ul"
-                sx={{
-                  listStyle: "none",
-                  p: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 2,
-                }}
-              >
-                <Box
-                  component="li"
-                  sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                <PhoneIcon sx={{ color: "#F9A825" }} />
+                <Typography
+                  variant="body2"
+                  sx={{ color: "rgba(255,255,255,0.8)" }}
                 >
-                  <EmailIcon sx={{ color: "blue.400", mt: 0.5 }} />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ color: "gray.300", fontWeight: "medium" }}
-                    >
-                      Email:
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: "blue.200" }}>
-                      info@xxxx.xxx.xx
-                    </Typography>
-                  </Box>
-                </Box>
-                <Box
-                  component="li"
-                  sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}
+                  Helpline: 1800-XXX-XXXX (Toll Free)
+                </Typography>
+              </Box>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                <EmailIcon sx={{ color: "#F9A825" }} />
+                <Typography
+                  variant="body2"
+                  sx={{ color: "rgba(255,255,255,0.8)" }}
                 >
-                  <SupportIcon sx={{ color: "blue.400", mt: 0.5 }} />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ color: "gray.300", fontWeight: "medium" }}
-                    >
-                      Support:
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: "blue.200" }}>
-                      axxx.xxx@xxx.xx
-                    </Typography>
-                  </Box>
-                </Box>
-                <Box
-                  component="li"
-                  sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}
-                >
-                  <PhoneIcon sx={{ color: "blue.400", mt: 0.5 }} />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ color: "gray.300", fontWeight: "medium" }}
-                    >
-                      Helpline:
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: "blue.200" }}>
-                      1800-XXX-XXXX
-                    </Typography>
-                  </Box>
-                </Box>
+                  support@jkswd.gov.in
+                </Typography>
               </Box>
             </Box>
           </Grid>
         </Grid>
 
-        {/* Bottom Bar */}
-        <Divider sx={{ borderColor: "blue.700", opacity: 0.3, mt: 6, mb: 4 }} />
+        {/* Government Initiatives Strip */}
         <Box
           sx={{
-            bgcolor:
-              "linear-gradient(to right, rgba(31, 41, 55, 0.5), rgba(30, 64, 175, 0.3))",
-            borderRadius: 2,
-            p: 3,
-            backdropFilter: "blur(4px)",
-            border: "1px solid",
-            borderColor: "gray.700",
-            opacity: 0.3,
+            mt: 6,
+            py: 3,
+            borderTop: "1px solid rgba(255,255,255,0.1)",
+            borderBottom: "1px solid rgba(255,255,255,0.1)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: { xs: 3, md: 6 },
+            opacity: 0.6,
+            "&:hover": { opacity: 0.9 },
+            transition: "opacity 0.3s ease",
+          }}
+        >
+          {["Digital India", "NIC", "MeitY", "MyGov", "J&K Govt"].map(
+            (initiative) => (
+              <Typography
+                key={initiative}
+                variant="caption"
+                sx={{
+                  fontWeight: 700,
+                  letterSpacing: "1px",
+                  color: "rgba(255,255,255,0.8)",
+                  textTransform: "uppercase",
+                }}
+              >
+                {initiative}
+              </Typography>
+            ),
+          )}
+        </Box>
+
+        {/* Bottom Bar */}
+        <Box
+          sx={{
+            mt: 4,
+            py: 3,
+            bgcolor: "#0B1120", // Solid dark background, NO opacity
+            mx: { xs: -2, sm: -3, md: -4 },
+            px: { xs: 2, sm: 3, md: 4 },
           }}
         >
           <Box
@@ -311,38 +314,86 @@ export default function Footer() {
               gap: 2,
             }}
           >
-            <Typography
-              variant="body2"
-              sx={{ color: "gray.300", fontWeight: "medium" }}
+            {/* Left: Copyright & Stats */}
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: { xs: "column", sm: "row" },
+                alignItems: { xs: "flex-start", sm: "center" },
+                gap: { xs: 1, sm: 3 },
+              }}
             >
-              © 2025 Department of Social Welfare, J&K. All rights reserved.
-            </Typography>
-            <Box sx={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {[
-                { label: "Privacy Policy", href: "#privacy" },
-                { label: "Terms of Service", href: "#terms" },
-                { label: "Accessibility", href: "#accessibility" },
-              ].map((link) => (
-                <Link
-                  key={link.label}
-                  href={link.href}
+              <Typography
+                variant="body2"
+                sx={{ color: "rgba(255,255,255,0.6)", fontSize: "0.85rem" }}
+              >
+                © {new Date().getFullYear()} Department of Social Welfare, J&K.
+                All rights reserved.
+              </Typography>
+              <Box sx={{ display: "flex", gap: 2 }}>
+                <Chip
+                  icon={
+                    <CalendarMonthIcon sx={{ fontSize: "14px !important" }} />
+                  }
+                  label="Last Updated: Aug 2026"
+                  size="small"
                   sx={{
-                    color: "gray.400",
-                    textDecoration: "none",
-                    fontSize: "0.875rem",
-                    fontWeight: "medium",
-                    "&:hover": {
-                      color: "blue.300",
-                      textDecoration: "underline",
-                      textDecorationColor: "blue.300",
-                      textDecorationThickness: 2,
-                    },
-                    transition: "all 0.3s",
+                    bgcolor: "rgba(255,255,255,0.05)",
+                    color: "rgba(255,255,255,0.7)",
+                    fontSize: "0.75rem",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                />
+                <Chip
+                  icon={<VisibilityIcon sx={{ fontSize: "14px !important" }} />}
+                  label="Visitors: 1,24,500"
+                  size="small"
+                  sx={{
+                    bgcolor: "rgba(255,255,255,0.05)",
+                    color: "rgba(255,255,255,0.7)",
+                    fontSize: "0.75rem",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                />
+              </Box>
+            </Box>
+
+            {/* Right: Legal Links & Back to Top */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 3 }}>
+              {["Privacy Policy", "Terms of Service", "Disclaimer"].map(
+                (link) => (
+                  <Link
+                    key={link}
+                    href={`#${link.toLowerCase().replace(/ /g, "-")}`}
+                    sx={{
+                      color: "rgba(255,255,255,0.6)",
+                      textDecoration: "none",
+                      fontSize: "0.85rem",
+                      "&:hover": {
+                        color: "#F9A825",
+                        textDecoration: "underline",
+                      },
+                    }}
+                  >
+                    {link}
+                  </Link>
+                ),
+              )}
+              <Tooltip title="Back to Top">
+                <IconButton
+                  onClick={() =>
+                    window.scrollTo({ top: 0, behavior: "smooth" })
+                  }
+                  sx={{
+                    bgcolor: "#2563EB",
+                    color: "white",
+                    "&:hover": { bgcolor: "#1D4ED8" },
+                    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.4)",
                   }}
                 >
-                  {link.label}
-                </Link>
-              ))}
+                  <ArrowUpwardIcon />
+                </IconButton>
+              </Tooltip>
             </Box>
           </Box>
         </Box>

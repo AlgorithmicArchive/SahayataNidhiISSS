@@ -49,7 +49,9 @@ const sanitizeActionForm = (actionForm) => {
       isConsentCheckbox: field.isConsentCheckbox || false,
       isDeclaration: field.isDeclaration || false,
       declaration: field.declaration || "",
-      declarationFields: Array.isArray(field.declarationFields) ? field.declarationFields : [],
+      declarationFields: Array.isArray(field.declarationFields)
+        ? field.declarationFields
+        : [],
     };
 
     // Handle options
@@ -60,28 +62,32 @@ const sanitizeActionForm = (actionForm) => {
     }
 
     // Handle dependentOptions
-    if (field.dependentOptions && typeof field.dependentOptions === 'object') {
+    if (field.dependentOptions && typeof field.dependentOptions === "object") {
       sanitizedField.dependentOptions = Object.fromEntries(
         Object.entries(field.dependentOptions).map(([key, opts]) => [
           key,
           Array.isArray(opts) ? opts : [],
-        ])
+        ]),
       );
     }
 
     // Recursively sanitize additionalFields
-    if (field.additionalFields && typeof field.additionalFields === 'object') {
+    if (field.additionalFields && typeof field.additionalFields === "object") {
       sanitizedField.additionalFields = Object.fromEntries(
         Object.entries(field.additionalFields).map(([key, fields]) => [
           key,
-          Array.isArray(fields) ? fields.map(f => ({
-            ...f,
-            isConsentCheckbox: f.isConsentCheckbox || false,
-            isDeclaration: f.isDeclaration || false,
-            declaration: f.declaration || "",
-            declarationFields: Array.isArray(f.declarationFields) ? f.declarationFields : [],
-          })) : []
-        ])
+          Array.isArray(fields)
+            ? fields.map((f) => ({
+                ...f,
+                isConsentCheckbox: f.isConsentCheckbox || false,
+                isDeclaration: f.isDeclaration || false,
+                declaration: f.declaration || "",
+                declarationFields: Array.isArray(f.declarationFields)
+                  ? f.declarationFields
+                  : [],
+              }))
+            : [],
+        ]),
       );
     }
 
@@ -141,6 +147,7 @@ export default function CreateWorkflow() {
     canCorrigendum: false,
     canManageBankFiles: false,
     canWithhold: false,
+    canPushtoPool: false,
     canValidateAadhaar: false,
     customPermissions: [],
     actionForm: [],
@@ -176,15 +183,15 @@ export default function CreateWorkflow() {
       canWithhold: player.canWithhold,
       customPermissions: player.customPermissions
         ? Object.fromEntries(
-          player.customPermissions.map((perm) => [perm.name, perm.enabled])
-        )
+            player.customPermissions.map((perm) => [perm.name, perm.enabled]),
+          )
         : {},
     };
     if (optionsConfig.canForwardToPlayer && player.canForwardToPlayer) {
       let label = "Forward to Player";
       if (player.nextPlayerId !== null) {
         const nextPlayer = players.find(
-          (p) => p.playerId === player.nextPlayerId
+          (p) => p.playerId === player.nextPlayerId,
         );
         if (nextPlayer && nextPlayer.designation) {
           label = `Forward to ${nextPlayer.designation}`;
@@ -199,7 +206,7 @@ export default function CreateWorkflow() {
       let label = "Return to Player";
       if (player.prevPlayerId !== null) {
         const previousPlayer = players.find(
-          (p) => p.playerId === player.prevPlayerId
+          (p) => p.playerId === player.prevPlayerId,
         );
         if (previousPlayer && previousPlayer.designation) {
           label = `Return to ${previousPlayer.designation}`;
@@ -219,6 +226,10 @@ export default function CreateWorkflow() {
     if (optionsConfig.canWithhold && player.canWithhold) {
       actionOptions.push({ value: "Withhold", label: "Withhold" });
     }
+    if (optionsConfig.canPushToPool && player.canPushToPool) {
+      actionOptions.push({ value: "PushToPool", label: "Push to Pool" });
+    }
+
     // Add custom permissions to action options
     if (optionsConfig.customPermissions) {
       player.customPermissions?.forEach((perm) => {
@@ -276,7 +287,7 @@ export default function CreateWorkflow() {
         const updatedActionForm = player.actionForm.map((field) => {
           if (field.name === "defaultAction") {
             const newActionField = defaultFields.find(
-              (f) => f.name === "defaultAction"
+              (f) => f.name === "defaultAction",
             );
             if (newActionField) {
               return {
@@ -289,13 +300,13 @@ export default function CreateWorkflow() {
           return field;
         });
         return { ...player, actionForm: updatedActionForm };
-      })
+      }),
     );
   };
 
   const removePlayer = (playerIdToRemove) => {
     const filteredPlayers = players.filter(
-      (player) => player.playerId !== playerIdToRemove
+      (player) => player.playerId !== playerIdToRemove,
     );
     const updatedPlayers = filteredPlayers.map((player, index) => ({
       ...player,
@@ -351,7 +362,7 @@ export default function CreateWorkflow() {
     const updatedPlayers = players.map((player, index) =>
       index === players.length - 1
         ? { ...player, nextPlayerId: newPlayerId }
-        : player
+        : player,
     );
     const newPlayerWithDefaultFields = {
       ...newPlayer,
@@ -374,6 +385,7 @@ export default function CreateWorkflow() {
       canCorrigendum: false,
       canManageBankFiles: false,
       canWithhold: false,
+      canPushtoPool: false,
       canValidateAadhaar: false,
       customPermissions: [],
       actionForm: [],
@@ -412,7 +424,7 @@ export default function CreateWorkflow() {
             name: field.name,
             isConsentCheckbox: field.isConsentCheckbox,
             declaration: field.declaration?.substring(0, 100),
-            declarationFieldsCount: field.declarationFields?.length || 0
+            declarationFieldsCount: field.declarationFields?.length || 0,
           });
         }
       });
@@ -420,18 +432,27 @@ export default function CreateWorkflow() {
       // Check additionalFields
       player.actionForm?.forEach((field, fieldIndex) => {
         if (field.additionalFields) {
-          Object.entries(field.additionalFields).forEach(([action, additionalFields]) => {
-            additionalFields.forEach((addField, addIndex) => {
-              if (addField.type === "checkbox" && addField.isConsentCheckbox) {
-                console.log(`  Additional field ${fieldIndex}.${action}[${addIndex}]:`, {
-                  name: addField.name,
-                  isConsentCheckbox: addField.isConsentCheckbox,
-                  declaration: addField.declaration?.substring(0, 100),
-                  declarationFieldsCount: addField.declarationFields?.length || 0
-                });
-              }
-            });
-          });
+          Object.entries(field.additionalFields).forEach(
+            ([action, additionalFields]) => {
+              additionalFields.forEach((addField, addIndex) => {
+                if (
+                  addField.type === "checkbox" &&
+                  addField.isConsentCheckbox
+                ) {
+                  console.log(
+                    `  Additional field ${fieldIndex}.${action}[${addIndex}]:`,
+                    {
+                      name: addField.name,
+                      isConsentCheckbox: addField.isConsentCheckbox,
+                      declaration: addField.declaration?.substring(0, 100),
+                      declarationFieldsCount:
+                        addField.declarationFields?.length || 0,
+                    },
+                  );
+                }
+              });
+            },
+          );
         }
       });
     });
@@ -441,7 +462,7 @@ export default function CreateWorkflow() {
     const corrigendumCount = players.filter((p) => p.canCorrigendum).length;
     const bankFilesCount = players.filter((p) => p.canManageBankFiles).length;
     const validateAadhaarCount = players.filter(
-      (p) => p.canValidateAadhaar
+      (p) => p.canValidateAadhaar,
     ).length;
 
     if (corrigendumCount > 1) {
@@ -461,9 +482,9 @@ export default function CreateWorkflow() {
     formdata.append("serviceId", selectedServiceId);
 
     // Ensure all data is properly sanitized
-    const sanitizedPlayers = players.map(player => ({
+    const sanitizedPlayers = players.map((player) => ({
       ...player,
-      actionForm: sanitizeActionForm(player.actionForm || [])
+      actionForm: sanitizeActionForm(player.actionForm || []),
     }));
 
     formdata.append("workflowplayers", JSON.stringify(sanitizedPlayers));
@@ -471,13 +492,16 @@ export default function CreateWorkflow() {
     console.log("Saving workflow with:", {
       serviceId: selectedServiceId,
       playersCount: sanitizedPlayers.length,
-      totalFields: sanitizedPlayers.reduce((sum, p) => sum + (p.actionForm?.length || 0), 0)
+      totalFields: sanitizedPlayers.reduce(
+        (sum, p) => sum + (p.actionForm?.length || 0),
+        0,
+      ),
     });
 
     try {
       const response = await axiosInstance.post(
         "/Designer/WorkFlowPlayers",
-        formdata
+        formdata,
       );
       const result = response.data;
       if (result.status) {
@@ -517,33 +541,33 @@ export default function CreateWorkflow() {
     // Check for multiple players with exclusive authorities
     if (updatedPlayer.canCorrigendum) {
       const otherCorrigendum = players.find(
-        (p) => p.playerId !== updatedPlayer.playerId && p.canCorrigendum
+        (p) => p.playerId !== updatedPlayer.playerId && p.canCorrigendum,
       );
       if (otherCorrigendum) {
         toast.error(
-          `Another player (${otherCorrigendum.designation}) already has Can Corrigendum authority.`
+          `Another player (${otherCorrigendum.designation}) already has Can Corrigendum authority.`,
         );
         return;
       }
     }
     if (updatedPlayer.canManageBankFiles) {
       const otherBankFiles = players.find(
-        (p) => p.playerId !== updatedPlayer.playerId && p.canManageBankFiles
+        (p) => p.playerId !== updatedPlayer.playerId && p.canManageBankFiles,
       );
       if (otherBankFiles) {
         toast.error(
-          `Another player (${otherBankFiles.designation}) already has Can Manage Bank Files authority.`
+          `Another player (${otherBankFiles.designation}) already has Can Manage Bank Files authority.`,
         );
         return;
       }
     }
     if (updatedPlayer.canValidateAadhaar) {
       const otherValidateAadhaar = players.find(
-        (p) => p.playerId !== updatedPlayer.playerId && p.canValidateAadhaar
+        (p) => p.playerId !== updatedPlayer.playerId && p.canValidateAadhaar,
       );
       if (otherValidateAadhaar) {
         toast.error(
-          `Another player (${otherValidateAadhaar.designation}) already has Can Validate Aadhaar authority.`
+          `Another player (${otherValidateAadhaar.designation}) already has Can Validate Aadhaar authority.`,
         );
         return;
       }
@@ -552,13 +576,13 @@ export default function CreateWorkflow() {
     // Ensure actionForm is properly sanitized
     const sanitizedPlayer = {
       ...updatedPlayer,
-      actionForm: sanitizeActionForm(updatedPlayer.actionForm || [])
+      actionForm: sanitizeActionForm(updatedPlayer.actionForm || []),
     };
 
     setPlayers((prev) =>
       prev.map((p) =>
-        p.playerId === sanitizedPlayer.playerId ? sanitizedPlayer : p
-      )
+        p.playerId === sanitizedPlayer.playerId ? sanitizedPlayer : p,
+      ),
     );
     updateAllDefaultActionFields();
     setIsEditModalOpen(false);
@@ -681,8 +705,9 @@ export default function CreateWorkflow() {
                           sx={{ fontWeight: 600, color: "primary.main", mb: 1 }}
                         >
                           {player.designation
-                            ? `${player.designation} (${player.accessLevel || "N/A"
-                            })`
+                            ? `${player.designation} (${
+                                player.accessLevel || "N/A"
+                              })`
                             : "Unnamed Player"}
                         </Typography>
                         <Box sx={{ pl: 2 }}>
@@ -725,6 +750,10 @@ export default function CreateWorkflow() {
                           <Typography variant="body2">
                             <strong>Withhold:</strong>{" "}
                             {player.canWithhold ? "Yes" : "No"}
+                          </Typography>
+                          <Typography variant="body2">
+                            <strong>Push to Pool:</strong>{" "}
+                            {player.canPushToPool ? "Yes" : "No"}
                           </Typography>
                           <Typography variant="body2">
                             <strong>Validate Aadhaar:</strong>{" "}

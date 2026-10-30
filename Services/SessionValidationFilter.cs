@@ -1,50 +1,48 @@
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
+using Microsoft.Extensions.Caching.Memory;
 
 public class SessionValidationFilter : IAsyncAuthorizationFilter
 {
     private readonly SessionRepository _sessionRepo;
     private readonly ILogger<SessionValidationFilter> _logger;
+    private readonly IMemoryCache _cache;
 
-    public SessionValidationFilter(SessionRepository sessionRepo, ILogger<SessionValidationFilter> logger)
+    public SessionValidationFilter(SessionRepository sessionRepo, ILogger<SessionValidationFilter> logger, IMemoryCache cache)
     {
         _sessionRepo = sessionRepo;
         _logger = logger;
+        _cache = cache;
     }
 
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
-        // Skip if not authenticated
-        if (!context.HttpContext.User.Identity?.IsAuthenticated == true)
+        // NOTE: previously written as `!context.HttpContext.User.Identity?.IsAuthenticated == true`,
+        // which only worked because `!` binds tighter than `==` - correct by accident, and one
+        // edit away from silently skipping the session check. Made explicit below.
+        if (context.HttpContext.User.Identity?.IsAuthenticated != true)
             return;
-
-        _logger.LogWarning("=== SessionValidationFilter running ===");
-        _logger.LogWarning("IsAuthenticated: {IsAuth}", context.HttpContext.User.Identity?.IsAuthenticated);
 
         var sessionIdClaim = context.HttpContext.User.FindFirst("SessionId")?.Value;
-        _logger.LogWarning("SessionId claim: {Claim}", sessionIdClaim);
-
-        if (string.IsNullOrEmpty(sessionIdClaim))
+        if (string.IsNullOrEmpty(sessionIdClaim) || !Guid.TryParse(sessionIdClaim, out Guid sessionId))
         {
-            _logger.LogWarning("SessionId claim missing in JWT");
             context.Result = new UnauthorizedResult();
             return;
         }
 
-        if (!Guid.TryParse(sessionIdClaim, out Guid sessionId))
+        var cacheKey = $"session_exists_{sessionId}";
+
+        // OPTIMIZATION: Cache DB lookup for 2 minutes to prevent DB spamming
+        if (!_cache.TryGetValue(cacheKey, out bool exists))
         {
-            _logger.LogWarning("Invalid SessionId format in JWT");
-            context.Result = new UnauthorizedResult();
-            return;
+            exists = await _sessionRepo.SessionExists(sessionId);
+            _cache.Set(cacheKey, exists, TimeSpan.FromMinutes(2));
         }
 
-        var exists = await _sessionRepo.SessionExists(sessionId);
-        if (!exists)
+        if (!(bool)exists!)
         {
-            _logger.LogInformation("Session {SessionId} no longer exists (likely replaced by newer login)", sessionId);
+            _logger.LogInformation("Session {SessionId} no longer exists", sessionId);
             context.Result = new UnauthorizedResult();
-            return;
         }
     }
 }

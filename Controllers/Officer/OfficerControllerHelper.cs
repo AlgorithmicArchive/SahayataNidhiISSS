@@ -18,6 +18,7 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SahayataNidhi.Models.Entities;
+using ServicesEntity = SahayataNidhi.Models.Entities.Services;
 using Path = System.IO.Path;
 using System.Threading.Tasks.Dataflow;
 using System.Reflection;
@@ -35,15 +36,9 @@ namespace SahayataNidhi.Controllers.Officer
             return Regex.Replace(input, "(?<!^)([A-Z])", " $1");
         }
 
-        public string GetDistrictName(int districtId)
-        {
-            return dbcontext.District.FirstOrDefault(d => d.Districtid == districtId)?.Districtname ?? string.Empty;
-        }
+        public string GetDistrictName(int districtId) => _referenceData.GetDistrictName(districtId);
 
-        public string GetTehsilName(int tehsilId)
-        {
-            return dbcontext.Tehsil.FirstOrDefault(d => d.Tehsilid == tehsilId)?.Tehsilname ?? string.Empty;
-        }
+        public string GetTehsilName(int tehsilId) => _referenceData.GetTehsilName(tehsilId);
 
         private static string? GetFormFieldValue(JObject formDetailsObj, string fieldName)
         {
@@ -67,55 +62,10 @@ namespace SahayataNidhi.Controllers.Officer
             return null;
         }
 
-        public string GetFieldValue(string fieldName, dynamic data)
-        {
-            foreach (var section in data)
-            {
-                if (section.First is JArray fields)
-                {
-                    foreach (var field in fields)
-                    {
-                        if (field["name"] != null && field["name"]?.ToString() == fieldName)
-                        {
-                            return field["value"]?.ToString() ?? "";
-                        }
-                    }
-                }
-            }
-            return "";
-        }
+        public string GetFieldValue(string fieldName, dynamic data) => _referenceData.GetFieldValue(fieldName, data);
 
         public int GetCountPerDistrict(int districtId, int serviceId)
-        {
-            var financialYear = helper.GetCurrentFinancialYear();
-
-            var result = dbcontext.Applicationperdistrict
-                .Where(a => a.Districtid == districtId
-                         && a.Serviceid == serviceId
-                         && a.Financialyear == financialYear
-                         && a.Type == "Corrigendum")
-                .FirstOrDefault();
-
-            if (result == null)
-            {
-                result = new Applicationperdistrict
-                {
-                    Districtid = districtId,
-                    Serviceid = serviceId,
-                    Financialyear = financialYear,
-                    Type = "Corrigendum",
-                    Countvalue = 1
-                };
-                dbcontext.Applicationperdistrict.Add(result);
-            }
-            else
-            {
-                result.Countvalue++;
-            }
-
-            dbcontext.SaveChanges();
-            return result.Countvalue;
-        }
+            => _applicationCounter.NextCount(districtId, serviceId, "Corrigendum");
 
         private dynamic GetFormattedValue(dynamic item, JObject data)
         {
@@ -134,7 +84,7 @@ namespace SahayataNidhi.Controllers.Officer
                     var name = sf?.ToString() ?? "";
                     if (string.IsNullOrWhiteSpace(name)) return "";
 
-                    var fieldObj = FindFieldRecursively(data, name);
+                    var fieldObj = FormJsonHelper.FindFieldRecursively(data, name);
                     string value = "";
 
                     if (fieldObj != null)
@@ -213,23 +163,6 @@ namespace SahayataNidhi.Controllers.Officer
             }
 
             return null!;
-        }
-        private static JObject? FindFieldRecursively(JToken token, string fieldName)
-        {
-            if (token is JObject obj)
-            {
-                if (obj["name"]?.ToString() == fieldName) return obj;
-                foreach (var prop in obj.Properties())
-                    if (FindFieldRecursively(prop.Value, fieldName) is JObject found)
-                        return found;
-            }
-            else if (token is JArray arr)
-            {
-                foreach (var el in arr)
-                    if (FindFieldRecursively(el, fieldName) is JObject found)
-                        return found;
-            }
-            return null;
         }
 
         private bool UpdateFieldValueRecursively(JToken token, string fieldName, string newValue)
@@ -382,74 +315,286 @@ namespace SahayataNidhi.Controllers.Officer
                 return correctionFieldsJson; // fallback
             }
         }
-        private static JObject MapServiceFieldsFromForm(JObject? formDetailsObj, JObject fieldMapping, JArray workflowJson, object entityObject)
+
+        /// <summary>
+        /// True when a token is null, JSON null, or an empty / whitespace string.
+        /// Numbers, booleans, and non-empty strings are considered "present".
+        /// </summary>
+        private static bool IsEmptyOrMissing(JToken? token)
         {
-            JObject result = new JObject();
+            if (token == null) return true;
+            if (token.Type == JTokenType.Null) return true;
+            if (token.Type == JTokenType.String && string.IsNullOrWhiteSpace(token.ToString())) return true;
+            return false;
+        }
 
-            foreach (var mapping in fieldMapping.Properties())
+        /// <summary>
+        /// Translates a numeric code stored in formdetails into its human-readable name.
+        /// Returns null when the field is not a known code field, the value isn't numeric,
+        /// or the lookup fails — in which case the caller keeps the raw value.
+        /// </summary>
+        private static string? TryResolveCodeFieldName(string fieldName, string rawValue, SwdjkContext dbContext)
+        {
+            if (!int.TryParse(rawValue, out int code)) return null;
+
+            // Top-level TSWO (Location → Tehsil) — uses the TSWO table
+            if (string.Equals(fieldName, "Tehsil", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == code)?.Tehsilname;
+
+            // Division / Region — 1 = Jammu, 2 = Kashmir
+            if (string.Equals(fieldName, "Region", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(fieldName, "Division", StringComparison.OrdinalIgnoreCase))
+                return code == 1 ? "JAMMU" : code == 2 ? "KASHMIR" : null;
+
+            // District (top-level and Present/Permanent districts)
+            if (string.Equals(fieldName, "District", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("District", StringComparison.OrdinalIgnoreCase))
+                return dbContext.District.FirstOrDefault(d => d.Districtid == code)?.Districtname;
+
+            // Regular tehsil (PresentTehsil, PermanentTehsil)
+            if (fieldName.EndsWith("Tehsil", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Tehsil.FirstOrDefault(t => t.Tehsilid == code)?.Tehsilname;
+
+            if (fieldName.Contains("Muncipality", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == code)?.Muncipalityname;
+
+            if (fieldName.Contains("HalqaPanchayat", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Halqapanchayat.FirstOrDefault(h => h.Halqapanchayatid == code)?.Halqapanchayatname;
+
+            if (fieldName.Contains("Block", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Blocks.FirstOrDefault(b => b.Blockid == code)?.Blockname;
+
+            if (fieldName.Contains("Ward", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Wards.FirstOrDefault(w => w.Wardcode == code)?.Wardno.ToString();
+
+            if (fieldName.Contains("Village", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Villages.FirstOrDefault(v => v.Villageid == code)?.Villagename;
+
+            if (string.Equals(fieldName, "BankName", StringComparison.OrdinalIgnoreCase))
+                return dbContext.Bank.FirstOrDefault(b => b.Id == code)?.Bankname;
+
+            return null;
+        }
+
+        // Replaces every '(' and ')' in string values with '-'.
+        // Walks objects and arrays so nested payloads get the same treatment.
+        // Numbers, booleans, nulls and dates are returned unchanged.
+        private static readonly Regex BracketRegex =
+            new Regex(@"[()]", RegexOptions.Compiled);
+
+        private static JToken? NormalizeBrackets(JToken? token)
+        {
+            if (token == null) return null;
+
+            switch (token.Type)
             {
-                string targetField = mapping.Name;
-                JObject config = mapping.Value as JObject ?? new JObject();
+                case JTokenType.String:
+                    var s = token.ToString();
+                    if (s.IndexOf('(') < 0 && s.IndexOf(')') < 0) return token;
+                    return new JValue(BracketRegex.Replace(s, "-"));
 
+                case JTokenType.Object:
+                    var srcObj = (JObject)token;
+                    var outObj = new JObject();
+                    foreach (var p in srcObj.Properties())
+                    {
+                        outObj[p.Name] = NormalizeBrackets(p.Value) ?? JValue.CreateNull();
+                    }
+                    return outObj;
+
+                case JTokenType.Array:
+                    var srcArr = (JArray)token;
+                    var outArr = new JArray();
+                    foreach (var item in srcArr)
+                    {
+                        outArr.Add(NormalizeBrackets(item) ?? JValue.CreateNull());
+                    }
+                    return outArr;
+
+                default:
+                    return token;   // Integer, Float, Boolean, Date, Null, …
+            }
+        }
+
+        private static JToken? MapServiceFieldsFromForm(JObject? formDetailsObj, JToken fieldMapping, JArray workflowJson, object entityObject, SwdjkContext dbContext)
+        {
+            // ── CASE 0: Static value — always include (intentional config)
+            if (fieldMapping is JObject staticConfig &&
+                staticConfig.ContainsKey("type") &&
+                string.Equals(staticConfig["type"]?.ToString(), "static", StringComparison.OrdinalIgnoreCase))
+            {
+                var staticValue = staticConfig["value"] ?? JToken.FromObject("");
+                return NormalizeBrackets(staticValue);
+            }
+
+            // ── CASE 1: Leaf node { type, field }
+            if (fieldMapping is JObject config && config.ContainsKey("type") && config.ContainsKey("field"))
+            {
                 string type = config["type"]?.ToString() ?? "";
                 string field = config["field"]?.ToString() ?? "";
                 string respectiveColumn = config["respectiveColumn"]?.ToString() ?? "";
 
                 JToken? valueToken = null;
 
-                // ✅ 1. COLUMN TYPE (works for any table)
                 if (type.Equals("column", StringComparison.OrdinalIgnoreCase))
                 {
                     var property = entityObject.GetType()
-                        .GetProperty(field,
-                            BindingFlags.IgnoreCase |
-                            BindingFlags.Public |
-                            BindingFlags.Instance);
+                        .GetProperty(field, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
 
                     if (property != null)
                     {
                         var value = property.GetValue(entityObject);
-                        valueToken = value != null
-                            ? JToken.FromObject(value)
-                            : null;
-                    }
-                }
-
-                // ✅ 2. JSON TYPE
-                else if (type.Equals("json", StringComparison.OrdinalIgnoreCase))
-                {
-                    // ---- From FormDetails (only if exists) ----
-                    if (respectiveColumn.Equals("FormDetails", StringComparison.OrdinalIgnoreCase)
-                        && formDetailsObj != null)
-                    {
-                        var foundField = FindFieldRecursively(formDetailsObj, field);
-                        valueToken = foundField?["value"];
-                    }
-
-                    // ---- From Workflow ----
-                    else if (respectiveColumn.Equals("Workflow", StringComparison.OrdinalIgnoreCase) || respectiveColumn.Equals("WorkFlow", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var workflowDetails = GetWorkFlowSanctionDetails(workflowJson);
-
-                        if (workflowDetails != null)
+                        if (value != null)
                         {
-                            var prop = workflowDetails.GetType().GetProperty(field);
-                            if (prop != null)
+                            // Auto-resolve Division / Region codes to names (1 = JAMMU, 2 = KASHMIR)
+                            if ((field.Equals("Division", StringComparison.OrdinalIgnoreCase) ||
+                                 field.Equals("Region", StringComparison.OrdinalIgnoreCase))
+                                && int.TryParse(value.ToString(), out int divCode))
                             {
-                                var val = prop.GetValue(workflowDetails);
-                                valueToken = val != null
-                                    ? JToken.FromObject(val)
-                                    : null;
+                                valueToken = divCode == 1 ? "JAMMU"
+                                           : divCode == 2 ? "KASHMIR"
+                                           : JToken.FromObject(value);
+                            }
+                            else
+                            {
+                                valueToken = JToken.FromObject(value);
                             }
                         }
                     }
                 }
+                else if (type.Equals("json", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (respectiveColumn.Equals("Workflow", StringComparison.OrdinalIgnoreCase) ||
+                        respectiveColumn.Equals("WorkFlow", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var wf = GetWorkFlowSanctionDetails(workflowJson);
+                        if (wf != null)
+                        {
+                            var prop = wf.GetType().GetProperty(field);
+                            if (prop != null)
+                            {
+                                var val = prop.GetValue(wf);
+                                valueToken = val != null ? JToken.FromObject(val) : null;
+                            }
+                        }
+                    }
+                    else if (formDetailsObj != null)
+                    {
+                        var foundField = FormJsonHelper.FindFieldRecursively(formDetailsObj, field);
+                        var rawValue = foundField?["value"];
 
-                result[targetField] = valueToken ?? "";
+                        if (!IsEmptyOrMissing(rawValue))
+                        {
+                            // Try to translate known code fields (District, Tehsil, Block, Village, …) into names
+                            var resolved = TryResolveCodeFieldName(field, rawValue!.ToString(), dbContext);
+                            valueToken = resolved != null ? JToken.FromObject(resolved) : rawValue;
+                        }
+                    }
+                }
+                else if (type.Equals("lookup", StringComparison.OrdinalIgnoreCase))
+                {
+                    string lookupTable = config["lookupTable"]?.ToString()?.ToLower() ?? "";
+                    int? idValue = null;
+
+                    // 1. Prefer the id found in formdetails JSON
+                    if (formDetailsObj != null)
+                    {
+                        var foundField = FormJsonHelper.FindFieldRecursively(formDetailsObj, field);
+                        if (foundField?["value"] != null
+                            && int.TryParse(foundField["value"]!.ToString(), out int formId))
+                        {
+                            idValue = formId;
+                        }
+                    }
+
+                    // 2. Fall back to the entity property (with "Id" suffix fallback)
+                    if (idValue == null)
+                    {
+                        var property = entityObject.GetType()
+                            .GetProperty(field, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance)
+                            ?? entityObject.GetType()
+                                .GetProperty(field + "Id", BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+
+                        if (property != null)
+                        {
+                            var val = property.GetValue(entityObject);
+                            if (val != null && int.TryParse(val.ToString(), out int entityId))
+                                idValue = entityId;
+                        }
+                    }
+
+                    if (idValue.HasValue)
+                    {
+                        int id = idValue.Value;
+                        valueToken = lookupTable switch
+                        {
+                            "district" =>
+                                dbContext.District.FirstOrDefault(d => d.Districtid == id)?.Districtname is string dn
+                                    ? JToken.FromObject(dn) : null,
+
+                            "districtdivision" =>
+                                dbContext.District.FirstOrDefault(d => d.Districtid == id)?.Division is int dv
+                                    ? JToken.FromObject(dv) : null,
+
+                            "tehsil" =>
+                                dbContext.Tehsil.FirstOrDefault(t => t.Tehsilid == id)?.Tehsilname is string tn
+                                    ? JToken.FromObject(tn) : null,
+
+                            "tswotehsil" =>
+                                dbContext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == id)?.Tehsilname is string tsn
+                                    ? JToken.FromObject(tsn) : null,
+
+                            "block" =>
+                                dbContext.Blocks.FirstOrDefault(b => b.Blockid == id)?.Blockname is string bn
+                                    ? JToken.FromObject(bn) : null,
+
+                            "village" =>
+                                dbContext.Villages.FirstOrDefault(v => v.Villageid == id)?.Villagename is string vn
+                                    ? JToken.FromObject(vn) : null,
+
+                            "halqapanchayat" =>
+                                dbContext.Halqapanchayat.FirstOrDefault(h => h.Halqapanchayatid == id)?.Halqapanchayatname is string hn
+                                    ? JToken.FromObject(hn) : null,
+
+                            "muncipality" =>
+                                dbContext.Muncipalities.FirstOrDefault(m => m.Muncipalityid == id)?.Muncipalityname is string mn
+                                    ? JToken.FromObject(mn) : null,
+
+                            "ward" =>
+                                dbContext.Wards.FirstOrDefault(w => w.Wardcode == id)?.Wardno is int wn
+                                    ? JToken.FromObject(wn) : null,
+
+                            "division" =>
+                                id == 1 ? (JToken)"JAMMU"
+                              : id == 2 ? (JToken)"KASHMIR"
+                              : JToken.FromObject(id),
+
+                            _ => null,
+                        };
+                    }
+                }
+
+                return IsEmptyOrMissing(valueToken) ? null : NormalizeBrackets(valueToken);
             }
 
-            return result;
+            // ── CASE 2: Nested object — recurse, skipping any null children
+            if (fieldMapping is JObject nestedObject)
+            {
+                JObject result = new JObject();
+                foreach (var prop in nestedObject.Properties())
+                {
+                    var child = MapServiceFieldsFromForm(formDetailsObj, prop.Value, workflowJson, entityObject, dbContext);
+                    if (child == null) continue;   // field missing/empty → don't include
+                    result[prop.Name] = child;
+                }
+
+                // ✅ FIXED: Return the JObject directly. Do not wrap it in a JArray.
+                return result;
+            }
+
+            return null;
         }
+
         private async Task SendApiRequestAsync(string url, object payload, string headersJson)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -458,14 +603,16 @@ namespace SahayataNidhi.Controllers.Officer
                 return;
             }
 
-            url = url.Trim();  // remove any accidental whitespace
+            url = url.Trim();
 
             if (!Uri.IsWellFormedUriString(url, UriKind.Absolute))
             {
                 _logger.LogError("Malformed URL: '{Url}' – not a valid absolute URI", url);
-                return; // or throw
+                return;
             }
 
+            // Note: It is highly recommended to inject IHttpClientFactory instead of using 'new HttpClient()' 
+            // to prevent socket exhaustion in high-traffic environments.
             using var client = new HttpClient();
 
             // Add headers from stored JSON array
@@ -474,8 +621,8 @@ namespace SahayataNidhi.Controllers.Officer
                 var headersArray = JArray.Parse(headersJson);
                 foreach (var item in headersArray)
                 {
-                    string key = item["key"]?.ToString();
-                    string value = item["value"]?.ToString();
+                    string key = item["key"]?.ToString()!;
+                    string value = item["value"]?.ToString()!;
                     if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
                     {
                         client.DefaultRequestHeaders.TryAddWithoutValidation(key, value);
@@ -499,9 +646,533 @@ namespace SahayataNidhi.Controllers.Officer
             catch (Exception ex)
             {
                 _logger.LogError(ex, "API call to {Url} failed", url);
-                throw; // or handle gracefully
+                throw;
             }
         }
+
+        /// <summary>
+        /// Generic, configuration-driven web-service dispatcher.
+        /// Fires every ACTIVE Webservice row for the given service whose Onaction
+        /// array contains <paramref name="eventName"/> (case-insensitive).
+        /// The payload shape is built entirely from Fieldmappings[eventName] via
+        /// MapServiceFieldsFromForm - changing what data is sent NEVER requires code changes.
+        /// Failures are logged and swallowed so external APIs never break officer workflow.
+        /// </summary>
+        /// <param name="eventName">Lifecycle event: "AddBeneficiaries" | "Corrigendum" | "Withheld" | any custom configured event</param>
+
+
+        private record ApiCallResult(int? StatusCode, string? ResponseBody, string? ResponseHeaders, bool Success, string? Error, long DurationMs);
+
+        /// <summary>
+        /// Sends the payload with retries (respecting webservice.Retryenabled, Maxattempts, Retrydelayseconds),
+        /// writing one webservice_logs row per attempt. Logging failures are swallowed so they never
+        /// affect the caller.
+        /// </summary>
+        private async Task SendApiRequestWithLoggingAsync(
+      int webserviceId,
+      int serviceId,
+      string triggerName,
+      string? referenceNumber,
+      string url,
+      string method,
+      string headersJson,
+      object payload,
+      bool retryEnabled,
+      int maxAttempts,
+      int retryDelaySeconds)
+        {
+            Guid executionId = Guid.NewGuid();
+            string requestBody = JsonConvert.SerializeObject(payload);
+            int totalAttempts = retryEnabled ? Math.Max(1, maxAttempts) : 1;
+            int delaySeconds = retryEnabled ? Math.Max(1, retryDelaySeconds) : 0;
+
+            ApiCallResult? lastResult = null;
+            bool lastEffectiveSuccess = false;
+            string? lastEffectiveError = null;
+
+            for (int attempt = 1; attempt <= totalAttempts; attempt++)
+            {
+                ApiCallResult result;
+
+                if (string.IsNullOrWhiteSpace(url) ||
+                    !Uri.IsWellFormedUriString(url, UriKind.Absolute))
+                {
+                    result = new ApiCallResult(null, null, null, false,
+                        $"Malformed URL: '{url}'", 0);
+                }
+                else
+                {
+                    result = await ExecuteHttpAsync(url, method, headersJson, requestBody);
+                }
+
+                lastResult = result;
+
+                // ── Evaluate real success: transport status AND response body ────────
+                var (effectiveSuccess, effectiveError) = EvaluateApiResult(result);
+                lastEffectiveSuccess = effectiveSuccess;
+                lastEffectiveError = effectiveError;
+
+                // ── Persist one row per attempt ─────────────────────────────────────
+                try
+                {
+                    dbcontext.WebserviceLogs.Add(new WebserviceLogs
+                    {
+                        Executionid = executionId,
+                        Webserviceid = webserviceId,
+                        Serviceid = serviceId,
+                        Triggername = triggerName,
+                        Referencenumber = referenceNumber,
+                        Attemptnumber = attempt,
+                        Requesturl = url,
+                        Requestmethod = method,
+                        Requestheaders = headersJson,
+                        Requestbody = requestBody,
+                        Responsestatuscode = result.StatusCode,
+                        Responseheaders = result.ResponseHeaders,
+                        Responsebody = result.ResponseBody,
+                        Issuccess = effectiveSuccess,         // ← real success, not just HTTP
+                        Errormessage = effectiveError,        // ← real error from body if any
+                        Durationms = result.DurationMs,
+                        Createdat = DateTime.UtcNow
+                    });
+                    await dbcontext.SaveChangesAsync();
+                }
+                catch (Exception logEx)
+                {
+                    _logger.LogError(logEx,
+                        "Failed to persist webservice_logs row | webservice={WsId} execution={ExecutionId} attempt={Attempt}",
+                        webserviceId, executionId, attempt);
+                }
+
+                _logger.LogInformation(
+                    "WS call ws={WsId} trigger={Trigger} attempt={Attempt}/{Total} → http={HttpStatus} success={Success} duration={Duration}ms execution={ExecutionId}",
+                    webserviceId, triggerName, attempt, totalAttempts,
+                    result.StatusCode?.ToString() ?? "N/A",
+                    effectiveSuccess, result.DurationMs, executionId);
+
+                if (effectiveSuccess)
+                    return;
+
+                if (attempt < totalAttempts)
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            }
+
+            if (!lastEffectiveSuccess)
+            {
+                _logger.LogWarning(
+                    "All {Total} attempts failed | webservice={WsId} trigger={Trigger} execution={ExecutionId} lastHttp={HttpStatus} lastError={Error}",
+                    totalAttempts, webserviceId, triggerName, executionId,
+                    lastResult?.StatusCode?.ToString() ?? "N/A",
+                    lastEffectiveError);
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Inspects both the HTTP transport result AND the response body to decide
+        // whether the remote operation actually succeeded.
+        //
+        // Handles these API shapes:
+        //   { "success": false, "Message": "...", "StatusCode": 500 }
+        //   { "success": true }
+        //   { "StatusCode": 500, "Message": "..." }   (no "success" flag)
+        //   non-JSON bodies (plain text / HTML)       → falls back to HTTP status
+        // ─────────────────────────────────────────────────────────────────────────────
+        private static (bool Success, string? Error) EvaluateApiResult(ApiCallResult result)
+        {
+            // 1. Transport-level failure → already failed
+            if (!result.Success)
+            {
+                return (false, result.Error
+                    ?? (result.StatusCode.HasValue
+                            ? $"HTTP {result.StatusCode}"
+                            : "HTTP request failed"));
+            }
+
+            // 2. No body → nothing to inspect, trust the HTTP result
+            if (string.IsNullOrWhiteSpace(result.ResponseBody))
+                return (true, null);
+
+            // 3. Try to detect an application-level error envelope
+            try
+            {
+                var token = JToken.Parse(result.ResponseBody);
+
+                // Shape A: explicit "success" flag (bool or string) set to false
+                var successProp = token["success"] ?? token["Success"];
+                if (successProp != null)
+                {
+                    bool isSuccess;
+                    if (successProp.Type == JTokenType.Boolean)
+                    {
+                        isSuccess = successProp.Value<bool>();
+                    }
+                    else
+                    {
+                        // handle "false" / "true" as strings
+                        isSuccess = !string.Equals(successProp.ToString(), "false",
+                                                   StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    if (!isSuccess)
+                    {
+                        var msg = token["Message"]?.ToString()
+                               ?? token["message"]?.ToString()
+                               ?? token["error"]?.ToString()
+                               ?? "Remote API reported success=false";
+
+                        var inner = token["StatusCode"]?.ToString()
+                                 ?? token["statusCode"]?.ToString();
+
+                        return (false, string.IsNullOrEmpty(inner) ? msg : $"[{inner}] {msg}");
+                    }
+                }
+
+                // Shape B: explicit application StatusCode >= 400
+                var statusProp = token["StatusCode"] ?? token["statusCode"];
+                if (statusProp != null
+                    && int.TryParse(statusProp.ToString(), out var appStatus)
+                    && appStatus >= 400)
+                {
+                    var msg = token["Message"]?.ToString()
+                           ?? token["message"]?.ToString()
+                           ?? "Remote API error";
+
+                    return (false, $"[{appStatus}] {msg}");
+                }
+            }
+            catch (JsonException)
+            {
+                // Body isn't JSON — fall back to the HTTP result
+            }
+
+            return (true, null);
+        }
+
+        /// <summary>
+        /// Pure HTTP call. No DB writes, no logging beyond ILogger. Returns a result
+        /// object; never throws (exceptions are turned into a failure result).
+        /// </summary>
+        private async Task<ApiCallResult> ExecuteHttpAsync(
+            string url, string method, string headersJson, string requestBody)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                // Prefer IHttpClientFactory in production; shown here to match existing style.
+                using var client = new HttpClient();
+
+                // Headers
+                if (!string.IsNullOrWhiteSpace(headersJson))
+                {
+                    try
+                    {
+                        var headersArray = JArray.Parse(headersJson);
+                        foreach (var item in headersArray)
+                        {
+                            string key = item["key"]?.ToString()!;
+                            string value = item["value"]?.ToString()!;
+                            if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+                                client.DefaultRequestHeaders.TryAddWithoutValidation(key, value);
+                        }
+                    }
+                    catch (Exception hdrEx)
+                    {
+                        _logger.LogWarning(hdrEx, "Failed to parse headers JSON for {Url}", url);
+                    }
+                }
+
+                using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+                using var request = new HttpRequestMessage(new HttpMethod(method), url) { Content = content };
+                using var response = await client.SendAsync(request);
+
+                string responseBody = await response.Content.ReadAsStringAsync();
+                string responseHeaders = string.Join("\n",
+                    response.Headers
+                            .Concat(response.Content.Headers)
+                            .Select(h => $"{h.Key}: {string.Join(", ", h.Value)}"));
+
+                sw.Stop();
+
+                return new ApiCallResult(
+                    (int)response.StatusCode,
+                    responseBody,
+                    responseHeaders,
+                    response.IsSuccessStatusCode,
+                    response.IsSuccessStatusCode ? null : $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}",
+                    sw.ElapsedMilliseconds);
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                return new ApiCallResult(null, null, null, false, ex.Message, sw.ElapsedMilliseconds);
+            }
+        }
+
+        public async Task DispatchWebServicesAsync(string eventName, JObject? formDetailsObj, JArray workflowJson, object entityObject, int serviceId, Func<JObject, JObject>? payloadTransform = null, bool wrapPayloadInArray = false)
+        {
+            try
+            {
+                var webServices = await dbcontext.Webservice
+                    .Where(ws => ws.Serviceid == serviceId && ws.Isactive)
+                    .ToListAsync();
+
+                if (webServices.Count == 0)
+                {
+                    _logger.LogInformation(
+                        "No active web services for service {ServiceId} (event {Event})",
+                        serviceId, eventName);
+                    return;
+                }
+
+                string? referenceNumber = ExtractReferenceNumber(entityObject);
+
+                foreach (var ws in webServices)
+                {
+                    try
+                    {
+                        var onActions = JsonConvert.DeserializeObject<List<string>>(ws.Onaction ?? "[]")
+                                        ?? new List<string>();
+
+                        bool matches = onActions.Any(a =>
+                            string.Equals(a, eventName, StringComparison.OrdinalIgnoreCase));
+
+                        if (!matches)
+                        {
+                            _logger.LogDebug(
+                                "Web service '{Name}' skipped for event '{Event}' (onactions: {Actions})",
+                                ws.Webservicename, eventName, string.Join(",", onActions));
+                            continue;
+                        }
+
+                        var mappings = JObject.Parse(ws.Fieldmappings ?? "{}");
+
+                        // 1. Preferred: event-keyed wrapper { "EVENT_NAME": { ...fields... } }
+                        JToken? mapping = mappings.Properties()
+                            .FirstOrDefault(p => string.Equals(p.Name, eventName, StringComparison.OrdinalIgnoreCase))
+                            ?.Value;
+
+                        // 2. Fallback: flat mapping { "Field1": {...}, "Field2": {...} } with no event wrapper
+                        bool usedFlatFallback = false;
+                        if (mapping == null && LooksLikeFlatFieldMapping(mappings))
+                        {
+                            mapping = mappings;
+                            usedFlatFallback = true;
+                        }
+
+                        if (mapping == null)
+                        {
+                            _logger.LogWarning(
+                                "Web service '{Name}' listens on '{Event}' but Fieldmappings has no '{Event}' node and is not a flat field mapping. Skipping.",
+                                ws.Webservicename, eventName, eventName);
+                            continue;
+                        }
+
+                        // Apiendpoint is sometimes stored as a quoted JSON string
+                        string endpoint = ws.Apiendpoint?.Trim() ?? "";
+                        if (endpoint.StartsWith("\""))
+                            endpoint = JsonConvert.DeserializeObject<string>(endpoint) ?? "";
+
+                        if (string.IsNullOrWhiteSpace(endpoint))
+                        {
+                            _logger.LogWarning("Web service '{Name}' has empty endpoint. Skipping.", ws.Webservicename);
+                            continue;
+                        }
+
+                        // Build payload from config
+                        JToken? payload = MapServiceFieldsFromForm(formDetailsObj, mapping, workflowJson, entityObject, dbcontext);
+
+                        if (payload == null)
+                        {
+                            _logger.LogWarning(
+                                "Web service '{Name}' event '{Event}' produced an empty payload — skipping dispatch.",
+                                ws.Webservicename, eventName);
+                            continue;
+                        }
+
+                        // Apply payload transform regardless of whether the mapper returned
+                        // an object or an array-of-one (nested configs are wrapped in an array).
+                        if (payloadTransform != null)
+                        {
+                            if (payload is JObject payloadObj)
+                            {
+                                payload = payloadTransform(payloadObj);
+                            }
+                            else if (payload is JArray payloadArr)
+                            {
+                                // Apply in-place to every JObject inside the array
+                                foreach (var item in payloadArr.OfType<JObject>())
+                                {
+                                    payloadTransform(item);   // mutates in place; return value ignored
+                                }
+                            }
+                        }
+
+                        object outgoing = wrapPayloadInArray ? new JArray(payload) : payload;
+
+                        _logger.LogInformation(
+                            "Dispatching web service '{Name}' | event={Event} | mappingShape={Shape} | endpoint={Endpoint}",
+                            ws.Webservicename, eventName,
+                            usedFlatFallback ? "flat" : "event-keyed",
+                            endpoint);
+
+                        await SendApiRequestWithLoggingAsync(
+                            webserviceId: ws.Id,
+                            serviceId: serviceId,
+                            triggerName: eventName,
+                            referenceNumber: referenceNumber,
+                            url: endpoint,
+                            method: "POST",
+                            headersJson: ws.Headers ?? "[]",
+                            payload: outgoing,
+                            retryEnabled: ws.Retryenabled,
+                            maxAttempts: ws.Maxattempts,
+                            retryDelaySeconds: ws.Retrydelayseconds);
+                    }
+                    catch (Exception exPerService)
+                    {
+                        _logger.LogError(exPerService,
+                            "Web service '{Name}' failed for event '{Event}' (service {ServiceId})",
+                            ws.Webservicename, eventName, serviceId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Web-service dispatch failed for event '{Event}' (service {ServiceId})",
+                    eventName, serviceId);
+            }
+        }
+
+        private static string? ExtractReferenceNumber(object entityObject) => entityObject switch
+        {
+            CitizenApplications ca => ca.Referencenumber,
+            Corrigendum c => c.Referencenumber,
+            WithheldApplications w => w.Referencenumber,
+            _ => null
+        };
+
+        /// <summary>
+        /// True when every top-level value looks like a field descriptor
+        /// (has both "type" and "field"). Distinguishes a flat Fieldmappings
+        /// payload (like webservice id=4) from an event-keyed wrapper.
+        /// </summary>
+        private static bool LooksLikeFlatFieldMapping(JObject mappings)
+        {
+            if (mappings == null || mappings.Count == 0) return false;
+            foreach (var prop in mappings.Properties())
+            {
+                if (prop.Value is not JObject obj) return false;
+                if (obj["type"] == null || obj["field"] == null) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Turns the raw Corrigendumfields JSON stored on the corrigendum row into the shape
+        /// the external API expects:
+        ///   { "FieldName": { "old_value": ..., "new_value": ... }, ... }
+        /// Strips "Files", "additional_values", and "supporting_document".
+        /// Returns a JObject (nested object), not a string.
+        /// </summary>
+        /// 
+        // Strict date formats recognised in corrigendum values. The output is
+        // always normalised to yyyy-MM-dd, regardless of which format matched.
+        private static readonly string[] DateValueFormats = new[]
+        {
+            "yyyy-MM-dd",
+            "yyyy/MM/dd",
+            "dd/MM/yyyy",
+            "d/M/yyyy",
+            "dd-MM-yyyy",
+            "d-M-yyyy",
+            "dd MMM yyyy",
+            "d MMM yyyy",
+            "dd MMMM yyyy",
+            "d MMMM yyyy",
+        };
+
+        // If the token is a string that matches one of the strict date formats,
+        // rewrite it as yyyy-MM-dd. Non-string tokens, empty strings, and strings
+        // that do not match any known date format are returned unchanged, so
+        // ordinary text fields, numbers, and IDs are never touched.
+        private static JToken? NormalizeDateValue(JToken? token)
+        {
+            if (token == null || token.Type != JTokenType.String)
+                return token;
+
+            var raw = token.ToString();
+            if (string.IsNullOrWhiteSpace(raw))
+                return token;
+
+            var trimmed = raw.Trim();
+
+            if (DateTime.TryParseExact(
+                    trimmed,
+                    DateValueFormats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out var parsed))
+            {
+                return new JValue(
+                    parsed.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            }
+
+            return token;
+        }
+        private static JObject? CleanCorrectionFieldsObject(string? corrigendumFieldsJson)
+        {
+            if (string.IsNullOrWhiteSpace(corrigendumFieldsJson))
+                return null;
+
+            try
+            {
+                var source = JObject.Parse(corrigendumFieldsJson);
+                var output = new JObject();
+
+                foreach (var prop in source.Properties())
+                {
+                    // Drop the global Files block entirely
+                    if (string.Equals(prop.Name, "Files", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (prop.Value is not JObject fieldObj)
+                        continue;
+
+                    var oldVal = fieldObj["old_value"];
+                    var newVal = fieldObj["new_value"];
+
+                    // Nothing to send if neither old nor new value is present
+                    if (IsEmptyOrMissing(oldVal) && IsEmptyOrMissing(newVal))
+                        continue;
+
+                    var clean = new JObject();
+
+                    if (!IsEmptyOrMissing(oldVal))
+                        clean["old_value"] = NormalizeDateValue(oldVal);
+
+                    if (!IsEmptyOrMissing(newVal))
+                        clean["new_value"] = NormalizeDateValue(newVal);
+
+                    output[prop.Name] = clean;
+                }
+
+                return output;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+
+
+
+        /// <summary>
+        /// True when every top-level value of the object looks like a field descriptor
+        /// (i.e., has both "type" and "field" keys). This distinguishes a flat
+        /// Fieldmappings payload from an event-keyed wrapper.
+        /// </summary>
 
         public JToken ReorderFormDetails(JToken formDetailsToken, string applicationId, bool isSanctioned)
         {
@@ -665,34 +1336,7 @@ namespace SahayataNidhi.Controllers.Officer
             return value;
         }
 
-        public string GetOfficerArea(string accessLevel, dynamic formDetails)
-        {
-            int accessCode;
-
-            switch (accessLevel)
-            {
-                case "Tehsil":
-                    accessCode = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
-
-                case "District":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    accessCode = Convert.ToInt32(GetFieldValue("District", formDetails));
-                    var districtForDivision = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    if (districtForDivision == null)
-                        return string.Empty;
-                    return districtForDivision.Division == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
-            }
-        }
+        public string GetOfficerArea(string accessLevel, dynamic formDetails) => _referenceData.GetOfficerArea(accessLevel, formDetails);
 
         private void UpdateOfficerActionFormLabels(JObject officerClone, dynamic formDetails)
         {
@@ -793,26 +1437,12 @@ namespace SahayataNidhi.Controllers.Officer
             }
         }
 
-        public string GetOfficerAreaForHistory(string accessLevel, int? accessCode)
-        {
-            switch (accessLevel)
-            {
-                case "Tehsil":
-                    var tehsil = dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == accessCode);
-                    return tehsil?.Tehsilname ?? string.Empty;
-
-                case "District":
-                    var district = dbcontext.District.FirstOrDefault(d => d.Districtid == accessCode);
-                    return district?.Districtname ?? string.Empty;
-
-                case "Division":
-                    return accessCode == 1 ? "Jammu" : "Kashmir";
-                case "State":
-                    return "J&K";
-                default:
-                    return string.Empty;
-            }
-        }
+        // BUG FIX: this used to short-circuit the "Division" case as
+        // `accessCode == 1 ? "Jammu" : "Kashmir"`, treating the district id
+        // itself as the division flag - wrong for any district id other than 1.
+        // Delegating to the shared implementation, which looks up the district
+        // and reads its actual Division field (see ReferenceDataService).
+        public string GetOfficerAreaForHistory(string accessLevel, int? accessCode) => _referenceData.GetOfficerAreaForHistory(accessLevel, accessCode);
 
         private static void FormatDateFields(JToken formDetails)
         {
@@ -841,11 +1471,8 @@ namespace SahayataNidhi.Controllers.Officer
 
         private static void UpdateWorkflowFlags(JArray officerArray, int currentPlayerId)
         {
-            var previousOfficer = officerArray
-                .FirstOrDefault(o => (int)o["playerId"]! == (currentPlayerId - 1));
-
-            var nextOfficer = officerArray
-                .FirstOrDefault(o => (int)o["playerId"]! == (currentPlayerId + 1));
+            var previousOfficer = officerArray.FirstOrDefault(o => (int)o["playerId"]! == (currentPlayerId - 1));
+            var nextOfficer = officerArray.FirstOrDefault(o => (int)o["playerId"]! == (currentPlayerId + 1));
 
             if (previousOfficer != null)
                 previousOfficer["canPull"] = false;
@@ -854,7 +1481,8 @@ namespace SahayataNidhi.Controllers.Officer
                 nextOfficer["canPull"] = false;
         }
 
-        private void InjectEditableActionForm(JObject currentOfficerClone, Services? serviceDetails, int currentPlayer)
+
+        private void InjectEditableActionForm(JObject currentOfficerClone, ServicesEntity? serviceDetails, int currentPlayer)
         {
             if (string.IsNullOrWhiteSpace(serviceDetails?.Officereditablefield))
                 return;

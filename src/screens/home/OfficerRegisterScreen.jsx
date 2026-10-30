@@ -3,7 +3,6 @@ import {
   Box,
   Typography,
   Container,
-  Link,
   CircularProgress,
   IconButton,
   TextField,
@@ -13,8 +12,15 @@ import {
   InputLabel,
   FormHelperText,
   Button,
+  Paper,
+  Alert,
+  Stepper,
+  Step,
+  StepLabel,
+  Chip,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import SecurityIcon from "@mui/icons-material/Security";
 import { useForm, Controller } from "react-hook-form";
 import { fetchDistricts } from "../../assets/fetch";
 import OtpModal from "../../components/OtpModal";
@@ -22,13 +28,20 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { Col, Row } from "react-bootstrap";
 import debounce from "lodash/debounce";
-import { CheckCircleOutline } from "@mui/icons-material";
+import {
+  CheckCircle,
+  Person,
+  Business,
+  LocationOn,
+  ContactMail,
+  Lock,
+} from "@mui/icons-material";
 
 // Generate CAPTCHA
 const generateCaptcha = () => {
-  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let captcha = "";
   for (let i = 0; i < 6; i++) {
     captcha += characters.charAt(Math.floor(Math.random() * characters.length));
@@ -37,7 +50,7 @@ const generateCaptcha = () => {
 };
 
 export default function OfficerRegisterScreen() {
-  const API_BASE = window.__CONFIG__?.API_URL || ""; // fallback to empty string
+  const API_BASE = window.__CONFIG__?.API_URL || "";
 
   const {
     handleSubmit,
@@ -91,13 +104,12 @@ export default function OfficerRegisterScreen() {
 
   const navigate = useNavigate();
 
-  // Fetch initial data (departments + districts)
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [deptRes, districtRes] = await Promise.all([
           axios.get(`${API_BASE}/Home/GetDepartments`),
-          fetchDistricts(setDistrictOptions), // assuming fetchDistricts already uses API_BASE
+          fetchDistricts(setDistrictOptions),
         ]);
 
         if (deptRes.data.status) {
@@ -105,7 +117,7 @@ export default function OfficerRegisterScreen() {
             deptRes.data.departments.map((d) => ({
               label: d.departmentName,
               value: d.departmentId,
-            }))
+            })),
           );
         }
 
@@ -120,7 +132,6 @@ export default function OfficerRegisterScreen() {
     fetchData();
   }, []);
 
-  // Fetch designations based on department
   useEffect(() => {
     if (!selectedDepartment) {
       setDesignations([]);
@@ -131,7 +142,7 @@ export default function OfficerRegisterScreen() {
     const fetchDesignations = async () => {
       try {
         const res = await axios.get(
-          `${API_BASE}/Home/GetDesignations?deparmentId=${selectedDepartment}`
+          `${API_BASE}/Home/GetDesignations?deparmentId=${selectedDepartment}`,
         );
 
         if (res.data.status) {
@@ -155,7 +166,6 @@ export default function OfficerRegisterScreen() {
     fetchDesignations();
   }, [selectedDepartment]);
 
-  // Fetch tehsils based on district
   useEffect(() => {
     if (!selectedDistrict) {
       setTehsilOptions([]);
@@ -165,7 +175,7 @@ export default function OfficerRegisterScreen() {
     const fetchTehsils = async () => {
       try {
         const res = await axios.get(
-          `${API_BASE}/Base/GetTeshilForDistrict?districtId=${selectedDistrict}`
+          `${API_BASE}/Base/GetTeshilForDistrict?districtId=${selectedDistrict}`,
         );
 
         if (res.data.status) {
@@ -173,7 +183,7 @@ export default function OfficerRegisterScreen() {
             res.data.tehsils.map((t) => ({
               label: t.tehsilName,
               value: t.tehsilId,
-            }))
+            })),
           );
         }
       } catch (err) {
@@ -187,15 +197,20 @@ export default function OfficerRegisterScreen() {
 
   const handleRefreshCaptcha = () => setCaptcha(generateCaptcha());
 
-  // Debounced email uniqueness check
   const debouncedEmailValidation = useCallback(
     debounce(async (value) => {
       if (!value || !selectedDepartment || !selectedDesignation) return true;
 
       let errorMsg = null;
-      if (accessLevelMap[selectedDesignation] === "Division" && !selectedDivision)
+      if (
+        accessLevelMap[selectedDesignation] === "Division" &&
+        !selectedDivision
+      )
         errorMsg = "Please select Division first";
-      else if (accessLevelMap[selectedDesignation] === "District" && !selectedDistrict)
+      else if (
+        accessLevelMap[selectedDesignation] === "District" &&
+        !selectedDistrict
+      )
         errorMsg = "Please select District first";
       else if (
         accessLevelMap[selectedDesignation] === "Tehsil" &&
@@ -219,13 +234,16 @@ export default function OfficerRegisterScreen() {
         });
 
         if (!res.data.isUnique) {
-          setError("email", { type: "manual", message: "Email already exists" });
+          setError("email", {
+            type: "manual",
+            message: "Email already exists",
+          });
           return false;
         }
         return true;
       } catch (err) {
         console.error("Email check failed:", err);
-        return true; // don't block form if check fails
+        return true;
       }
     }, 500),
     [
@@ -236,18 +254,23 @@ export default function OfficerRegisterScreen() {
       selectedTehsil,
       accessLevelMap,
       setError,
-    ]
+    ],
   );
 
-  // Debounced mobile uniqueness check
   const debouncedMobileValidation = useCallback(
     debounce(async (value) => {
       if (!value || !selectedDepartment || !selectedDesignation) return true;
 
       let errorMsg = null;
-      if (accessLevelMap[selectedDesignation] === "Division" && !selectedDivision)
+      if (
+        accessLevelMap[selectedDesignation] === "Division" &&
+        !selectedDivision
+      )
         errorMsg = "Please select Division first";
-      else if (accessLevelMap[selectedDesignation] === "District" && !selectedDistrict)
+      else if (
+        accessLevelMap[selectedDesignation] === "District" &&
+        !selectedDistrict
+      )
         errorMsg = "Please select District first";
       else if (
         accessLevelMap[selectedDesignation] === "Tehsil" &&
@@ -280,7 +303,7 @@ export default function OfficerRegisterScreen() {
         return true;
       } catch (err) {
         console.error("Mobile check failed:", err);
-        return true; // don't block form if check fails
+        return true;
       }
     }, 500),
     [
@@ -291,10 +314,9 @@ export default function OfficerRegisterScreen() {
       selectedTehsil,
       accessLevelMap,
       setError,
-    ]
+    ],
   );
 
-  // Send OTP for Email
   const handleEmailValidate = async () => {
     const valid = await trigger("email");
     if (!valid || errors.email) return;
@@ -322,7 +344,6 @@ export default function OfficerRegisterScreen() {
     }
   };
 
-  // Send OTP for Mobile
   const handleMobileValidate = async () => {
     const valid = await trigger("mobileNumber");
     if (!valid || errors.mobileNumber) return;
@@ -350,7 +371,6 @@ export default function OfficerRegisterScreen() {
     }
   };
 
-  // Final form submission
   const onSubmit = async (data) => {
     if (!isEmailOtpVerified || !isMobileOtpVerified) {
       toast.error("Please verify both email and mobile first");
@@ -368,22 +388,26 @@ export default function OfficerRegisterScreen() {
       accessLevelMap[selectedDesignation] === "State"
         ? 0
         : data[
-        accessLevelMap[selectedDesignation] === "Tehsil"
-          ? "Tehsil"
-          : accessLevelMap[selectedDesignation] === "District"
-            ? "District"
-            : "Division"
-        ] || 0
+            accessLevelMap[selectedDesignation] === "Tehsil"
+              ? "Tehsil"
+              : accessLevelMap[selectedDesignation] === "District"
+                ? "District"
+                : "Division"
+          ] || 0,
     );
 
     try {
-      const res = await axios.post(`${API_BASE}/Home/OfficerRegistration`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const res = await axios.post(
+        `${API_BASE}/Home/OfficerRegistration`,
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
 
       if (res.data.status) {
         toast.success("Registration successful! Redirecting to login...");
-        setTimeout(() => navigate("/login"), 2200);
+        setTimeout(() => navigate("/"), 2200);
       } else {
         toast.error(res.data.message || "Registration failed");
       }
@@ -396,7 +420,6 @@ export default function OfficerRegisterScreen() {
     }
   };
 
-  // OTP verification submit
   const handleOtpSubmit = async (otp) => {
     if (!otp || otp.length < 4) return toast.error("Please enter valid OTP");
 
@@ -406,7 +429,7 @@ export default function OfficerRegisterScreen() {
     formData.append("otp", otp);
     formData.append(
       otpType === "email" ? "email" : "mobile",
-      getValues(otpType === "email" ? "email" : "mobileNumber")
+      getValues(otpType === "email" ? "email" : "mobileNumber"),
     );
 
     try {
@@ -417,7 +440,9 @@ export default function OfficerRegisterScreen() {
         else setIsMobileOtpVerified(true);
 
         setIsOtpModalOpen(false);
-        toast.success(`${otpType === "email" ? "Email" : "Mobile"} verified successfully`);
+        toast.success(
+          `${otpType === "email" ? "Email" : "Mobile"} verified successfully`,
+        );
       } else {
         toast.error(res.data.message || "Invalid OTP");
       }
@@ -437,9 +462,10 @@ export default function OfficerRegisterScreen() {
           justifyContent: "center",
           alignItems: "center",
           minHeight: "80vh",
+          bgcolor: "#F8FAFC",
         }}
       >
-        <CircularProgress size={80} sx={{ color: "#2562E9" }} />
+        <CircularProgress size={60} sx={{ color: "#2562E9" }} />
       </Box>
     );
   }
@@ -449,439 +475,581 @@ export default function OfficerRegisterScreen() {
       <Box
         sx={{
           minHeight: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "linear-gradient(to bottom right, #F4F9FF 0%, #F9F3EC 100%)",
-          p: { xs: 2, md: 4 },
+          bgcolor: "#F8FAFC",
+          py: { xs: 3, md: 6 },
         }}
       >
-        <Container
-          maxWidth="lg"
-          sx={{
-            backgroundColor: "#FFFFFF",
-            p: { xs: 4, md: 6 },
-            borderRadius: 4,
-            boxShadow: "0 12px 40px rgba(0, 0, 0, 0.12)",
-            transition: "all 0.3s ease",
-            "&:hover": {
-              transform: "translateY(-8px)",
-              boxShadow: "0 16px 48px rgba(0, 0, 0, 0.15)",
-            },
-          }}
-        >
-          {/* Title */}
-          <Typography
-            variant="h3"
-            component="h1"
+        <Container maxWidth="md">
+          {/* Header */}
+          <Box sx={{ mb: 4, textAlign: "center" }}>
+            <Box
+              sx={{
+                width: 64,
+                height: 64,
+                borderRadius: 3,
+                bgcolor: "#EFF6FF",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                mx: "auto",
+                mb: 2,
+              }}
+            >
+              <SecurityIcon sx={{ fontSize: 36, color: "#2562E9" }} />
+            </Box>
+            <Typography
+              variant="h3"
+              component="h1"
+              sx={{
+                fontWeight: 800,
+                color: "#0F172A",
+                letterSpacing: "-0.5px",
+                mb: 1,
+              }}
+            >
+              Officer Registration
+            </Typography>
+            <Typography variant="body1" sx={{ color: "#64748B" }}>
+              Create your official account to access the Social Welfare Portal
+            </Typography>
+          </Box>
+
+          {/* Main Form Card */}
+          <Paper
+            elevation={0}
             sx={{
-              fontWeight: 700,
-              fontSize: { xs: "2.8rem", sm: "3.2rem", md: "3.5rem" },
-              textAlign: "center",
-              background: "linear-gradient(to bottom right, #2561E8, #1F43B4)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              mb: 5,
-              letterSpacing: "-0.5px",
+              p: { xs: 3, md: 5 },
+              borderRadius: 3,
+              border: "1px solid #E2E8F0",
+              bgcolor: "white",
             }}
           >
-            Officer Registration
-          </Typography>
-
-          <form onSubmit={handleSubmit(onSubmit)} noValidate>
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 3.5 }}>
-              {/* Full Name */}
-              <Controller
-                name="fullName"
-                control={control}
-                rules={{
-                  required: "Full name is required",
-                  minLength: { value: 5, message: "Minimum 5 characters" },
-                }}
-                render={({ field, fieldState: { error } }) => (
-                  <TextField
-                    {...field}
-                    label={
-                      <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                        Full Name <span style={{ color: "red" }}>*</span>
-                      </span>
-                    }
-                    variant="outlined"
-                    fullWidth
-                    disabled={loading}
-                    error={!!error}
-                    helperText={error?.message}
+            <form onSubmit={handleSubmit(onSubmit)} noValidate>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {/* Personal Information Section */}
+                <Box>
+                  <Box
                     sx={{
-                      "& .MuiOutlinedInput-root": { borderRadius: 3 },
-                      "& .MuiFormLabel-root": { fontWeight: 600, color: "#235BDE" },
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mb: 3,
                     }}
-                  />
-                )}
-              />
+                  >
+                    <Person sx={{ color: "#2562E9" }} />
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 700, color: "#0F172A" }}
+                    >
+                      Personal Information
+                    </Typography>
+                  </Box>
 
-              {/* Department & Designation */}
-              <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3 }}>
-                <Controller
-                  name="department"
-                  control={control}
-                  rules={{ required: "Department is required" }}
-                  render={({ field, fieldState: { error } }) => (
-                    <FormControl fullWidth error={!!error}>
-                      <InputLabel sx={{ color: "#235BDE", fontWeight: 600 }}>
-                        Department <span style={{ color: "red" }}>*</span>
-                      </InputLabel>
-                      <Select
+                  <Controller
+                    name="fullName"
+                    control={control}
+                    rules={{
+                      required: "Full name is required",
+                      minLength: { value: 5, message: "Minimum 5 characters" },
+                    }}
+                    render={({ field, fieldState: { error } }) => (
+                      <TextField
                         {...field}
+                        label="Full Name *"
+                        variant="outlined"
+                        fullWidth
                         disabled={loading}
-                        sx={{ borderRadius: 3 }}
-                      >
-                        {departments.map((d) => (
-                          <MenuItem key={d.value} value={d.value}>
-                            {d.label}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {error && <FormHelperText>{error.message}</FormHelperText>}
-                    </FormControl>
-                  )}
-                />
+                        error={!!error}
+                        helperText={error?.message}
+                        sx={{
+                          "& .MuiOutlinedInput-root": {
+                            "& fieldset": { borderColor: "#E2E8F0" },
+                            "&:hover fieldset": { borderColor: "#2562E9" },
+                            "&.Mui-focused fieldset": {
+                              borderColor: "#2562E9",
+                            },
+                          },
+                        }}
+                      />
+                    )}
+                  />
+                </Box>
 
-                <Controller
-                  name="designation"
-                  control={control}
-                  rules={{ required: "Designation is required" }}
-                  render={({ field, fieldState: { error } }) => (
-                    <FormControl fullWidth error={!!error}>
-                      <InputLabel sx={{ color: "#235BDE", fontWeight: 600 }}>
-                        Designation <span style={{ color: "red" }}>*</span>
-                      </InputLabel>
-                      <Select
-                        {...field}
-                        disabled={loading || !selectedDepartment}
-                        sx={{ borderRadius: 3 }}
-                      >
-                        {designations.map((d) => (
-                          <MenuItem key={d.value} value={d.value}>
-                            {d.label}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                      {error && <FormHelperText>{error.message}</FormHelperText>}
-                    </FormControl>
-                  )}
-                />
-              </Box>
+                {/* Department & Designation Section */}
+                <Box>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mb: 3,
+                    }}
+                  >
+                    <Business sx={{ color: "#2562E9" }} />
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 700, color: "#0F172A" }}
+                    >
+                      Department & Designation
+                    </Typography>
+                  </Box>
 
-              {/* Conditional Access Level Fields */}
-              {(accessLevelMap[selectedDesignation] === "District" ||
-                accessLevelMap[selectedDesignation] === "Tehsil" ||
-                accessLevelMap[selectedDesignation] === "Division") && (
-                  <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3 }}>
-                    {/* District / Division */}
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: { xs: "column", md: "row" },
+                      gap: 3,
+                    }}
+                  >
                     <Controller
-                      name={accessLevelMap[selectedDesignation] === "Division" ? "Division" : "District"}
+                      name="department"
                       control={control}
-                      rules={{ required: `${accessLevelMap[selectedDesignation]} is required` }}
+                      rules={{ required: "Department is required" }}
                       render={({ field, fieldState: { error } }) => (
                         <FormControl fullWidth error={!!error}>
-                          <InputLabel sx={{ color: "#235BDE", fontWeight: 600 }}>
-                            {accessLevelMap[selectedDesignation] === "Division" ? "Division" : "District"}{" "}
-                            <span style={{ color: "red" }}>*</span>
-                          </InputLabel>
+                          <InputLabel>Department *</InputLabel>
                           <Select
                             {...field}
+                            label="Department *"
                             disabled={loading}
-                            sx={{ borderRadius: 3 }}
                           >
-                            {accessLevelMap[selectedDesignation] === "Division" ? (
-                              <>
-                                <MenuItem value={1}>Jammu</MenuItem>
-                                <MenuItem value={2}>Kashmir</MenuItem>
-                              </>
-                            ) : (
-                              districtOptions.map((d) => (
-                                <MenuItem key={d.value} value={d.value}>
-                                  {d.label}
-                                </MenuItem>
-                              ))
-                            )}
+                            {departments.map((d) => (
+                              <MenuItem key={d.value} value={d.value}>
+                                {d.label}
+                              </MenuItem>
+                            ))}
                           </Select>
-                          {error && <FormHelperText>{error.message}</FormHelperText>}
+                          {error && (
+                            <FormHelperText>{error.message}</FormHelperText>
+                          )}
                         </FormControl>
                       )}
                     />
 
-                    {/* Tehsil (only if Tehsil level) */}
-                    {accessLevelMap[selectedDesignation] === "Tehsil" && (
+                    <Controller
+                      name="designation"
+                      control={control}
+                      rules={{ required: "Designation is required" }}
+                      render={({ field, fieldState: { error } }) => (
+                        <FormControl fullWidth error={!!error}>
+                          <InputLabel>Designation *</InputLabel>
+                          <Select
+                            {...field}
+                            label="Designation *"
+                            disabled={loading || !selectedDepartment}
+                          >
+                            {designations.map((d) => (
+                              <MenuItem key={d.value} value={d.value}>
+                                {d.label}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                          {error && (
+                            <FormHelperText>{error.message}</FormHelperText>
+                          )}
+                        </FormControl>
+                      )}
+                    />
+                  </Box>
+                </Box>
+
+                {/* Access Level Section */}
+                {(accessLevelMap[selectedDesignation] === "District" ||
+                  accessLevelMap[selectedDesignation] === "Tehsil" ||
+                  accessLevelMap[selectedDesignation] === "Division") && (
+                  <Box>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        mb: 3,
+                      }}
+                    >
+                      <LocationOn sx={{ color: "#2562E9" }} />
+                      <Typography
+                        variant="h6"
+                        sx={{ fontWeight: 700, color: "#0F172A" }}
+                      >
+                        Jurisdiction Area
+                      </Typography>
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: { xs: "column", md: "row" },
+                        gap: 3,
+                      }}
+                    >
                       <Controller
-                        name="Tehsil"
+                        name={
+                          accessLevelMap[selectedDesignation] === "Division"
+                            ? "Division"
+                            : "District"
+                        }
                         control={control}
-                        rules={{ required: "TSWO Office is required" }}
+                        rules={{
+                          required: `${accessLevelMap[selectedDesignation]} is required`,
+                        }}
                         render={({ field, fieldState: { error } }) => (
                           <FormControl fullWidth error={!!error}>
-                            <InputLabel sx={{ color: "#235BDE", fontWeight: 600 }}>
-                              TSWO Office <span style={{ color: "red" }}>*</span>
+                            <InputLabel>
+                              {accessLevelMap[selectedDesignation] ===
+                              "Division"
+                                ? "Division"
+                                : "District"}{" "}
+                              *
                             </InputLabel>
                             <Select
                               {...field}
-                              disabled={loading || !selectedDistrict}
-                              sx={{ borderRadius: 3 }}
+                              label={
+                                accessLevelMap[selectedDesignation] ===
+                                "Division"
+                                  ? "Division *"
+                                  : "District *"
+                              }
+                              disabled={loading}
                             >
-                              {tehsilOptions.map((t) => (
-                                <MenuItem key={t.value} value={t.value}>
-                                  {t.label}
-                                </MenuItem>
-                              ))}
+                              {accessLevelMap[selectedDesignation] ===
+                              "Division" ? (
+                                <>
+                                  <MenuItem value={1}>Jammu</MenuItem>
+                                  <MenuItem value={2}>Kashmir</MenuItem>
+                                </>
+                              ) : (
+                                districtOptions.map((d) => (
+                                  <MenuItem key={d.value} value={d.value}>
+                                    {d.label}
+                                  </MenuItem>
+                                ))
+                              )}
                             </Select>
-                            {error && <FormHelperText>{error.message}</FormHelperText>}
+                            {error && (
+                              <FormHelperText>{error.message}</FormHelperText>
+                            )}
                           </FormControl>
                         )}
                       />
-                    )}
+
+                      {accessLevelMap[selectedDesignation] === "Tehsil" && (
+                        <Controller
+                          name="Tehsil"
+                          control={control}
+                          rules={{ required: "TSWO Office is required" }}
+                          render={({ field, fieldState: { error } }) => (
+                            <FormControl fullWidth error={!!error}>
+                              <InputLabel>TSWO Office *</InputLabel>
+                              <Select
+                                {...field}
+                                label="TSWO Office *"
+                                disabled={loading || !selectedDistrict}
+                              >
+                                {tehsilOptions.map((t) => (
+                                  <MenuItem key={t.value} value={t.value}>
+                                    {t.label}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                              {error && (
+                                <FormHelperText>{error.message}</FormHelperText>
+                              )}
+                            </FormControl>
+                          )}
+                        />
+                      )}
+                    </Box>
                   </Box>
                 )}
 
-              {/* Email + Mobile with Validation Buttons */}
-              <Box sx={{ display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3 }}>
-                {/* Email */}
-                <Box sx={{ flex: 1 }}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                    <Controller
-                      name="email"
-                      control={control}
-                      rules={{
-                        required: "Email is required",
-                        pattern: {
-                          value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                          message: "Invalid email format",
-                        },
-                        validate: debouncedEmailValidation,
-                      }}
-                      render={({ field, fieldState: { error } }) => (
-                        <TextField
-                          {...field}
-                          label={
-                            <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                              Email <span style={{ color: "red" }}>*</span>
-                            </span>
-                          }
-                          type="email"
-                          fullWidth
-                          disabled={loading || isEmailOtpVerified}
-                          error={!!error}
-                          helperText={error?.message}
-                          sx={{
-                            "& .MuiOutlinedInput-root": { borderRadius: 3 },
-                            "& .MuiFormLabel-root": { fontWeight: 600, color: "#235BDE" },
-                          }}
-                        />
-                      )}
-                    />
-
-                    {isEmailOtpVerified && (
-                      <CheckCircleOutline sx={{ color: "#0FB282", fontSize: 32 }} />
-                    )}
-                  </Box>
-
-                  {!isEmailOtpVerified && emailValue && !errors.email && (
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={handleEmailValidate}
-                      disabled={loading}
-                      fullWidth
-                      sx={{
-                        mt: 1.5,
-                        background: "linear-gradient(45deg, #F67015, #E4630A)",
-                        "&:hover": { background: "linear-gradient(45deg, #E4630A, #F67015)" },
-                      }}
-                    >
-                      Validate Email
-                    </Button>
-                  )}
-                </Box>
-
-                {/* Mobile */}
-                <Box sx={{ flex: 1 }}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-                    <Controller
-                      name="mobileNumber"
-                      control={control}
-                      rules={{
-                        required: "Mobile number is required",
-                        pattern: {
-                          value: /^[0-9]{10}$/,
-                          message: "Enter valid 10-digit mobile number",
-                        },
-                        validate: debouncedMobileValidation,
-                      }}
-                      render={({ field, fieldState: { error } }) => (
-                        <TextField
-                          {...field}
-                          label={
-                            <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                              Mobile Number <span style={{ color: "red" }}>*</span>
-                            </span>
-                          }
-                          type="tel"
-                          fullWidth
-                          inputProps={{ maxLength: 10 }}
-                          disabled={loading || isMobileOtpVerified}
-                          error={!!error}
-                          helperText={error?.message}
-                          sx={{
-                            "& .MuiOutlinedInput-root": { borderRadius: 3 },
-                            "& .MuiFormLabel-root": { fontWeight: 600, color: "#235BDE" },
-                          }}
-                        />
-                      )}
-                    />
-
-                    {isMobileOtpVerified && (
-                      <CheckCircleOutline sx={{ color: "#0FB282", fontSize: 32 }} />
-                    )}
-                  </Box>
-
-                  {!isMobileOtpVerified && mobileValue && !errors.mobileNumber && (
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={handleMobileValidate}
-                      disabled={loading}
-                      fullWidth
-                      sx={{
-                        mt: 1.5,
-                        background: "linear-gradient(45deg, #0FB282, #4CAF50)",
-                        "&:hover": { background: "linear-gradient(45deg, #4CAF50, #0FB282)" },
-                      }}
-                    >
-                      Validate Mobile
-                    </Button>
-                  )}
-                </Box>
-              </Box>
-
-              {/* CAPTCHA */}
-              <Box sx={{ mt: 3 }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    flexDirection: { xs: "column", sm: "row" },
-                    justifyContent: "center",
-                  }}
-                >
+                {/* Contact Information Section */}
+                <Box>
                   <Box
                     sx={{
-                      background: "linear-gradient(to bottom right, #F0F7FE 0%, #FDF7F0 100%)",
-                      border: "3px solid #2562E9",
-                      borderRadius: 4,
-                      padding: { xs: "16px 24px", sm: "18px 28px" },
-                      boxShadow: "0 6px 16px rgba(0, 0, 0, 0.12)",
-                      fontFamily: "monospace",
-                      fontSize: { xs: "2rem", sm: "2.3rem", md: "2.5rem" },
-                      fontWeight: 800,
-                      color: "#2562E9",
-                      letterSpacing: "5px",
-                      minWidth: { xs: "220px", sm: "680px" },
-                      textAlign: "center",
-                      userSelect: "none",
-                      textShadow: "1px 1px 2px rgba(0,0,0,0.1)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mb: 3,
                     }}
                   >
-                    {captcha}
+                    <ContactMail sx={{ color: "#2562E9" }} />
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 700, color: "#0F172A" }}
+                    >
+                      Contact Information
+                    </Typography>
                   </Box>
 
-                  <IconButton
-                    onClick={handleRefreshCaptcha}
-                    disabled={loading}
+                  <Box
                     sx={{
-                      background: "linear-gradient(to bottom, #2562E9 0%, #1F43B5 100%)",
-                      color: "#FDF6F0",
-                      width: 64,
-                      height: 64,
-                      borderRadius: 3,
-                      boxShadow: "0 4px 12px rgba(37, 98, 233, 0.3)",
-                      "&:hover": {
-                        background: "linear-gradient(to bottom, #1F43B5 0%, #2562E9 100%)",
-                        transform: "scale(1.1)",
+                      display: "flex",
+                      flexDirection: { xs: "column", md: "row" },
+                      gap: 3,
+                    }}
+                  >
+                    {/* Email */}
+                    <Box sx={{ flex: 1 }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.5,
+                          mb: 1,
+                        }}
+                      >
+                        <Controller
+                          name="email"
+                          control={control}
+                          rules={{
+                            required: "Email is required",
+                            pattern: {
+                              value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                              message: "Invalid email format",
+                            },
+                            validate: debouncedEmailValidation,
+                          }}
+                          render={({ field, fieldState: { error } }) => (
+                            <TextField
+                              {...field}
+                              label="Email Address *"
+                              type="email"
+                              fullWidth
+                              disabled={loading || isEmailOtpVerified}
+                              error={!!error}
+                              helperText={error?.message}
+                            />
+                          )}
+                        />
+                        {isEmailOtpVerified && (
+                          <Chip
+                            label="Verified"
+                            icon={<CheckCircle sx={{ fontSize: 16 }} />}
+                            color="success"
+                            size="small"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        )}
+                      </Box>
+
+                      {!isEmailOtpVerified && emailValue && !errors.email && (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={handleEmailValidate}
+                          disabled={loading}
+                          fullWidth
+                          sx={{
+                            textTransform: "none",
+                            borderColor: "#2562E9",
+                            color: "#2562E9",
+                            "&:hover": { bgcolor: "#EFF6FF" },
+                          }}
+                        >
+                          Send OTP to Email
+                        </Button>
+                      )}
+                    </Box>
+
+                    {/* Mobile */}
+                    <Box sx={{ flex: 1 }}>
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.5,
+                          mb: 1,
+                        }}
+                      >
+                        <Controller
+                          name="mobileNumber"
+                          control={control}
+                          rules={{
+                            required: "Mobile number is required",
+                            pattern: {
+                              value: /^[0-9]{10}$/,
+                              message: "Enter valid 10-digit mobile number",
+                            },
+                            validate: debouncedMobileValidation,
+                          }}
+                          render={({ field, fieldState: { error } }) => (
+                            <TextField
+                              {...field}
+                              label="Mobile Number *"
+                              type="tel"
+                              fullWidth
+                              inputProps={{ maxLength: 10 }}
+                              disabled={loading || isMobileOtpVerified}
+                              error={!!error}
+                              helperText={error?.message}
+                            />
+                          )}
+                        />
+                        {isMobileOtpVerified && (
+                          <Chip
+                            label="Verified"
+                            icon={<CheckCircle sx={{ fontSize: 16 }} />}
+                            color="success"
+                            size="small"
+                            sx={{ fontWeight: 600 }}
+                          />
+                        )}
+                      </Box>
+
+                      {!isMobileOtpVerified &&
+                        mobileValue &&
+                        !errors.mobileNumber && (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={handleMobileValidate}
+                            disabled={loading}
+                            fullWidth
+                            sx={{
+                              textTransform: "none",
+                              borderColor: "#2562E9",
+                              color: "#2562E9",
+                              "&:hover": { bgcolor: "#EFF6FF" },
+                            }}
+                          >
+                            Send OTP to Mobile
+                          </Button>
+                        )}
+                    </Box>
+                  </Box>
+                </Box>
+
+                {/* Security Verification Section */}
+                <Box>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mb: 3,
+                    }}
+                  >
+                    <Lock sx={{ color: "#2562E9" }} />
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 700, color: "#0F172A" }}
+                    >
+                      Security Verification
+                    </Typography>
+                  </Box>
+
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 3,
+                      mb: 2,
+                      bgcolor: "#F8FAFC",
+                      border: "2px dashed #CBD5E1",
+                      borderRadius: 2,
+                      textAlign: "center",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 2,
+                        mb: 2,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          fontFamily: "monospace",
+                          fontSize: "2rem",
+                          fontWeight: 800,
+                          color: "#0F172A",
+                          letterSpacing: "8px",
+                          userSelect: "none",
+                        }}
+                      >
+                        {captcha}
+                      </Box>
+                      <IconButton
+                        onClick={handleRefreshCaptcha}
+                        disabled={loading}
+                        sx={{
+                          bgcolor: "#EFF6FF",
+                          color: "#2562E9",
+                          "&:hover": { bgcolor: "#DBEAFE" },
+                        }}
+                      >
+                        <RefreshIcon />
+                      </IconButton>
+                    </Box>
+                    <Typography variant="body2" sx={{ color: "#64748B" }}>
+                      Type the characters shown above
+                    </Typography>
+                  </Paper>
+
+                  <Controller
+                    name="captcha"
+                    control={control}
+                    rules={{
+                      required: "CAPTCHA is required",
+                      validate: (v) => v === captcha || "Incorrect CAPTCHA",
+                    }}
+                    render={({ field, fieldState: { error } }) => (
+                      <TextField
+                        {...field}
+                        label="Enter CAPTCHA *"
+                        variant="outlined"
+                        fullWidth
+                        disabled={loading}
+                        error={!!error}
+                        helperText={error?.message}
+                      />
+                    )}
+                  />
+                </Box>
+
+                {/* Submit Button */}
+                <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    size="large"
+                    disabled={
+                      loading || !isEmailOtpVerified || !isMobileOtpVerified
+                    }
+                    sx={{
+                      minWidth: 280,
+                      py: 1.8,
+                      px: 6,
+                      fontSize: "1.1rem",
+                      fontWeight: 700,
+                      bgcolor: "#2562E9",
+                      "&:hover": { bgcolor: "#1D4ED8" },
+                      textTransform: "none",
+                      boxShadow: "0 4px 12px rgba(37, 99, 233, 0.3)",
+                      "&:disabled": {
+                        bgcolor: "#CBD5E1",
+                        color: "#94A3B8",
                       },
                     }}
                   >
-                    <RefreshIcon sx={{ fontSize: "2rem" }} />
-                  </IconButton>
+                    {loading ? (
+                      <>
+                        <CircularProgress
+                          size={24}
+                          color="inherit"
+                          sx={{ mr: 2 }}
+                        />
+                        Registering...
+                      </>
+                    ) : (
+                      "Complete Registration"
+                    )}
+                  </Button>
                 </Box>
-
-                <Controller
-                  name="captcha"
-                  control={control}
-                  rules={{
-                    required: "CAPTCHA is required",
-                    validate: (v) => v === captcha || "Incorrect CAPTCHA",
-                  }}
-                  render={({ field, fieldState: { error } }) => (
-                    <TextField
-                      {...field}
-                      label={
-                        <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                          Enter CAPTCHA <span style={{ color: "red" }}>*</span>
-                        </span>
-                      }
-                      variant="outlined"
-                      fullWidth
-                      disabled={loading}
-                      error={!!error}
-                      helperText={error?.message}
-                      sx={{
-                        mt: 2.5,
-                        "& .MuiOutlinedInput-root": { borderRadius: 3 },
-                        "& .MuiFormLabel-root": { fontWeight: 600, color: "#235BDE" },
-                      }}
-                    />
-                  )}
-                />
               </Box>
-
-              {/* Submit Button */}
-              <Box sx={{ display: "flex", justifyContent: "center", mt: 5 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  size="large"
-                  disabled={loading || !isEmailOtpVerified || !isMobileOtpVerified}
-                  sx={{
-                    minWidth: 240,
-                    py: 1.8,
-                    px: 6,
-                    fontSize: "1.2rem",
-                    fontWeight: 700,
-                    background: "linear-gradient(45deg, #2562E9, #1F43B5)",
-                    borderRadius: 3,
-                    boxShadow: "0 6px 20px rgba(37,98,233,0.3)",
-                    "&:hover": {
-                      background: "linear-gradient(45deg, #1F43B5, #2562E9)",
-                      transform: "translateY(-3px)",
-                      boxShadow: "0 12px 30px rgba(37,98,233,0.4)",
-                    },
-                    "&:disabled": {
-                      background: "grey",
-                      opacity: 0.7,
-                    },
-                  }}
-                >
-                  {loading ? (
-                    <>
-                      <CircularProgress size={24} color="inherit" sx={{ mr: 2 }} />
-                      Registering...
-                    </>
-                  ) : (
-                    "Complete Registration"
-                  )}
-                </Button>
-              </Box>
-            </Box>
-          </form>
+            </form>
+          </Paper>
         </Container>
 
         {/* OTP Modal */}
@@ -907,14 +1075,14 @@ export default function OfficerRegisterScreen() {
             sx={{
               position: "fixed",
               inset: 0,
-              backgroundColor: "rgba(0,0,0,0.5)",
+              backgroundColor: "rgba(15, 23, 42, 0.75)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               zIndex: 9999,
             }}
           >
-            <CircularProgress size={80} sx={{ color: "#2562E9" }} />
+            <CircularProgress size={80} sx={{ color: "#FFFFFF" }} />
           </Box>
         )}
       </Box>

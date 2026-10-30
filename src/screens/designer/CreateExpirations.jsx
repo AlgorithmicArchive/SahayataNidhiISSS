@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
     Box,
     Paper,
@@ -257,7 +258,7 @@ const CreateExpirations = () => {
         <Box sx={{ p: 3 }}>
             <ToastContainer position="top-right" autoClose={3000} />
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-                <Typography variant="h4">Expiration Types Management</Typography>
+                <GovPageHeader title="Expiration Types Management" hindiTitle="समाप्ति प्रकार प्रबंधन" />
                 <Box>
                     <Tooltip title="Refresh">
                         <IconButton onClick={fetchData} sx={{ mr: 1 }}>

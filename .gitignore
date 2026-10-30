@@ -3,7 +3,12 @@ bin/
 obj/
 wwwroot/uploads/
 wwwroot/files/
+# Legacy CRA-style webpack output artifact. The running app uses
+# Views/Shared/_Layout.cshtml, not this file. See webpack.config.js.
+wwwroot/index.html
 .qodo
 Temp/
 publish/
 swdjk.zip
+# Claude Code local settings (contains API keys)
+.claude/settings.local.json

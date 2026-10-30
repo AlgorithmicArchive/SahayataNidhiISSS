@@ -5,6 +5,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Npgsql;
 using SahayataNidhi.Models.Entities;
+using ServicesEntity = SahayataNidhi.Models.Entities.Services;
 
 namespace SahayataNidhi.Controllers
 {
@@ -91,68 +92,97 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+        private static string UnwrapJsonString(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return value;
+
+            try
+            {
+                if (value.StartsWith("\"") && value.EndsWith("\""))
+                {
+                    return JsonConvert.DeserializeObject<string>(value)!;
+                }
+            }
+            catch
+            {
+                // ignore and return original
+            }
+
+            return value;
+        }
+
         [HttpPost]
-        public IActionResult SaveWebService([FromForm] IFormCollection form)
+        public IActionResult SaveWebService([FromForm] string id, [FromForm] int serviceId, [FromForm] string webServiceName, [FromForm] string apiEndPoint, [FromForm] string onAction, [FromForm] string fieldMappings, [FromForm] string headers, [FromForm] bool retryEnabled = true, [FromForm] int maxAttempts = 3, [FromForm] int retryDelaySeconds = 5)
         {
             try
             {
-                var webServiceId = form["webServiceId"].ToString();
-                var serviceId = form["serviceId"].ToString();
-                var webServiceName = form["webServiceName"].ToString();
-                var apiEndPoint = form["apiEndPoint"].ToString();
-                var onAction = form["onAction"].ToString(); // JSON string
-                var fieldMappings = form["fieldMappings"].ToString(); // JSON string
-                var headers = form["headers"].ToString(); // JSON string   ← ADD THIS
-                var createdAt = form["createdAt"].ToString();
-                var updatedAt = form["updatedAt"].ToString();
+                Webservice entity;
+                int parsedId = 0;
+                bool isUpdate = !string.IsNullOrEmpty(id) && int.TryParse(id, out parsedId) && parsedId > 0;
 
-                Webservice webService;
-
-                if (int.TryParse(webServiceId, out int parsedWebServiceId))
+                if (isUpdate)
                 {
-                    webService = dbcontext.Webservice.FirstOrDefault(ws => ws.Id == parsedWebServiceId)!;
-                    if (webService != null)
-                    {
-                        webService.Serviceid = Convert.ToInt32(serviceId);
-                        webService.Webservicename = webServiceName;
-                        webService.Apiendpoint = apiEndPoint;
-                        webService.Onaction = onAction;
-                        webService.Fieldmappings = fieldMappings;
-                        webService.Headers = headers;   // ← ADD THIS
-                        webService.Updatedat = updatedAt;
-                    }
-                    else
-                    {
+                    entity = dbcontext.Webservice.FirstOrDefault(w => w.Id == parsedId);
+                    if (entity == null)
                         return Json(new { status = false, message = "Web service not found" });
-                    }
                 }
                 else
                 {
-                    webService = new Webservice
+                    entity = new Webservice
                     {
-                        Serviceid = Convert.ToInt32(serviceId),
-                        Webservicename = webServiceName,
-                        Apiendpoint = apiEndPoint,
-                        Onaction = onAction,
-                        Fieldmappings = fieldMappings,
-                        Headers = headers,   // ← ADD THIS
-                        Createdat = createdAt,
-                        Updatedat = updatedAt,
-                        Isactive = true
+                        Serviceid = serviceId,
+                        Createdat = DateTime.Now.ToString("o")
                     };
-                    dbcontext.Webservice.Add(webService);
+                    dbcontext.Webservice.Add(entity);
                 }
 
+                entity.Webservicename = webServiceName;
+
+                // Save plain URL string (Ensure your DB column is 'text' or 'varchar', not 'json')
+                entity.Apiendpoint = apiEndPoint?.Trim();
+
+                entity.Onaction = onAction;
+
+                // fieldMappings is now saved flat (no trigger wrapper) as sent by the updated frontend
+                entity.Fieldmappings = fieldMappings;
+
+                entity.Headers = headers;
+                entity.Updatedat = DateTime.Now.ToString("o");
+
+                // Retry settings (Ensure casing matches your Webservice.cs entity model exactly)
+                entity.Retryenabled = retryEnabled;
+                entity.Maxattempts = retryEnabled ? Math.Clamp(maxAttempts, 1, 20) : 1;
+                entity.Retrydelayseconds = retryEnabled ? Math.Clamp(retryDelaySeconds, 0, 3600) : 0;
+
                 dbcontext.SaveChanges();
-                return Json(new { status = true, message = "Saved successfully", webServiceId = webService.Id });
+
+                return Json(new { status = true, message = "Saved successfully", id = entity.Id });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving web service");
-                return Json(new { status = false, message = "Failed to save configuration", error = ex.Message });
+                return Json(new { status = false, message = ex.InnerException?.Message ?? ex.Message });
             }
         }
 
+        [HttpPost] // or [HttpDelete]
+        public IActionResult DeleteWebService([FromForm] int id)
+        {
+            try
+            {
+                var entity = dbcontext.Webservice.FirstOrDefault(w => w.Id == id);
+                if (entity == null) return Json(new { status = false, message = "Not found" });
+
+                dbcontext.Webservice.Remove(entity);
+                dbcontext.SaveChanges();
+                return Json(new { status = true, message = "Deleted" });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { status = false, message = ex.Message });
+            }
+        }
 
         [HttpPost]
         public async Task<IActionResult> SaveLetterDetails(int serviceId, string objField, string letterData)
@@ -245,7 +275,7 @@ namespace SahayataNidhi.Controllers
             }
             else
             {
-                var newService = new Services
+                var newService = new ServicesEntity
                 {
                     Formelement = formElement,
                     Servicename = serviceName,
@@ -262,7 +292,7 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpPost]
-        public IActionResult WorkFlowPlayers([FromForm] IFormCollection form)
+        public async Task<IActionResult> WorkFlowPlayers([FromForm] IFormCollection form)
         {
             try
             {
@@ -301,7 +331,7 @@ namespace SahayataNidhi.Controllers
                 }
                 else
                 {
-                    var newService = new Services
+                    var newService = new ServicesEntity
                     {
                         Officereditablefield = workFlowPlayers
                     };
@@ -309,14 +339,6 @@ namespace SahayataNidhi.Controllers
                 }
 
                 dbcontext.SaveChanges();
-
-                // Call PostgreSQL function
-                if (!string.IsNullOrEmpty(serviceIdString))
-                {
-                    dbcontext.Database.ExecuteSqlRaw(
-                        "SELECT update_workflow_for_service({0})",
-                        Convert.ToInt32(serviceIdString));
-                }
 
                 return Json(new { status = true });
             }
@@ -392,6 +414,92 @@ namespace SahayataNidhi.Controllers
             {
                 _logger.LogError(ex, "Error saving email template");
                 return Json(new { success = false, message = $"Error: {ex.Message}" });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> SaveSmsSettings([FromForm] IFormCollection form)
+        {
+            try
+            {
+                var sms = await dbcontext.Smssettings.FirstOrDefaultAsync();
+                if (sms == null)
+                {
+                    sms = new Smssettings { Enabled = false };
+                    dbcontext.Smssettings.Add(sms);
+                }
+
+                sms.Providername = form["providername"].ToString();
+                sms.Apiurl = form["apiurl"].ToString();
+                sms.Httpmethod = string.IsNullOrWhiteSpace(form["httpmethod"].ToString())
+                    ? "POST" : form["httpmethod"].ToString();
+                sms.Keylocation = string.IsNullOrWhiteSpace(form["keylocation"].ToString())
+                    ? "header" : form["keylocation"].ToString();
+                sms.Keyname = form["keyname"].ToString();
+                sms.Senderid = form["senderid"].ToString();
+                sms.Bodytemplate = form["bodytemplate"].ToString();
+                sms.Successindicator = form["successindicator"].ToString();
+
+                if (bool.TryParse(form["enabled"].ToString(), out bool enabled))
+                    sms.Enabled = enabled;
+
+                string apikey = form["apikey"].ToString();
+                if (!string.IsNullOrWhiteSpace(apikey))
+                    sms.Apikey = _encryptionService.Encrypt(apikey, _configuration["Encryption:Key"]!);
+
+                await dbcontext.SaveChangesAsync();
+                return Json(new { status = true, message = "SMS settings saved." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving SMS settings");
+                return Json(new { status = false, message = $"Error saving SMS settings: {ex.Message}" });
+            }
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> SaveNotificationConfig([FromForm] IFormCollection form)
+        {
+            try
+            {
+                if (!int.TryParse(form["serviceId"].ToString(), out int serviceId) || serviceId <= 0)
+                    return BadRequest(new { status = false, message = "Invalid service ID." });
+
+                string action = form["action"].ToString();
+                if (string.IsNullOrWhiteSpace(action))
+                    return BadRequest(new { status = false, message = "Action is required." });
+
+                var service = await dbcontext.Services.FirstOrDefaultAsync(s => s.Serviceid == serviceId);
+                if (service == null)
+                    return NotFound(new { status = false, message = "Service not found." });
+
+                JObject config;
+                try
+                {
+                    config = string.IsNullOrWhiteSpace(service.Notificationconfig)
+                        ? new JObject()
+                        : JObject.Parse(service.Notificationconfig!);
+                }
+                catch
+                {
+                    config = new JObject();
+                }
+
+                string ruleJson = form["rule"].ToString();
+                if (string.IsNullOrWhiteSpace(ruleJson))
+                    config.Remove(action);
+                else
+                    config[action] = JObject.Parse(ruleJson);
+
+                service.Notificationconfig = JsonConvert.SerializeObject(config);
+                await dbcontext.SaveChangesAsync();
+
+                return Json(new { status = true, message = "Notification rule saved.", config });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving notification config");
+                return Json(new { status = false, message = $"Error saving notification config: {ex.Message}" });
             }
         }
 
@@ -510,10 +618,10 @@ namespace SahayataNidhi.Controllers
                     return BadRequest(new { status = false, message = "Invalid JSON format." });
                 }
 
+                // ── Submission limits ─────────────────────────────────────────
                 bool isLimited = config["isLimited"]?.Value<bool>() ?? false;
                 var limits = config["limits"] as JArray ?? new JArray();
 
-                // Validation
                 if (isLimited && !limits.Any())
                     return BadRequest(new { status = false, message = "At least one limit rule required." });
 
@@ -533,6 +641,28 @@ namespace SahayataNidhi.Controllers
                         return BadRequest(new { status = false, message = $"Duplicate limit type: {limitType}." });
                 }
 
+                // ── Pool sanction batch limit ─────────────────────────────────
+                const int DefaultPoolLimit = 5;
+                const int MinPoolLimit = 1;
+                const int MaxPoolLimit = 100;
+
+                int poolSanctionBatchLimit = DefaultPoolLimit;
+                var poolToken = config["poolSanctionBatchLimit"];
+                if (poolToken != null && poolToken.Type != JTokenType.Null)
+                {
+                    if (!int.TryParse(poolToken.ToString(), out var parsed) ||
+                        parsed < MinPoolLimit ||
+                        parsed > MaxPoolLimit)
+                    {
+                        return BadRequest(new
+                        {
+                            status = false,
+                            message = $"Pool sanction batch limit must be a whole number between {MinPoolLimit} and {MaxPoolLimit}."
+                        });
+                    }
+                    poolSanctionBatchLimit = parsed;
+                }
+
                 var service = await dbcontext.Services
                     .Where(s => s.Serviceid == serviceId)
                     .FirstOrDefaultAsync();
@@ -543,7 +673,8 @@ namespace SahayataNidhi.Controllers
                 service.Submissionlimitconfig = JsonConvert.SerializeObject(new
                 {
                     isLimited,
-                    limits = limits.ToObject<List<dynamic>>()
+                    limits = limits.ToObject<List<dynamic>>(),
+                    poolSanctionBatchLimit
                 });
 
                 await dbcontext.SaveChangesAsync();
@@ -553,6 +684,108 @@ namespace SahayataNidhi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving config for service {ServiceId}", serviceId);
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }       // ─────────────────────────────────────────────────────────────────────────
+       
+       
+        // DYNAMIC REPORT TEMPLATE — Save / Update / Delete
+        // ─────────────────────────────────────────────────────────────────────────
+
+        [HttpPost]
+        public async Task<IActionResult> SaveReportTemplate([FromBody] dynamic dto)
+        {
+            try
+            {
+                var name = dto.name?.ToString().Trim();
+                var description = dto.description?.ToString().Trim() ?? "";
+                var tableName = dto.tableName?.ToString().Trim();
+                var columnsJson = dto.columns?.ToString();
+                var filtersJson = dto.filters?.ToString();
+                var createdBy = dto.createdBy?.ToString() ?? "";
+                int? serviceId = null;
+                if (dto.serviceId != null)
+                {
+                    string svText = dto.serviceId?.ToString() ?? "";
+                    if (int.TryParse(svText, out int svParsed)) serviceId = svParsed;
+                }
+
+                if (string.IsNullOrEmpty(name))
+                    return BadRequest(new { status = false, message = "Report name is required" });
+                if (string.IsNullOrEmpty(tableName))
+                    return BadRequest(new { status = false, message = "Base table name is required" });
+                if (string.IsNullOrEmpty(columnsJson))
+                    return BadRequest(new { status = false, message = "At least one column must be selected" });
+
+                // Validate JSON
+                try { JArray.Parse(columnsJson); } catch { return BadRequest(new { status = false, message = "Invalid columns JSON" }); }
+                if (!string.IsNullOrEmpty(filtersJson))
+                    try { JArray.Parse(filtersJson); } catch { return BadRequest(new { status = false, message = "Invalid filters JSON" }); }
+
+                int id = dto.id ?? 0;
+
+                if (id > 0)
+                {
+                    // Update existing
+                    var existing = await dbcontext.Reports.FindAsync(id);
+                    if (existing == null)
+                        return NotFound(new { status = false, message = "Report template not found" });
+
+                    existing.Name = name;
+                    existing.Description = description;
+                    existing.Tablename = tableName;
+                    existing.ServiceId = serviceId;
+                    existing.Columns = columnsJson;
+                    existing.Filters = filtersJson;
+                    await dbcontext.SaveChangesAsync();
+
+                    return Ok(new { status = true, message = "Report template updated successfully", data = existing });
+                }
+                else
+                {
+                    // Create new
+                    var entity = new Reports
+                    {
+                        Name = name,
+                        Description = description,
+                        Tablename = tableName,
+                        ServiceId = serviceId,
+                        Columns = columnsJson,
+                        Filters = filtersJson,
+                        Createdat = DateTime.Now,
+                        Createdby = createdBy
+                    };
+
+                    dbcontext.Reports.Add(entity);
+                    await dbcontext.SaveChangesAsync();
+
+                    return Ok(new { status = true, message = "Report template created successfully", data = entity });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving report template");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpDelete]
+        public async Task<IActionResult> DeleteReportTemplate([FromQuery] int id)
+        {
+            try
+            {
+                var entity = await dbcontext.Reports.FindAsync(id);
+                if (entity == null)
+                    return NotFound(new { status = false, message = "Report template not found" });
+
+                dbcontext.Reports.Remove(entity);
+                await dbcontext.SaveChangesAsync();
+
+                return Ok(new { status = true, message = "Report template deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting report template {Id}", id);
                 return StatusCode(500, new { status = false, message = ex.Message });
             }
         }

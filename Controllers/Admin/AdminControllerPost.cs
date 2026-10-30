@@ -16,36 +16,62 @@ namespace SahayataNidhi.Controllers.Admin
         {
             try
             {
-                if (certificateId <= 0)
-                    return BadRequest(new { status = false, message = "Valid certificate ID is required." });
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                {
+                    return BadRequest(new { status = false, message = "Officer details not found" });
+                }
 
-                if (string.IsNullOrEmpty(action) || (action != "APPROVED" && action != "REJECTED"))
-                    return BadRequest(new { status = false, message = "Action must be either 'APPROVED' or 'REJECTED'." });
+                // Normalize input
+                action = (action ?? "").Trim().ToUpperInvariant();
+                if (action != "APPROVED" && action != "REJECTED")
+                {
+                    return BadRequest(new
+                    {
+                        status = false,
+                        message = "Invalid action. Allowed values: APPROVED, REJECTED."
+                    });
+                }
 
-                var certificate = dbcontext.Certificates.FirstOrDefault(c => c.Uuid == certificateId);
-                if (certificate == null)
+                var cert = dbcontext.Certificates
+                    .FirstOrDefault(c => c.Uuid == certificateId);
+
+                if (cert == null)
+                {
                     return NotFound(new { status = false, message = "Certificate not found." });
+                }
 
-                if (certificate.Status == action)
-                    return BadRequest(new { status = false, message = $"Certificate is already {action.ToLower()}." });
+                // ── Guard against double action ───────────────────────────────────
+                var current = (cert.Status ?? "").Trim().ToUpperInvariant();
 
-                certificate.Status = action;
+                if (current == "APPROVED" || current == "REJECTED")
+                {
+                    return BadRequest(new
+                    {
+                        status = false,
+                        message = $"Certificate is already {current.ToLower()} and cannot be changed."
+                    });
+                }
+
+                // ── Apply new status ──────────────────────────────────────────────
+                cert.Status = action;   // "APPROVED" or "REJECTED"
                 dbcontext.SaveChanges();
-
-                string currentDateTime = DateTime.Now.AddHours(5.5).ToString("dd MMM yyyy, hh:mm tt") + " IST";
 
                 return Json(new
                 {
                     status = true,
-                    message = action == "APPROVED" ? "DSC approved successfully." : "DSC rejected successfully.",
-                    isApproved = action == "APPROVED",
-                    updatedAt = currentDateTime
+                    message = $"DSC {action.ToLower()} successfully!"
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error reviewing DSC for Certificate ID: {CertificateId}", certificateId);
-                return StatusCode(500, new { status = false, message = "An error occurred while reviewing the DSC." });
+                _logger.LogError(ex, "Error reviewing DSC {CertificateId}", certificateId);
+                return StatusCode(500, new
+                {
+                    status = false,
+                    message = "An error occurred while reviewing the DSC.",
+                    details = ex.Message
+                });
             }
         }
 
@@ -635,6 +661,162 @@ namespace SahayataNidhi.Controllers.Admin
                 return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
+
+        #region Eligibility Criteria Management
+
+        /// <summary>
+        /// Create a new eligibility criterion
+        /// </summary>
+        [HttpPost]
+        public async Task<IActionResult> CreateEligibilityCriteria([FromBody] ExpirationTypes dto)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return Unauthorized(new { status = false, message = "Session expired. Please log in again." });
+
+                if (dto == null)
+                    return BadRequest(new { status = false, message = "Invalid payload" });
+
+                if (string.IsNullOrWhiteSpace(dto.ExpirationName))
+                    return BadRequest(new { status = false, message = "Criterion name is required" });
+
+                if (string.IsNullOrWhiteSpace(dto.TypeCode))
+                    return BadRequest(new { status = false, message = "Type code is required" });
+
+                // TypeCode must be unique
+                var duplicate = await dbcontext.ExpirationTypes
+                    .AnyAsync(t => t.TypeCode == dto.TypeCode);
+                if (duplicate)
+                    return Conflict(new { status = false, message = $"TypeCode '{dto.TypeCode}' already exists." });
+
+                // ConditionField should be valid JSON (a JSON object like {"KindOfDisability":"Temporary"})
+                // The column is json type - empty strings are not valid JSON, so normalize "" to null.
+                string conditionField = string.IsNullOrWhiteSpace(dto.ConditionField) ? null : dto.ConditionField;
+                if (!string.IsNullOrWhiteSpace(conditionField))
+                {
+                    try { JObject.Parse(conditionField); }
+                    catch (JsonException) { return BadRequest(new { status = false, message = "Condition field must be a valid JSON object, e.g. {\"KindOfDisability\":\"Temporary\"}" }); }
+                }
+
+                var entity = new ExpirationTypes
+                {
+                    TypeCode = dto.TypeCode.Trim(),
+                    ServiceId = dto.ServiceId,
+                    ExpirationName = dto.ExpirationName.Trim(),
+                    Description = dto.Description,
+                    MessageTemplate = dto.MessageTemplate,
+                    BasedOnField = dto.BasedOnField ?? false,
+                    ConditionField = conditionField,
+                    ValueField = dto.ValueField,
+                    ValidityPeriod = dto.ValidityPeriod,
+                    ReminderBefore = dto.ReminderBefore,
+                    StopPaymentOnExpiry = dto.StopPaymentOnExpiry ?? false,
+                    StopPaymentGracePeriod = dto.StopPaymentGracePeriod,
+                    IsActive = dto.IsActive ?? true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                dbcontext.ExpirationTypes.Add(entity);
+                await dbcontext.SaveChangesAsync();
+
+                return Ok(new { status = true, message = "Eligibility criterion created successfully", data = entity });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating eligibility criterion");
+                return StatusCode(500, new { status = false, message = "Error creating eligibility criterion: " + ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Update an existing eligibility criterion
+        /// </summary>
+        [HttpPut]
+        public async Task<IActionResult> UpdateEligibilityCriteria(int id, [FromBody] ExpirationTypes dto)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return Unauthorized(new { status = false, message = "Session expired. Please log in again." });
+
+                var existing = await dbcontext.ExpirationTypes.FindAsync(id);
+                if (existing == null)
+                    return NotFound(new { status = false, message = "Criterion not found" });
+
+                if (string.IsNullOrWhiteSpace(dto.ExpirationName))
+                    return BadRequest(new { status = false, message = "Criterion name is required" });
+
+                if (string.IsNullOrWhiteSpace(dto.TypeCode))
+                    return BadRequest(new { status = false, message = "Type code is required" });
+
+                var duplicate = await dbcontext.ExpirationTypes
+                    .AnyAsync(t => t.TypeCode == dto.TypeCode && t.Id != id);
+                if (duplicate)
+                    return Conflict(new { status = false, message = $"TypeCode '{dto.TypeCode}' already exists." });
+
+                if (!string.IsNullOrWhiteSpace(dto.ConditionField))
+                {
+                    try { JObject.Parse(dto.ConditionField); }
+                    catch (JsonException) { return BadRequest(new { status = false, message = "Condition field must be a valid JSON object, e.g. {\"KindOfDisability\":\"Temporary\"}" }); }
+                }
+
+                existing.TypeCode = dto.TypeCode.Trim();
+                existing.ServiceId = dto.ServiceId;
+                existing.ExpirationName = dto.ExpirationName.Trim();
+                existing.Description = dto.Description;
+                existing.MessageTemplate = dto.MessageTemplate;
+                existing.BasedOnField = dto.BasedOnField ?? false;
+                existing.ConditionField = string.IsNullOrWhiteSpace(dto.ConditionField) ? null : dto.ConditionField;
+                existing.ValueField = dto.ValueField;
+                existing.ValidityPeriod = dto.ValidityPeriod;
+                existing.ReminderBefore = dto.ReminderBefore;
+                existing.StopPaymentOnExpiry = dto.StopPaymentOnExpiry ?? false;
+                existing.StopPaymentGracePeriod = dto.StopPaymentGracePeriod;
+                existing.IsActive = dto.IsActive ?? true;
+
+                await dbcontext.SaveChangesAsync();
+
+                return Ok(new { status = true, message = "Eligibility criterion updated successfully", data = existing });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating eligibility criterion {Id}", id);
+                return StatusCode(500, new { status = false, message = "Error updating eligibility criterion: " + ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Soft-delete (deactivate) an eligibility criterion
+        /// </summary>
+        [HttpDelete]
+        public async Task<IActionResult> DeleteEligibilityCriteria(int id)
+        {
+            try
+            {
+                var officer = GetOfficerDetails();
+                if (officer == null)
+                    return Unauthorized(new { status = false, message = "Session expired. Please log in again." });
+
+                var existing = await dbcontext.ExpirationTypes.FindAsync(id);
+                if (existing == null)
+                    return NotFound(new { status = false, message = "Criterion not found" });
+
+                existing.IsActive = false;
+                await dbcontext.SaveChangesAsync();
+
+                return Ok(new { status = true, message = "Eligibility criterion deactivated successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting eligibility criterion {Id}", id);
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        #endregion
 
     }
 }

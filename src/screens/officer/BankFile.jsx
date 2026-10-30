@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Box,
   Typography,
@@ -239,12 +240,15 @@ export default function BankFile() {
         p: { xs: 2, md: 4 },
       }}
     >
-      <Typography
-        variant="h5"
-        sx={{ mb: 4, fontWeight: "bold", color: "#333333" }}
-      >
-        Bank File Management
-      </Typography>
+      <GovPageHeader
+        title="Bank File Management"
+        hindiTitle="बैंक फ़ाइल प्रबंधन"
+        subtitle="Generate and upload pension bank response files"
+        crumbs={[
+          { label: "Officer", path: "/officer/home" },
+          { label: "Bank File", path: "" },
+        ]}
+      />
 
       <Box
         sx={{

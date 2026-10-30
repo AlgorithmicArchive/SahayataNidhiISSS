@@ -375,43 +375,63 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
         if (userSignature == null)
             throw new ArgumentException("Invalid JanParichay user data");
 
-
         var effectiveEmail = string.IsNullOrEmpty(userSignature.Email) ? userSignature.UserId : userSignature.Email;
         if (string.IsNullOrEmpty(effectiveEmail))
             throw new ArgumentException("Invalid JanParichay user data: Missing both Email and UserId");
 
+        // CRITICAL FIX: Check Username against BOTH UserName and effectiveEmail
         var existingUser = await dbcontext.Users
-            .FirstOrDefaultAsync(u => u.Email == effectiveEmail || userSignature.UserId!.Contains(u.Username!) || u.Username == userSignature.UserName || u.Mobilenumber == userSignature.MobileNo);
+            .FirstOrDefaultAsync(u =>
+                u.Username == userSignature.UserName ||
+                u.Username == effectiveEmail ||
+                u.Email == effectiveEmail ||
+                (!string.IsNullOrEmpty(userSignature.MobileNo) && u.Mobilenumber == userSignature.MobileNo)
+            );
+
+        _logger.LogInformation($"---- Existing User------ {JsonConvert.SerializeObject(existingUser)}   User Signature: {JsonConvert.SerializeObject(userSignature)} ----------------- ");
 
         if (existingUser != null)
         {
             bool updated = false;
 
-            if (existingUser.Name == null)
+            if (existingUser.Name == null || existingUser.Name != userSignature.FullName)
             {
                 existingUser.Name = userSignature.FullName;
                 updated = true;
             }
 
-            if (existingUser.Username == null)
+            // Prevent username update if the existing user is an Officer
+            // and the current username starts with "JK".
+            var isProtectedOfficerUsername =
+                string.Equals(existingUser.Usertype, "Officer", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(existingUser.Username)
+                && existingUser.Username.StartsWith("JK", StringComparison.OrdinalIgnoreCase);
+
+            // Update Username if it's currently null or different,
+            // unless it is a protected Officer username.
+            if (!isProtectedOfficerUsername &&
+                (string.IsNullOrEmpty(existingUser.Username) || existingUser.Username != effectiveEmail))
             {
-                existingUser.Username = userSignature.UserName;
-                updated = true;
+                // Only update if it doesn't violate the unique constraint
+                var usernameExists = await dbcontext.Users.AnyAsync(
+                    u => u.Username == effectiveEmail && u.Userid != existingUser.Userid);
+
+                if (!usernameExists)
+                {
+                    existingUser.Username = effectiveEmail;
+                    updated = true;
+                }
             }
 
-            if (existingUser.Name == null)
-            {
-                existingUser.Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim();
-                updated = true;
-            }
-
-            if (existingUser.Email == null)
+            if (existingUser.Email == null || existingUser.Email != effectiveEmail)
             {
                 existingUser.Email = effectiveEmail;
                 updated = true;
             }
 
-            if (existingUser.Mobilenumber == null)
+            // Only update mobile number if JanParichay actually sent one
+            if (!string.IsNullOrEmpty(userSignature.MobileNo) &&
+                existingUser.Mobilenumber != userSignature.MobileNo)
             {
                 existingUser.Mobilenumber = userSignature.MobileNo;
                 updated = true;
@@ -428,35 +448,34 @@ public class UserHelperFunctions(IWebHostEnvironment webHostEnvironment, SwdjkCo
                 return null!;
         }
 
-        return null!;
-        // var additionalDetails = new
-        // {
-        //     DateOfBirth = userSignature.Dob
-        // };
-        // var additionalJson = JsonSerializer.Serialize(additionalDetails);
+        // If no user found at all, proceed with creation
+        var additionalDetails = new
+        {
+            DateOfBirth = userSignature.Dob
+        };
+        var additionalJson = JsonSerializer.Serialize(additionalDetails);
 
-        // var newUser = new Users
-        // {
-        //     Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim(),
-        //     Username = effectiveEmail,
-        //     Email = effectiveEmail,
-        //     Mobilenumber = userSignature.MobileNo,
-        //     Usertype = userSignature.UserType ?? "Citizen",
-        //     Profile = userSignature.ProfilePic ?? "/assets/images/profile.jpg",
-        //     Backupcodes = null,
-        //     Additionaldetails = additionalJson,
-        //     Isemailvalid = true,
-        //     Registereddate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
-        // };
+        var newUser = new Users
+        {
+            Name = $"{userSignature.FirstName?.ToUpper()} {userSignature.LastName?.ToUpper()}".Trim(),
+            Username = effectiveEmail,
+            Email = effectiveEmail,
+            Mobilenumber = string.IsNullOrEmpty(userSignature.MobileNo) ? null : userSignature.MobileNo,
+            Usertype = userSignature.UserType ?? "Citizen",
+            Profile = userSignature.ProfilePic ?? "/assets/images/profile.jpg",
+            Backupcodes = null,
+            Additionaldetails = additionalJson,
+            Isemailvalid = true,
+            Registereddate = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt")
+        };
 
-        // _logger.LogInformation($"Creating new user with UserData: {newUser}");
+        dbcontext.Users.Add(newUser);
+        await dbcontext.SaveChangesAsync();
+        return newUser;
+    }  // LOGOUT
 
-        // dbcontext.Users.Add(newUser);
-        // await dbcontext.SaveChangesAsync();
-        // return newUser;
-    }
 
-    // LOGOUT
+
     public string GetJanParichayLogoutUrl(
         string clientToken,
         string sessionId,

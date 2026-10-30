@@ -68,7 +68,14 @@ const BasicModal = ({
               Title={Title}
             />
           )}
-          {pdf != null && <PdfViewer pdfUrl={pdf} width={"50%"} />}
+          {pdf != null && (
+            <PdfViewer
+              pdfUrl={pdf}
+              path={pdf}
+              exportButton={true}
+              width={"50%"}
+            />
+          )}
         </Box>
         {additionalContent && (
           <Box sx={{ mt: 2, mb: 2 }}>{additionalContent}</Box>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import axios from "axios";
 import { fetchAcknowledgement } from "../../assets/fetch";
 import { Box, CircularProgress, Typography } from "@mui/material";
@@ -62,9 +63,11 @@ export default function Acknowledgement() {
         </Box>
       ) : (
         <>
-          <Typography variant="h2" gutterBottom>
-            Acknowledgement
-          </Typography>
+          <GovPageHeader
+            title="Acknowledgement"
+            hindiTitle="पावती"
+            crumbs={[{ label: "Acknowledgement", path: "" }]}
+          />
           {pdfBlobUrl ? (
             <Box sx={{ width: "80%" }}>
               <PdfViewer

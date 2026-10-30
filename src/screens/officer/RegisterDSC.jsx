@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import { Container, Row, Col } from "react-bootstrap";
 import {
   TextField,
@@ -20,6 +21,15 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CustomButton from "../../components/CustomButton";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
+// ✅ Same normalizer used in UserDetails.handlePinSubmit so that the serial
+//    stored here will match whichever representation the token returns later
+//    (decimal / hex / int / packed-hex).
+const normalizeSerial = (v) =>
+  String(v ?? "")
+    .replace(/\s+/g, "") // strip spaces
+    .replace(/-/g, "") // strip dashes
+    .toUpperCase();
 
 export default function RegisterDSC() {
   const [pin, setPin] = useState("");
@@ -107,9 +117,32 @@ export default function RegisterDSC() {
     }
   };
 
+  // ✅ Send every serial representation the token exposes so the backend can
+  //    store all of them. UserDetails will then match whichever one the token
+  //    returns during a later signing call, exactly like it does today.
   const registerDSC = async (certificate) => {
     const formdata = new FormData();
-    formdata.append("serial_number", certificate.serial_number);
+
+    // Primary (decimal) form — normalized
+    formdata.append(
+      "serial_number",
+      normalizeSerial(certificate.serial_number),
+    );
+
+    // ✅ Extra representations used by UserDetails' multi-format matcher
+    if (certificate.serial_number_hex != null) {
+      formdata.append(
+        "serial_number_hex",
+        normalizeSerial(certificate.serial_number_hex),
+      );
+    }
+    if (certificate.serial_number_int != null) {
+      formdata.append(
+        "serial_number_int",
+        String(certificate.serial_number_int),
+      );
+    }
+
     formdata.append("certifying_authority", certificate.certifying_authority);
     formdata.append("expiration_date", certificate.expiration_date);
     formdata.append("cert_subject_name", certificate.common_name);
@@ -141,6 +174,16 @@ export default function RegisterDSC() {
       }
 
       const selectedCertificate = certificates[0];
+
+      // ✅ Fail fast — mirrors the guard in UserDetails.handlePinSubmit so a
+      //    bad read from the token never gets persisted.
+      const normalized = normalizeSerial(selectedCertificate.serial_number);
+      if (!normalized) {
+        throw new Error(
+          "The token did not return a valid serial number. Re-insert the token and try again.",
+        );
+      }
+
       await registerDSC(selectedCertificate);
 
       toast.success("DSC registered successfully! Pending Admin Approval.");
@@ -265,14 +308,14 @@ export default function RegisterDSC() {
                 pb: 5,
               }}
             >
-              <Typography
-                variant="h5"
-                component="h1"
-                gutterBottom
-                sx={{ fontWeight: "bold", color: "#1976d2" }}
-              >
-                Register DSC
-              </Typography>
+              <GovPageHeader
+                title="Register DSC"
+                hindiTitle="डीएससी पंजीकरण"
+                crumbs={[
+                  { label: "Officer", path: "/officer/home" },
+                  { label: "Register DSC", path: "" },
+                ]}
+              />
 
               <Typography variant="body2" color="text.secondary">
                 Ensure the USB Token is plugged in and the Desktop Signer App is

@@ -30,6 +30,7 @@ import {
   CircularProgress,
   Grid2 as Grid,
   Autocomplete,
+  Backdrop,
 } from "@mui/material";
 import { Col, Row } from "react-bootstrap";
 import { fetchFormDetails, GetServiceContent } from "../../assets/fetch";
@@ -53,18 +54,40 @@ import { format, parse } from "date-fns";
 import { se } from "date-fns/locale";
 
 const sectionIconMap = {
-  Location: <LocationOnIcon sx={{ fontSize: 36, color: "#14B8A6" }} />, // Teal
-  "Applicant Details": <PersonIcon sx={{ fontSize: 36, color: "#EC4899" }} />, // Pink
+  Location: <LocationOnIcon sx={{ fontSize: 36, color: "#0B5FA5" }} />,
+  "Applicant Details": <PersonIcon sx={{ fontSize: 36, color: "#C75B00" }} />,
   "Present Address Details": (
-    <HomeIcon sx={{ fontSize: 36, color: "#8B5CF6" }} />
-  ), // Indigo
+    <HomeIcon sx={{ fontSize: 36, color: "#17418F" }} />
+  ),
   "Permanent Address Details": (
-    <HomeIcon sx={{ fontSize: 36, color: "#8B5CF6" }} />
-  ), // Indigo
+    <HomeIcon sx={{ fontSize: 36, color: "#17418F" }} />
+  ),
   "Bank Details": (
-    <AccountBalanceIcon sx={{ fontSize: 36, color: "#F59E0B" }} />
-  ), // Amber
-  Documents: <InsertDriveFileIcon sx={{ fontSize: 36, color: "#10B981" }} />, // Green
+    <AccountBalanceIcon sx={{ fontSize: 36, color: "#9A5B00" }} />
+  ),
+  Documents: <InsertDriveFileIcon sx={{ fontSize: 36, color: "#138808" }} />,
+};
+
+// ── Normalise whatever `runValidations` returns into either `true`
+// or a string error message that React Hook Form understands.
+const normalizeValidationResult = (result) => {
+  if (result === undefined || result === true) return true;
+  if (typeof result === "string") return result;
+  if (result && typeof result === "object") {
+    if (
+      result.status === true ||
+      result.valid === true ||
+      result.isValid === true
+    ) {
+      return true;
+    }
+    return (
+      result.message ||
+      result.error ||
+      "Validation failed. Please check the value."
+    );
+  }
+  return true;
 };
 
 // Helper function to collect currently rendered fields
@@ -199,6 +222,28 @@ const sanitizeFormSections = (sections) => {
   }));
 };
 
+const isEmptyBranchValue = (v) =>
+  v === "" ||
+  v === null ||
+  v === undefined ||
+  v === "Please Select" ||
+  v === "placeholder";
+
+// ── Normalise `additionalDetails.returnFields` ────────────────────────────
+const normalizeReturnFields = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.warn("Failed to parse returnFields:", value, e);
+      return [];
+    }
+  }
+  return [];
+};
+
 const DynamicScrollableForm = ({ mode = "new", data }) => {
   const {
     control,
@@ -245,6 +290,47 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   const watchedDependableValues = useWatch({ control, name: DependableFields });
   const isBackspacePressed = useRef(false);
   const formRef = useRef(null);
+  const formSectionsRef = useRef(formSections);
+
+  const branchManuallyEnteredRef = useRef(false);
+
+  // ── Guarded setValue ──────────────────────────────────────────────────
+  // Refuses to blank out `BranchName` in three cases:
+  //   1. The user typed it manually (all modes).
+  //   2. ★ EDIT MODE ONLY: BranchName is a non-returnable field
+  //      (`isFieldDisabled("BranchName")` is true) — the citizen's
+  //      original value must survive an IFSC / BankName change on
+  //      this page because the officer isn't allowed to edit it.
+  //
+  // Any other write goes straight through. New / incomplete modes
+  // are unaffected by guard #2.
+  const guardedSetValue = useCallback(
+    (name, value, options) => {
+      if (name === "BranchName" && isEmptyBranchValue(value)) {
+        // Guard #1 — user-typed value (all modes)
+        if (branchManuallyEnteredRef.current) return;
+
+        // Guard #2 — EDIT MODE ONLY: BranchName is disabled
+        if (mode === "edit") {
+          const isBranchReadonly =
+            additionalDetails &&
+            additionalDetails.returnFields &&
+            !DependableFields.includes("BranchName");
+          if (isBranchReadonly) return;
+        }
+      }
+      return setValue(name, value, options);
+    },
+    [setValue, mode, additionalDetails, DependableFields],
+  );
+
+  const isSubmittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    formSectionsRef.current = formSections;
+  }, [formSections]);
+
   const applicantImageFile = watch("ApplicantImage");
 
   // ========== SAME AS PRESENT SYNC LOGIC ==========
@@ -254,11 +340,9 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   const isSyncingRef = useRef(false);
 
   const findFieldInSection = (section, fieldName) => {
-    // Search in main fields
     let found = section.fields.find((f) => f.name === fieldName);
     if (found) return found;
 
-    // Search in additionalFields (Urban/Rural)
     const searchAdditional = (fieldsArray) => {
       if (!fieldsArray) return null;
       for (let f of fieldsArray) {
@@ -295,7 +379,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
     if (!presentSection || !permanentSection) return;
 
-    // Recursive function to collect all field names from a section (including additionalFields)
     const collectFieldNames = (fields, prefix = "") => {
       let names = [];
       fields.forEach((field) => {
@@ -315,14 +398,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     const presentNames = collectFieldNames(presentSection.fields);
     const permanentNames = collectFieldNames(permanentSection.fields);
 
-    // Build mapping: present name -> permanent name (by replacing "Present" with "Permanent")
     const mapping = {};
     presentNames.forEach((pName) => {
       const permName = pName.replace(/^Present/, "Permanent");
       if (permanentNames.includes(permName)) {
         mapping[pName] = permName;
       } else {
-        // Try to find any permanent field that matches after replacement
         const possibleMatch = permanentNames.find((p) => p === permName);
         if (possibleMatch) mapping[pName] = possibleMatch;
       }
@@ -332,7 +413,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     setPermanentFieldMap(mapping);
   }, [formSections]);
 
-  // Watch all present fields
   const watchedPresentValuesArray =
     useWatch({ control, name: presentFieldNames }) || [];
   const watchedPresentValues = useMemo(() => {
@@ -343,7 +423,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     return obj;
   }, [presentFieldNames, watchedPresentValuesArray]);
 
-  // Sync present -> permanent when checkbox is checked
   useEffect(() => {
     if (!sameAsPresentChecked || isSyncingRef.current) return;
 
@@ -382,12 +461,16 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
     formSections.forEach((section) => {
       section.fields.forEach((field) => {
-        // Handle dependent selects
         if (
           field.type === "select" &&
           field.dependentOn &&
-          field.dependentOptions
+          field.dependentOptions &&
+          Object.keys(field.dependentOptions).length > 0
         ) {
+          if (field.name === "BranchName" && branchManuallyEnteredRef.current) {
+            return;
+          }
+
           const parentValue = watch(field.dependentOn);
           const options =
             field.dependentOptions[parentValue] || field.options || [];
@@ -413,12 +496,16 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           }
         }
 
-        // Handle additionalFields
         if (field.additionalFields) {
           const selectedValue = watch(field.name);
           const additionalFields = field.additionalFields[selectedValue] || [];
           additionalFields.forEach((af) => {
-            if (af.type === "select" && af.dependentOn && af.dependentOptions) {
+            if (
+              af.type === "select" &&
+              af.dependentOn &&
+              af.dependentOptions &&
+              Object.keys(af.dependentOptions).length > 0
+            ) {
               const parentValue = watch(af.dependentOn);
               const options =
                 af.dependentOptions[parentValue] || af.options || [];
@@ -445,7 +532,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           });
         }
 
-        // Handle dependent enclosures
         if (
           field.type === "enclosure" &&
           field.isDependentEnclosure &&
@@ -467,7 +553,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
             (getValues(selectFieldName) === "" ||
               getValues(fileFieldName) == null)
           ) {
-            // Restore values from initialData when the field reappears
             setValue(selectFieldName, initialData[field.name].selected || "", {
               shouldValidate: !isFieldDisabled(field.name),
             });
@@ -482,7 +567,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 shouldValidate: !isFieldDisabled(field.name),
               });
             }
-            // Clear any existing errors for this field
             clearErrors([selectFieldName, fileFieldName]);
           }
         }
@@ -498,87 +582,63 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     JSON.stringify(watchedDependableValues),
   ]);
 
-  const districtOptionsLoaded = useRef(false);
-
-  useEffect(() => {
-    const loadDistrictOptions = async () => {
-      // Prevent re-fetching after first load
-      if (districtOptionsLoaded.current) return;
-
-      const districtField = formSections
-        .flatMap((s) => s.fields)
-        .find((f) => f.name === "District" && f.isOfficeField);
-      console.log("Found district field:", districtField);
-
-      if (districtField && districtField.officeTypeId) {
-        const parentId = 0; // or get from context if needed
-        try {
-          const response = await axiosInstance.get(
-            `/Base/GetAreaList?table=OfficeDetails&parentId=${parentId}&isOfficeField=true&officeTypeId=${districtField.officeTypeId}`,
-          );
-          const districtOptions = response.data.data || [];
-          const newOptions = [
-            { label: "Please Select", value: "Please Select" },
-            ...districtOptions.map((d) => ({ value: d.value, label: d.label })),
-          ];
-
-          setFormSections((prev) =>
-            prev.map((section) => ({
-              ...section,
-              fields: section.fields.map((f) =>
-                f.name === "District" ? { ...f, options: newOptions } : f,
-              ),
-            })),
-          );
-
-          // Mark as loaded to prevent future runs
-          districtOptionsLoaded.current = true;
-        } catch (error) {
-          console.error("Error loading district options:", error);
-        }
-      }
-    };
-
-    loadDistrictOptions();
-  }, [formSections]);
+  const districtOptionsLoaded = useRef(new Set());
 
   function isDocumentInData(fieldName, flatDetails) {
     return Object.keys(flatDetails).includes(fieldName);
   }
 
   const getDependableFields = (formSections, returnFields, flatDetails) => {
-    const dependencies = [];
+    const dependencies = new Set();
+
+    // Recurse through a field and every nested additionalField,
+    // regardless of whether the parent matched returnFields.
+    const collectFromField = (field, effectiveName) => {
+      const name = effectiveName || field.name;
+      if (!name) return;
+
+      // A field is dependable if its own name is in returnFields,
+      // or one of its dependent parents is (so the toggle / chain
+      // that reveals it stays available).
+      if (
+        returnFields.includes(name) ||
+        (field.dependentOn && returnFields.includes(field.dependentOn)) ||
+        (field.valueDependentOn &&
+          returnFields.includes(field.valueDependentOn))
+      ) {
+        dependencies.add(name);
+      }
+
+      // Walk additionalFields branches (both array and object shapes).
+      if (field.additionalFields) {
+        const branches = Array.isArray(field.additionalFields)
+          ? field.additionalFields
+          : Object.values(field.additionalFields).flat();
+
+        branches.forEach((af) => {
+          if (!af) return;
+          const afName = af.name || `${name}_${af.id}`;
+          collectFromField(af, afName);
+        });
+      }
+    };
+
     formSections.forEach((section) => {
       section.fields.forEach((field) => {
+        // Enclosure logic — unchanged
         if (
-          returnFields.includes(field.name) ||
-          returnFields.includes(field.dependentOn)
+          field.type === "enclosure" &&
+          field.isDependentEnclosure &&
+          !isDocumentInData(field.name, flatDetails)
         ) {
-          dependencies.push(field.name);
-          if (field.additionalFields) {
-            const additionalFields = Array.isArray(field.additionalFields)
-              ? field.additionalFields
-              : Object.values(field.additionalFields).flat();
-            additionalFields.forEach((af) => {
-              dependencies.push(af.name);
-              if (af.additionalFields) {
-                const nestedFields = Array.isArray(af.additionalFields)
-                  ? af.additionalFields
-                  : Object.values(af.additionalFields).flat();
-                nestedFields.forEach((nestedAf) => {
-                  dependencies.push(nestedAf.name);
-                });
-              }
-            });
-          }
-        } else if (field.type === "enclosure" && field.isDependentEnclosure) {
-          if (!isDocumentInData(field.name, flatDetails)) {
-            dependencies.push(field.name);
-          }
+          dependencies.add(field.name);
         }
+
+        collectFromField(field, field.name);
       });
     });
-    return dependencies;
+
+    return Array.from(dependencies);
   };
 
   const isFieldDisabled = (fieldName, fieldType = null) => {
@@ -596,7 +656,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
     try {
       if (!path || typeof path !== "string") {
         console.warn(`No valid URL provided for ${fieldName}`);
-        if (setPreview) setApplicantImagePreview("/assets/images/profile.jpg"); // Fallback for images
+        if (setPreview) setApplicantImagePreview("/assets/images/profile.jpg");
         return;
       }
       const response = await fetch(`/Base/DisplayFile?fileName=${path}`);
@@ -611,7 +671,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       }
     } catch (error) {
       console.error(`Error setting default file for ${fieldName}:`, error);
-      if (setPreview) setApplicantImagePreview("/assets/images/profile.jpg"); // Fallback for images
+      if (setPreview) setApplicantImagePreview("/assets/images/profile.jpg");
     }
   };
 
@@ -649,21 +709,173 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   }, [applicantImageFile, initialData, mode, data, setValue]);
 
   useEffect(() => {
+    return () => {
+      districtOptionsLoaded.current.clear();
+      hasRunRef.current = false;
+      isSyncingRef.current = false;
+    };
+  }, []);
+
+  // ==========================================
+  // 🌟 NEW HELPER FUNCTIONS FOR AREA LOADING
+  // ==========================================
+  const isEmptyVal = (v) =>
+    v === undefined ||
+    v === null ||
+    v === "" ||
+    v === "Please Select" ||
+    v === "placeholder";
+
+  const collectAreaFieldsToLoad = (sections, flat) => {
+    const result = [];
+
+    const walk = (fields, sectionIdx, parentName) => {
+      fields.forEach((f) => {
+        const name = f.name || `${parentName}_${f.id}`;
+        const savedVal = flat[name];
+
+        if (!isEmptyVal(savedVal)) {
+          let parentKey = null;
+          if (
+            f.enableValueDependency &&
+            f.valueDependentOn &&
+            f.dependentTable
+          ) {
+            parentKey = f.valueDependentOn;
+          } else if (
+            f.dependentOn &&
+            f.dependentTable &&
+            (!f.dependentOptions ||
+              Object.keys(f.dependentOptions).length === 0)
+          ) {
+            parentKey = f.dependentOn;
+          }
+          if (parentKey) {
+            result.push({
+              sectionIdx,
+              field: { ...f, name },
+              parentName: parentKey,
+              parentValue: flat[parentKey],
+            });
+          }
+        }
+
+        if (f.additionalFields) {
+          const nested = Array.isArray(f.additionalFields)
+            ? f.additionalFields
+            : Object.values(f.additionalFields).flat();
+          walk(nested, sectionIdx, name);
+        }
+      });
+    };
+
+    sections.forEach((s, i) => walk(s.fields, i, ""));
+    return result;
+  };
+
+  const loadAreaOptionsForSavedData = async (sections, flat, isActive) => {
+    const items = collectAreaFieldsToLoad(sections, flat).filter(
+      (i) => !isEmptyVal(i.parentValue),
+    );
+
+    if (!items.length) {
+      console.log("ℹ️ No area fields to load options for");
+      return;
+    }
+
+    console.log(
+      "🚀 Loading options for fields:",
+      items.map((i) => i.field.name),
+    );
+
+    const loaded = await Promise.all(
+      items.map(async (item) => {
+        let table = item.field.dependentTable;
+        let extra = "";
+        if (item.field.isOfficeField && item.field.officeTypeId) {
+          table = "OfficeDetails";
+          extra = `&officeTypeId=${item.field.officeTypeId}&isOfficeField=true`;
+        }
+        try {
+          const res = await axiosInstance.get(
+            `/Base/GetAreaList?table=${table}&parentId=${item.parentValue}${extra}`,
+          );
+          const list = res.data?.data || [];
+          return {
+            name: item.field.name,
+            options: [
+              { label: "Please Select", value: "Please Select" },
+              ...list.map((x) => ({
+                value: x.id ?? x.value,
+                label: x.name ?? x.label,
+              })),
+            ],
+          };
+        } catch (e) {
+          console.error(`Options fetch failed for ${item.field.name}`, e);
+          return null;
+        }
+      }),
+    );
+
+    if (!isActive()) return;
+
+    const optionsByName = Object.fromEntries(
+      loaded.filter(Boolean).map((l) => [l.name, l.options]),
+    );
+
+    console.log("✅ Loaded options for:", Object.keys(optionsByName));
+
+    const applyOptions = (fields, parentName = "") =>
+      fields.map((f) => {
+        const name = f.name || `${parentName}_${f.id}`;
+        let next = optionsByName[name]
+          ? { ...f, options: optionsByName[name] }
+          : f;
+        if (f.additionalFields && !Array.isArray(f.additionalFields)) {
+          const na = {};
+          Object.keys(f.additionalFields).forEach((k) => {
+            na[k] = applyOptions(f.additionalFields[k], name);
+          });
+          next = { ...next, additionalFields: na };
+        }
+        return next;
+      });
+
+    setFormSections((prev) =>
+      prev.map((s) => ({ ...s, fields: applyOptions(s.fields) })),
+    );
+
+    items.forEach((i) => {
+      if (optionsByName[i.field.name]) {
+        setValue(i.field.name, flat[i.field.name], { shouldValidate: false });
+      }
+    });
+
+    console.log("✅ Area options population complete!");
+  };
+  // ==========================================
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadForm() {
       try {
         const { ServiceId, referenceNumber } = location.state || {};
-        let config;
+        let config = [];
+        let updatedConfig = [];
+
         setSelectedServiceId(ServiceId);
         if (referenceNumber) {
           setReferenceNumber(referenceNumber);
         }
 
         const result = await GetServiceContent(ServiceId);
-        if (result && result.status) {
+        if (result && result.status && isMounted) {
           try {
             console.log("Raw formElement from API:", result.formelement);
             config = JSON.parse(result.formelement);
-            let updatedConfig = sanitizeFormSections(config);
+            updatedConfig = sanitizeFormSections(config);
 
             const bankOptions = await fetchBanks();
             updatedConfig = updatedConfig.map((section) => {
@@ -752,11 +964,18 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
             }
           } catch (err) {
             console.error("Error parsing formElements:", err);
-            setFormSections([]);
+            if (isMounted) setFormSections([]);
           }
         }
 
-        if ((mode === "incomplete" || mode === "edit") && referenceNumber) {
+        // ==========================================
+        // HANDLE INCOMPLETE / EDIT MODE WITH REF NUMBER
+        // ==========================================
+        if (
+          (mode === "incomplete" || mode === "edit") &&
+          referenceNumber &&
+          isMounted
+        ) {
           const { formDetails, additionalDetails } =
             await fetchFormDetails(referenceNumber);
 
@@ -781,15 +1000,14 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
             }, {}),
           };
 
-          const returnFields = JSON.parse(
-            additionalDetails?.returnFields || "[]",
+          const returnFields = normalizeReturnFields(
+            additionalDetails?.returnFields,
           );
           const dependableFields = getDependableFields(
             config,
             returnFields,
             flatDetails,
           );
-          setAreas(formDetails);
           setDependableFields(dependableFields);
 
           reset(resetData);
@@ -800,10 +1018,17 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               setAadhaarValid(true);
             }
           }
+
+          await loadAreaOptionsForSavedData(
+            updatedConfig,
+            flatDetails,
+            () => isMounted,
+          );
         } else if (
           mode === "incomplete" &&
           data !== null &&
-          data !== undefined
+          data !== undefined &&
+          isMounted
         ) {
           const flatDetails = flattenFormDetails(data);
 
@@ -826,7 +1051,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           setInitialData(flatDetails);
           reset(resetData);
 
-          formSections.forEach((section) => {
+          updatedConfig.forEach((section) => {
             section.fields.forEach((field) => {
               if (field.type === "enclosure") {
                 const fileFieldName = `${field.name}_file`;
@@ -854,137 +1079,28 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               }
             });
           });
-        }
 
-        if (data != null) {
-          Object.keys(data).forEach((key, sectionIndex) => {
-            data[key].map((item) => {
-              if (item.name.toLowerCase().includes("district")) {
-                handleAreaChange(sectionIndex, { name: item.name }, item.value);
-              }
-              setValue(item.name, item.value);
-
-              if (item.additionalFields) {
-                let fieldsArray = [];
-
-                if (Array.isArray(item.additionalFields)) {
-                  fieldsArray = item.additionalFields;
-                } else if (
-                  typeof item.additionalFields === "object" &&
-                  !Array.isArray(item.additionalFields)
-                ) {
-                  Object.values(item.additionalFields).forEach((arr) => {
-                    if (Array.isArray(arr)) {
-                      fieldsArray.push(...arr);
-                    }
-                  });
-                }
-
-                const uniqueFields = [];
-                const seen = new Set();
-
-                fieldsArray.forEach((field) => {
-                  const key = `${field.name}::${field.value}`;
-                  if (!seen.has(key)) {
-                    seen.add(key);
-                    uniqueFields.push(field);
-                  }
-                });
-
-                uniqueFields.forEach((field) => {
-                  if (
-                    field.name.toLowerCase().includes("district") ||
-                    field.name.toLowerCase().includes("muncipality")
-                  ) {
-                    handleAreaChange(
-                      sectionIndex,
-                      { name: field.name },
-                      field.value,
-                    );
-                  }
-                  setValue(field.name, field.value);
-                });
-              }
-            });
-          });
+          await loadAreaOptionsForSavedData(
+            updatedConfig,
+            flatDetails,
+            () => isMounted,
+          );
         }
       } catch (error) {
         console.error("Error fetching service content:", error);
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
+
     loadForm();
+
+    return () => {
+      isMounted = false;
+    };
   }, [location.state, mode, reset, data, setValue]);
-
-  useEffect(() => {
-    if (!formSections.length || !initialData) return;
-
-    if (hasRunRef.current) return;
-    hasRunRef.current = true;
-
-    function recurseAndSet(fields, sectionIndex, sectionName) {
-      fields.forEach((field) => {
-        const name = field.name;
-        const sectionData = initialData[sectionName] || [];
-        const fieldData = sectionData.find((f) => f.name === name);
-        const value = fieldData ? fieldData.value : undefined;
-
-        if (
-          (name.toLowerCase().includes("district") ||
-            name.toLowerCase().includes("muncipality") ||
-            name.toLowerCase().includes("municipality")) &&
-          value !== undefined
-        ) {
-          handleAreaChange(sectionIndex, { ...field, name }, value);
-        }
-
-        if (name.toLowerCase().includes("applicantimage") && value) {
-          setApplicantImagePreview(value);
-          setDefaultFile(value);
-        }
-
-        if (field.type === "enclosure" && value) {
-          setValue(`${name}_select`, value.selected || "", {
-            shouldValidate: true,
-          });
-          setValue(`${name}_file`, value.file || null, {
-            shouldValidate: true,
-          });
-        }
-        if (value !== undefined) {
-          setValue(name, value, { shouldValidate: true });
-        }
-
-        if (field.additionalFields) {
-          const branches = Array.isArray(field.additionalFields)
-            ? field.additionalFields
-            : Object.values(field.additionalFields).flat();
-
-          recurseAndSet(
-            branches.map((af) => ({
-              ...af,
-              name: af.name || `${name}_${af.id}`,
-            })),
-            sectionIndex,
-            sectionName,
-          );
-        }
-      });
-    }
-
-    formSections.forEach((section, idx) => {
-      const sectionName = section.section;
-      recurseAndSet(section.fields, idx, sectionName);
-    });
-  }, [
-    formSections,
-    initialData,
-    setValue,
-    handleAreaChange,
-    setApplicantImagePreview,
-    setDefaultFile,
-  ]);
 
   const enclosureDependentFields = formSections
     .flatMap((section) => section.fields)
@@ -1002,18 +1118,32 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         if (
           field.type === "select" &&
           field.dependentOn &&
-          field.dependentOptions
+          field.dependentOptions &&
+          Object.keys(field.dependentOptions).length > 0
         ) {
+          if (field.name === "BranchName" && branchManuallyEnteredRef.current) {
+            return;
+          }
+
           const parentValue = watch(field.dependentOn);
           const options = field.dependentOptions[parentValue] || [];
           const currentValue = getValues(field.name);
 
-          if (options.length > 0) {
-            setValue(field.name, options[1]?.value || "", {
-              shouldValidate: true,
-            });
-          } else if (currentValue) {
-            setValue(field.name, "", { shouldValidate: true });
+          const hasRealValue =
+            currentValue &&
+            currentValue !== "Please Select" &&
+            currentValue !== "";
+
+          if (!hasRealValue) {
+          } else if (options.length === 0) {
+            setValue(field.name, "Please Select", { shouldValidate: true });
+          } else {
+            const isValid = options.some(
+              (opt) => String(opt.value) === String(currentValue),
+            );
+            if (!isValid) {
+              setValue(field.name, "Please Select", { shouldValidate: true });
+            }
           }
         }
 
@@ -1022,17 +1152,33 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           const additionalFields = field.additionalFields[selectedValue] || [];
 
           additionalFields.forEach((af) => {
-            if (af.type === "select" && af.dependentOn && af.dependentOptions) {
+            if (
+              af.type === "select" &&
+              af.dependentOn &&
+              af.dependentOptions &&
+              Object.keys(af.dependentOptions).length > 0
+            ) {
               const parentValue = watch(af.dependentOn);
               const options = af.dependentOptions[parentValue] || [];
               const currentValue = getValues(af.name);
 
-              if (options.length > 0) {
-                setValue(af.name, options[1]?.value || "", {
-                  shouldValidate: true,
-                });
-              } else if (currentValue) {
-                setValue(af.name, "", { shouldValidate: true });
+              const hasRealValue =
+                currentValue &&
+                currentValue !== "Please Select" &&
+                currentValue !== "";
+
+              if (!hasRealValue) {
+              } else if (options.length === 0) {
+                setValue(af.name, "Please Select", { shouldValidate: true });
+              } else {
+                const isValid = options.some(
+                  (opt) => String(opt.value) === String(currentValue),
+                );
+                if (!isValid) {
+                  setValue(af.name, "Please Select", {
+                    shouldValidate: true,
+                  });
+                }
               }
             }
           });
@@ -1052,7 +1198,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           if (!shouldShow) {
             setValue(selectFieldName, "", { shouldValidate: true });
             setValue(fileFieldName, null, { shouldValidate: true });
-            return;
           }
         }
       });
@@ -1063,35 +1208,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       watch(dependentField),
     ),
   ]);
-
-  // Initialise cascading selects after formSections and initialData are ready
-  useEffect(() => {
-    if (!formSections.length || !initialData) return;
-
-    const processFields = (fields, sectionIdx) => {
-      fields.forEach((field) => {
-        // If this field has a value and it is a parent (i.e., there exists a child with valueDependentOn = field.name)
-        const hasChildren = formSections.some((section) =>
-          section.fields.some(
-            (f) => f.enableValueDependency && f.valueDependentOn === field.name,
-          ),
-        );
-        if (hasChildren && field.type === "select") {
-          const val = initialData[field.name];
-          if (val && val !== "Please Select") {
-            handleAreaChange(sectionIdx, field, val);
-          }
-        }
-        if (field.additionalFields) {
-          Object.values(field.additionalFields).forEach((arr) =>
-            processFields(arr, sectionIdx),
-          );
-        }
-      });
-    };
-
-    formSections.forEach((section, idx) => processFields(section.fields, idx));
-  }, [formSections, initialData, handleAreaChange]);
 
   const handleCopyAddress = async (checked) => {
     if (!checked) {
@@ -1252,11 +1368,17 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
 
   const handleAreaChange = useCallback(
     async (sectionIndex, field, value) => {
+      if (!value || value === "Please Select" || value === "placeholder") {
+        return;
+      }
+
+      const currentFormSections = formSectionsRef.current;
+      if (!currentFormSections || !currentFormSections.length) {
+        console.warn("formSections not ready for handleAreaChange");
+        return;
+      }
+
       try {
-        // Collect all fields that depend on this field via valueDependentOn
-        console.log(
-          `Handling area change for field: ${field.name} with value: ${value}`,
-        );
         const dependents = [];
 
         const collectDependents = (fields, currentSectionIdx) => {
@@ -1272,24 +1394,21 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           });
         };
 
-        console.log("Dependents", dependents);
-        formSections.forEach((section, idx) => {
+        currentFormSections.forEach((section, idx) => {
           collectDependents(section.fields, idx);
         });
 
+        console.log(
+          `📍 Processing ${field.name} = ${value}, found ${dependents.length} dependents`,
+        );
+
         for (const dep of dependents) {
           const childField = dep.field;
-          console.log(
-            `Updating dependent field: ${childField.name} in section index: ${dep.sectionIndex}`,
-          );
           const childSectionIdx = dep.sectionIndex;
 
-          // Use dependentTable from child field
           let tableName = childField.dependentTable;
           if (!tableName) {
-            console.warn(
-              `No dependentTable set for ${childField.name}, skipping`,
-            );
+            console.warn(`No dependentTable for ${childField.name}`);
             continue;
           }
 
@@ -1299,39 +1418,37 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
             officeTypeIdParam = `&officeTypeId=${childField.officeTypeId}&isOfficeField=true`;
           }
 
-          // Fetch options from API
+          console.log(
+            ` Fetching options for ${childField.name} from ${tableName} with parentId=${value}`,
+          );
+
           const response = await axiosInstance.get(
             `/Base/GetAreaList?table=${tableName}&parentId=${value}${officeTypeIdParam}`,
           );
           const areaList = response.data?.data || [];
 
-          const uniqueOptions = [];
-          const seenValues = new Set();
-          areaList.forEach((item) => {
-            const optionValue = item.id ?? item.value;
-            if (!seenValues.has(optionValue)) {
-              seenValues.add(optionValue);
-              uniqueOptions.push({
-                value: optionValue,
-                label: item.name ?? item.label,
-              });
-            }
-          });
-
-          const newOptions = [
+          const uniqueOptions = [
             { label: "Please Select", value: "Please Select" },
-            ...uniqueOptions,
+            ...areaList.map((item) => ({
+              value: item.id ?? item.value,
+              label: item.name ?? item.label,
+            })),
           ];
 
-          // Update child field's options in formSections state
+          console.log(
+            `✅ Loaded ${uniqueOptions.length} options for ${childField.name}`,
+          );
+
           setFormSections((prevSections) => {
             const newSections = [...prevSections];
-            const section = newSections[childSectionIdx];
+            if (!newSections[childSectionIdx]) return prevSections;
+
+            const section = { ...newSections[childSectionIdx] };
 
             const updateFieldOptions = (fields) => {
               return fields.map((f) => {
                 if (f.name === childField.name) {
-                  return { ...f, options: newOptions };
+                  return { ...f, options: uniqueOptions };
                 }
                 if (f.additionalFields) {
                   const updatedAdditional = {};
@@ -1346,18 +1463,24 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               });
             };
 
-            section.fields = updateFieldOptions(section.fields);
+            section.fields = updateFieldOptions([...section.fields]);
+            newSections[childSectionIdx] = section;
             return newSections;
           });
 
-          // If current value is not in new options, reset to "Please Select"
+          await new Promise((resolve) => setTimeout(resolve, 50));
+
           const currentVal = getValues(childField.name);
           if (
             currentVal &&
-            !newOptions.some(
+            currentVal !== "Please Select" &&
+            !uniqueOptions.some(
               (opt) => opt.value.toString() === currentVal.toString(),
             )
           ) {
+            console.warn(
+              `Value ${currentVal} not found in options for ${childField.name}`,
+            );
             setValue(childField.name, "Please Select", {
               shouldValidate: true,
             });
@@ -1367,7 +1490,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         console.error("Dynamic handleAreaChange error:", error);
       }
     },
-    [formSections, getValues, setValue, setFormSections],
+    [getValues, setValue],
   );
 
   const fetchBanks = async () => {
@@ -1397,6 +1520,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       const bankCode = response.data?.bankCode || "";
       setIfscPrefix(bankCode);
       setValue("IfscCode", bankCode, { shouldValidate: true });
+
+      branchManuallyEnteredRef.current = false;
+      // ★ Use guardedSetValue so an edit-mode-disabled BranchName is not
+      //   wiped when the officer switches banks on the same page.
+      guardedSetValue("BranchName", "", { shouldValidate: false });
+      setIsBranchNameReadonly(true);
     } catch (error) {}
   };
 
@@ -1475,115 +1604,124 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
   const aadhaarExists = watch("AadharNumber") !== undefined;
 
   const onSubmit = async (data, operationType) => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
-    data = getValues();
-
-    if (aadhaarExists && !aadhaarValid && operationType !== "save") {
-      alert("Aadhaar Number is not validated.");
-      return;
-    }
-
-    let emailFieldValue = "";
-    formSections.forEach((section) => {
-      section.fields.forEach((field) => {
-        if (field.type === "email") {
-          emailFieldValue = getValues(field.name) || "";
-        }
-      });
-    });
-
-    if (
-      operationType === "submit" &&
-      !emailFieldValue &&
-      !emailAlertModalOpen
-    ) {
-      setEmailAlertModalOpen(true);
-      return;
-    }
-
-    setLoading(true);
-    const groupedFormData = {};
-    let returnFieldsArray = [];
-    if (additionalDetails != null && additionalDetails !== "") {
-      const returnFields = additionalDetails?.returnFields || "";
-      returnFieldsArray = JSON.parse(returnFields);
-    }
-
-    formSections.forEach((section) => {
-      groupedFormData[section.section] = [];
-      section.fields.forEach((field) => {
-        const sectionData = processField(field, data, initialData || {});
-        if (sectionData !== null) {
-          if (field.name === "AadharNumber") {
-            sectionData.value = operationType === "submit" ? aadhaarNumber : "";
-          }
-          groupedFormData[section.section].push(sectionData);
-        }
-      });
-    });
-
-    const formdata = new FormData();
-    formdata.append("serviceId", selectedServiceId);
-    formdata.append("formDetails", JSON.stringify(groupedFormData));
-
-    for (const section in groupedFormData) {
-      groupedFormData[section].forEach((field) => {
-        if (field.hasOwnProperty("File") && field.File instanceof File) {
-          formdata.append(field.name, field.File);
-        } else if (
-          field.hasOwnProperty("Documents") &&
-          Array.isArray(field.Documents)
-        ) {
-          field.Documents.forEach((doc, index) => {
-            if (doc.file instanceof File) {
-              formdata.append(`${field.name}_${index}`, doc.file);
-            }
-          });
-        }
-        if (field.additionalFields) {
-          field.additionalFields.forEach((nestedField) => {
-            if (
-              nestedField.hasOwnProperty("File") &&
-              nestedField.File instanceof File
-            ) {
-              formdata.append(nestedField.name, nestedField.File);
-            }
-          });
-        }
-      });
-    }
-
-    formdata.append(
-      "status",
-      operationType === "submit" ? "Initiated" : "Incomplete",
-    );
-    formdata.append("referenceNumber", referenceNumber);
-
-    let url = "/User/InsertFormDetails";
-    if (additionalDetails != null && additionalDetails !== "") {
-      formdata.append("returnFields", JSON.stringify(returnFieldsArray));
-      url = "/User/UpdateApplicationDetails";
-    }
 
     try {
+      data = getValues();
+
+      if (aadhaarExists && !aadhaarValid && operationType !== "save") {
+        alert("Aadhaar Number is not validated.");
+        return;
+      }
+
+      let emailFieldValue = "";
+      formSections.forEach((section) => {
+        section.fields.forEach((field) => {
+          if (field.type === "email") {
+            emailFieldValue = getValues(field.name) || "";
+          }
+        });
+      });
+
+      if (
+        operationType === "submit" &&
+        !emailFieldValue &&
+        !emailAlertModalOpen
+      ) {
+        setEmailAlertModalOpen(true);
+        return;
+      }
+
+      setLoading(true);
+      const groupedFormData = {};
+      let returnFieldsArray = [];
+      if (additionalDetails != null && additionalDetails !== "") {
+        returnFieldsArray = normalizeReturnFields(
+          additionalDetails.returnFields,
+        );
+      }
+
+      formSections.forEach((section) => {
+        groupedFormData[section.section] = [];
+        section.fields.forEach((field) => {
+          const sectionData = processField(field, data, initialData || {});
+          if (sectionData !== null) {
+            if (field.name === "AadharNumber") {
+              sectionData.value =
+                operationType === "submit" ? aadhaarNumber : "";
+            }
+            groupedFormData[section.section].push(sectionData);
+          }
+        });
+      });
+
+      const formdata = new FormData();
+      formdata.append("serviceId", selectedServiceId);
+      formdata.append("formDetails", JSON.stringify(groupedFormData));
+
+      for (const section in groupedFormData) {
+        groupedFormData[section].forEach((field) => {
+          if (field.hasOwnProperty("File") && field.File instanceof File) {
+            formdata.append(field.name, field.File);
+          } else if (
+            field.hasOwnProperty("Documents") &&
+            Array.isArray(field.Documents)
+          ) {
+            field.Documents.forEach((doc, index) => {
+              if (doc.file instanceof File) {
+                formdata.append(`${field.name}_${index}`, doc.file);
+              }
+            });
+          }
+          if (field.additionalFields) {
+            field.additionalFields.forEach((nestedField) => {
+              if (
+                nestedField.hasOwnProperty("File") &&
+                nestedField.File instanceof File
+              ) {
+                formdata.append(nestedField.name, nestedField.File);
+              }
+            });
+          }
+        });
+      }
+
+      formdata.append(
+        "status",
+        operationType === "submit" ? "Initiated" : "Incomplete",
+      );
+      formdata.append("referenceNumber", referenceNumber);
+
+      let url = "/User/InsertFormDetails";
+      if (additionalDetails != null && additionalDetails !== "") {
+        formdata.append("returnFields", JSON.stringify(returnFieldsArray));
+        url = "/User/UpdateApplicationDetails";
+      }
+
       const response = await axiosInstance.post(url, formdata);
       const result = response.data;
-      setLoading(false);
+
       if (result.status) {
         if (result.type === "Submit") {
           navigate("/user/acknowledge", {
             state: { applicationId: result.referenceNumber },
           });
+          return;
         } else if (result.type === "Edit") {
           setReferenceNumber(result.referenceNumber);
           navigate("/user/initiated");
+          return;
         } else {
           setReferenceNumber(result.referenceNumber);
           toast.success(
             `Form details have been saved as a draft. ${
               aadhaarExists &&
-              "If you don’t submit the form, you will need to re-verify your Aadhaar number when you edit it later"
+              "If you don't submit the form, you will need to re-verify your Aadhaar number when you edit it later"
             }.`,
           );
           if (formRef.current) {
@@ -1599,11 +1737,13 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       }
     } catch (error) {
       console.error("Error submitting form:", error);
-      setLoading(false);
       toast.error("An error occurred while saving the form.");
+    } finally {
+      setLoading(false);
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      window.scrollTo(scrollX, scrollY);
     }
-
-    window.scrollTo(scrollX, scrollY);
   };
 
   const addDynamicEnclosure = (sectionId) => {
@@ -1669,58 +1809,58 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         borderRadius: "12px",
         transition: "all 0.3s ease",
         "& fieldset": {
-          borderColor: "#A5B4FC",
+          borderColor: "#D9E2EC",
         },
         "&:hover fieldset": {
-          borderColor: "#6366F1",
+          borderColor: "#3D63B0",
         },
         "&.Mui-focused fieldset": {
-          borderColor: "#6366F1",
-          boxShadow: "0 0 0 3px rgba(99, 102, 241, 0.2)",
+          borderColor: "#17418F",
+          boxShadow: "0 0 0 3px rgba(23, 65, 143, 0.18)",
         },
         "&.Mui-error fieldset": {
-          borderColor: "#F43F5E",
+          borderColor: "#B3261E",
         },
         "&.Mui-disabled": {
-          backgroundColor: "#EDE9FE",
+          backgroundColor: "#F0F3F8",
         },
       },
       "& .MuiInputLabel-root": {
-        color: "#6B7280",
+        color: "#4A5568",
         fontWeight: "500",
         fontSize: "0.9rem",
         "&.Mui-focused": {
-          color: "#6366F1",
+          color: "#17418F",
         },
         "&.Mui-error": {
-          color: "#F43F5E",
+          color: "#B3261E",
         },
       },
       "& .MuiInputBase-input": {
         fontSize: "1rem",
-        color: "#1F2937",
+        color: "#1A202C",
         padding: "14px 16px",
       },
       "& .MuiFormHelperText-root": {
-        color: "#F43F5E",
+        color: "#B3261E",
         fontSize: "0.85rem",
       },
       marginBottom: "1.5rem",
     };
 
     const buttonStyles = {
-      background: "linear-gradient(to right, #10B981, #059669)",
+      background: "linear-gradient(135deg, #17418F 0%, #3D63B0 100%)",
       color: "#FFFFFF",
       fontWeight: "600",
       textTransform: "none",
       borderRadius: "10px",
       padding: "10px 20px",
       "&:hover": {
-        background: "linear-gradient(to right, #059669, #047857)",
+        background: "linear-gradient(135deg, #0E2A5C 0%, #17418F 100%)",
       },
       "&.Mui-disabled": {
-        background: "#D1D5DB",
-        color: "#9CA3AF",
+        background: "#E2E8F0",
+        color: "#94A3B8",
       },
       marginBottom: "0.5rem",
     };
@@ -1746,7 +1886,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
         <>
           {field.label}
           {isRequired && (
-            <span style={{ color: "#F43F5E", fontSize: "1rem" }}> *</span>
+            <span style={{ color: "#B3261E", fontSize: "1rem" }}> *</span>
           )}
         </>
       );
@@ -1769,26 +1909,96 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 ) {
                   return true;
                 }
+
+                const ifscRegex = /^[A-Za-z]{4}0[A-Za-z0-9]{6}$/;
+                if (
+                  field.name === "IfscCode" &&
+                  value &&
+                  !ifscRegex.test(value)
+                ) {
+                  return "IFSC code must be 11 characters (e.g., ABCD0123456)";
+                }
+
+                // ── Capture BranchName state BEFORE runValidations executes.
+                const branchBefore =
+                  field.name === "IfscCode" ? getValues("BranchName") : null;
+                const wasManual =
+                  field.name === "IfscCode"
+                    ? branchManuallyEnteredRef.current
+                    : false;
+
                 const validationResult = await runValidations(
                   field,
                   value,
                   getValues(),
                   referenceNumber,
-                  setValue,
+                  guardedSetValue,
+                  selectedServiceId,
                 );
-                if (
-                  field.name === "IfscCode" &&
-                  typeof validationResult === "object" &&
-                  validationResult.removeReadonly
-                ) {
-                  setIsBranchNameReadonly(false);
-                } else if (
-                  field.name === "IfscCode" &&
-                  validationResult === true
-                ) {
+
+                // Debug log — remove once you've verified every field
+                // returns the shape you expect.
+                console.log(
+                  "[runValidations]",
+                  field.type,
+                  field.name,
+                  "→",
+                  validationResult,
+                );
+
+                if (field.name === "IfscCode") {
+                  if (wasManual && branchBefore && !getValues("BranchName")) {
+                    setValue("BranchName", branchBefore, {
+                      shouldValidate: false,
+                    });
+                  }
+
+                  // ── CASE A: IFSC not found in the DB. Soft failure:
+                  //   unlock BranchName for manual entry and return `true`
+                  //   so RHF treats the field as valid and does NOT block
+                  //   submit.
+                  if (
+                    validationResult &&
+                    typeof validationResult === "object" &&
+                    validationResult.code === "IFSC_NOT_IN_DB"
+                  ) {
+                    setIsBranchNameReadonly(false);
+                    return true;
+                  }
+
+                  // ── CASE B: Any other error from runValidations (empty
+                  //   when required, bad format, "select a bank first",
+                  //   fetch failure, …) is a hard failure and must
+                  //   surface to the user.
+                  if (typeof validationResult === "string") {
+                    setIsBranchNameReadonly(false);
+                    return validationResult;
+                  }
+
+                  // ── CASE C: IFSC is valid and the backend returned
+                  //   branch details.
                   setIsBranchNameReadonly(true);
+
+                  const branchFromDb =
+                    validationResult && typeof validationResult === "object"
+                      ? validationResult.bankDetails?.branch
+                      : null;
+
+                  const hasRealBranch =
+                    typeof branchFromDb === "string" &&
+                    branchFromDb.trim() !== "" &&
+                    branchFromDb !== "Please Select";
+
+                  if (!branchManuallyEnteredRef.current && hasRealBranch) {
+                    setValue("BranchName", branchFromDb, {
+                      shouldValidate: true,
+                    });
+                  }
+
+                  return true;
                 }
-                return validationResult;
+
+                return normalizeValidationResult(validationResult);
               },
             }}
             render={({ field: { onChange, value, ref } }) => (
@@ -1825,7 +2035,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                           disabled: isFieldDisabled(field.name),
                           InputLabelProps: {
                             shrink: true,
-                            style: { fontSize: "1rem", color: "#000000" },
+                            style: { fontSize: "1rem", color: "#17418F" },
                           },
                           placeholder: "dd MMM yyyy",
                           sx: commonStyles,
@@ -1852,6 +2062,10 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         const fieldName = field.name;
                         let transformedVal = val;
 
+                        if (fieldName === "BranchName") {
+                          branchManuallyEnteredRef.current = true;
+                        }
+
                         if (fieldName === "IfscCode" && ifscPrefix) {
                           if (!val.startsWith(ifscPrefix)) {
                             val = ifscPrefix + val.slice(ifscPrefix.length);
@@ -1860,6 +2074,10 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                             val = val.slice(0, 11);
                           }
                           transformedVal = val;
+                        }
+
+                        if (fieldName === "IfscCode") {
+                          branchManuallyEnteredRef.current = false;
                         }
 
                         if (fieldName === "AadharNumber") {
@@ -1908,7 +2126,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       margin="normal"
                       InputLabelProps={{
                         shrink: true,
-                        style: { fontSize: "1rem", color: "#000000" },
+                        style: { fontSize: "1rem", color: "#17418F" },
                       }}
                       inputProps={{
                         maxLength: (() => {
@@ -1958,7 +2176,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     <Button
                       sx={{
                         background:
-                          "linear-gradient(to right, #10B981, #059669)",
+                          "linear-gradient(135deg, #17418F 0%, #2561E8 100%)",
                         color: "#FFFFFF",
                         fontWeight: "bold",
                         paddingRight: 2,
@@ -2000,12 +2218,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     return "This field is required";
                   }
                 }
-                return await runValidations(
+                const result = await runValidations(
                   field,
                   value,
                   getValues(),
                   referenceNumber,
+                  guardedSetValue,
+                  selectedServiceId,
                 );
+                return normalizeValidationResult(result);
               },
             }}
             render={({ field: { onChange, value, ref } }) => (
@@ -2041,12 +2262,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         variant="body2"
                         sx={{
                           marginLeft: "0.5rem",
-                          color: "#555",
+                          color: "#4A5568",
                         }}
                       >
                         {field.declaration}
                         {field.required && (
-                          <span style={{ color: "red" }}> *</span>
+                          <span style={{ color: "#B3261E" }}> *</span>
                         )}
                       </Typography>
                     )}
@@ -2087,7 +2308,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                           <span>
                             {option.label}
                             {field.required && (
-                              <span style={{ color: "red" }}> *</span>
+                              <span style={{ color: "#B3261E" }}> *</span>
                             )}
                           </span>
                         }
@@ -2116,7 +2337,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 }
 
                 try {
-                  return await runValidations(field, value);
+                  const result = await runValidations(
+                    field,
+                    value,
+                    getValues(),
+                    referenceNumber,
+                    guardedSetValue,
+                    selectedServiceId,
+                  );
+                  return normalizeValidationResult(result);
                 } catch (error) {
                   console.error("File validation error:", error);
                   return "File validation failed";
@@ -2175,10 +2404,10 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     accept={field.accept}
                   />
                 </Button>
-                <Typography sx={{ fontSize: "0.85rem", color: "#6B7280" }}>
+                <Typography sx={{ fontSize: "0.85rem", color: "#4A5568" }}>
                   Accepted File Types: {field.accept} Size: 20kb-50kb
                 </Typography>
-                <FormHelperText sx={{ color: "#F43F5E" }}>
+                <FormHelperText sx={{ color: "#B3261E" }}>
                   {errors[field.name]?.message || ""}
                 </FormHelperText>
               </FormControl>
@@ -2191,10 +2420,19 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           <Controller
             name={field.name}
             control={control}
-            defaultValue="Please Select" // Always default to "Please Select"
+            defaultValue="Please Select"
             rules={{
-              validate: async (value) =>
-                await runValidations(field, value, getValues()),
+              validate: async (value) => {
+                const result = await runValidations(
+                  field,
+                  value,
+                  getValues(),
+                  referenceNumber,
+                  guardedSetValue,
+                  selectedServiceId,
+                );
+                return normalizeValidationResult(result);
+              },
             }}
             render={({ field: { onChange, value, ref } }) => {
               let options = [];
@@ -2208,7 +2446,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 options = field.options || [];
               }
 
-              // --- Add "Please Select" at the beginning if not already present ---
               const pleaseSelect = {
                 value: "Please Select",
                 label: "Please Select",
@@ -2216,7 +2453,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               if (!options.some((opt) => opt.value === pleaseSelect.value)) {
                 options = [pleaseSelect, ...options];
               }
-              // -------------------------------------------------------------------
 
               if (
                 value &&
@@ -2233,7 +2469,14 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     <Autocomplete
                       fullWidth
                       options={options}
-                      value={options.find((opt) => opt.value === value) || null}
+                      value={
+                        options.find(
+                          (opt) => String(opt.value) === String(value),
+                        ) || null
+                      }
+                      isOptionEqualToValue={(o, v) =>
+                        String(o.value) === String(v.value)
+                      }
                       getOptionLabel={(option) => option.label || ""}
                       onChange={(event, newOption) => {
                         const newValue = newOption?.value || "";
@@ -2284,7 +2527,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                           helperText={errors[field.name]?.message || ""}
                           InputLabelProps={{
                             shrink: true,
-                            style: { fontSize: "1.2rem", color: "#000000" },
+                            style: { fontSize: "1.2rem", color: "#17418F" },
                           }}
                           inputRef={ref}
                           sx={commonStyles}
@@ -2351,8 +2594,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     unregister(fileFieldName);
                   }}
                   sx={{
-                    color: "#F43F5E",
-                    "&:hover": { color: "#E11D48" },
+                    color: "#B3261E",
+                    "&:hover": { color: "#8C1D18" },
                     p: 0.5,
                   }}
                   disabled={isDisabled}
@@ -2385,14 +2628,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               />
             ) : (
               (() => {
-                // Prepare options with "Please Select" at the beginning
                 let options = field.options || [];
                 const placeholderOption = {
                   value: "placeholder",
                   label: "Please Select",
                 };
 
-                // Check if placeholder already exists (by label or by special value)
                 const hasPlaceholder = options.some(
                   (opt) =>
                     opt.label === "Please Select" ||
@@ -2429,14 +2670,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         value={value || "placeholder"}
                         onChange={(e) => {
                           const newValue = e.target.value;
-                          // Only trigger actual change if it's not the placeholder
                           if (newValue !== "placeholder") {
                             onChange(newValue);
                             setValue(fileFieldName, null, {
                               shouldValidate: true,
                             });
                           } else {
-                            // If placeholder is selected, set empty value
                             onChange("");
                             setValue(fileFieldName, null, {
                               shouldValidate: true,
@@ -2479,7 +2718,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
               rules={{
                 validate: async (value) => {
                   const selectValue = getValues(selectFieldName);
-                  // Check if a valid option is selected (not placeholder)
                   if (
                     field.required &&
                     !value &&
@@ -2488,24 +2726,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                   ) {
                     return "Please upload a file";
                   }
-                  if (value instanceof File) {
-                    if (value.size > 200000) {
-                      return "File must be under 200KB";
-                    }
-                    const extension = `.${value.name
-                      .split(".")
-                      .pop()
-                      .toLowerCase()}`;
-                    if (!field.accept.split(",").includes(extension)) {
-                      return `Invalid file type. Accepted types: ${field.accept}`;
-                    }
-                  }
-                  return await runValidations(
+                  const result = await runValidations(
                     field,
                     value,
                     getValues(),
                     referenceNumber,
+                    guardedSetValue,
+                    selectedServiceId,
                   );
+                  return normalizeValidationResult(result);
                 },
               }}
               render={({ field: { onChange, value } }) => (
@@ -2520,10 +2749,10 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       <FormHelperText
                         sx={{
                           cursor: "pointer",
-                          color: "#6366F1",
+                          color: "#17418F",
                           textDecoration: "underline",
                           fontSize: "0.9rem",
-                          "&:hover": { color: "#4F46E5" },
+                          "&:hover": { color: "#0E2A5C" },
                         }}
                         onClick={() => {
                           const fileURL =
@@ -2539,8 +2768,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         size="small"
                         onClick={() => onChange(null)}
                         sx={{
-                          color: "#F43F5E",
-                          "&:hover": { color: "#E11D48" },
+                          color: "#B3261E",
+                          "&:hover": { color: "#8C1D18" },
                           p: 0.5,
                         }}
                         disabled={isDisabled}
@@ -2576,12 +2805,12 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       accept={field.accept || ".pdf"}
                     />
                   </Button>
-                  <FormHelperText sx={{ color: "#F43F5E" }}>
+                  <FormHelperText sx={{ color: "#B3261E" }}>
                     {errors[fileFieldName]?.message || ""}
                   </FormHelperText>
-                  <Typography sx={{ fontSize: "0.85rem", color: "#6B7280" }}>
+                  <Typography sx={{ fontSize: "0.85rem", color: "#4A5568" }}>
                     Accepted File Types: {field.accept || ".pdf"} Size:
-                    100kb-200kb
+                    100kb-600kb
                   </Typography>
                 </Box>
               )}
@@ -2602,10 +2831,10 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          bgcolor: "#f8f9fa",
+          bgcolor: "#F5F7FA",
         }}
       >
-        <CircularProgress size={60} />
+        <CircularProgress size={60} color="primary" />
       </Box>
     );
 
@@ -2614,23 +2843,52 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
       sx={{
         maxWidth: "90%",
         margin: "2rem auto",
-        background:
-          "linear-gradient(to bottom right, #f4f9ff 0%, #f9f3ec 100%)",
+        background: "#F5F7FA",
         borderRadius: "16px",
         padding: { xs: "1.5rem", md: "3rem" },
         minHeight: "100vh",
         overflowY: "auto",
         "&::-webkit-scrollbar": {
           width: "8px",
-          backgroundColor: "#E0F2FE",
+          backgroundColor: "#D9E2EC",
           borderRadius: "4px",
         },
         "&::-webkit-scrollbar-thumb": {
-          backgroundColor: "#38BDF8",
+          backgroundColor: "#17418F",
           borderRadius: "4px",
         },
       }}
     >
+      <Backdrop
+        sx={{
+          color: "#FFFFFF",
+          zIndex: (theme) => theme.zIndex.drawer + 999,
+          backgroundColor: "rgba(15, 23, 42, 0.75)",
+          backdropFilter: "blur(2px)",
+        }}
+        open={isSubmitting}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          <CircularProgress size={64} sx={{ color: "#FFFFFF" }} />
+          <Typography variant="h6" sx={{ fontWeight: 700, color: "#FFFFFF" }}>
+            Submitting your application…
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{ color: "#E2E8F0", textAlign: "center", maxWidth: 320 }}
+          >
+            Please wait — do not close or refresh this page.
+          </Typography>
+        </Box>
+      </Backdrop>
+
       <Grid container spacing={3} alignItems="stretch">
         <Grid size={{ xs: 12 }}>
           <form
@@ -2653,16 +2911,16 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         height: "100%",
                         padding: "2rem",
                         borderRadius: "12px",
-                        background:
-                          "linear-gradient(to bottom, #FFFFFF, #F0FDFA)",
-                        boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+                        background: "#FFFFFF",
+                        border: "1px solid #D9E2EC",
+                        boxShadow: "0 2px 12px rgba(15, 23, 42, 0.06)",
                         transition: "all 0.3s ease",
                         "&:hover": {
-                          boxShadow: "0 4px 15px rgba(20, 184, 166, 0.3)",
+                          boxShadow: "0 6px 22px rgba(23, 65, 143, 0.14)",
+                          borderColor: "#3D63B0",
                         },
                       }}
                     >
-                      {/* Section Header */}
                       <Box
                         sx={{
                           display: "flex",
@@ -2673,14 +2931,14 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       >
                         {sectionIconMap[section.section] || (
                           <HelpOutlineIcon
-                            sx={{ fontSize: 36, color: "#14B8A6" }}
+                            sx={{ fontSize: 36, color: "#17418F" }}
                           />
                         )}
                         <Typography
                           variant="h6"
                           sx={{
                             fontWeight: "600",
-                            color: "#1F2937",
+                            color: "#1A202C",
                             fontSize: "1.5rem",
                           }}
                         >
@@ -2688,9 +2946,8 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         </Typography>
                       </Box>
 
-                      <Divider sx={{ mb: "1.5rem", borderColor: "#A5B4FC" }} />
+                      <Divider sx={{ mb: "1.5rem", borderColor: "#D9E2EC" }} />
 
-                      {/* Applicant Image */}
                       {section.section === "Applicant Details" && (
                         <Box
                           sx={{
@@ -2708,20 +2965,19 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                               height: 180,
                               borderRadius: "50%",
                               objectFit: "cover",
-                              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                              border: "3px solid #A5B4FC",
+                              boxShadow: "0 4px 12px rgba(15, 23, 42, 0.12)",
+                              border: "3px solid #3D63B0",
                             }}
                           />
                         </Box>
                       )}
 
-                      {/* File Type Info */}
                       {section.section === "Documents" && (
                         <Typography
                           sx={{
                             fontSize: "0.875rem",
                             textAlign: "center",
-                            color: "#4B5563",
+                            color: "#4A5568",
                             mb: "1rem",
                           }}
                         >
@@ -2729,7 +2985,6 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         </Typography>
                       )}
 
-                      {/* Fields */}
                       <Grid container spacing={2}>
                         {section.fields.map((field) => {
                           const element = renderField(field, index);
@@ -2747,8 +3002,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         })}
                       </Grid>
 
-                      {/* Add Document button ONLY for Documents section */}
-                      {section.section === "Documents" && mode != "edit" && (
+                      {section.section === "Documents" && (
                         <Box
                           sx={{
                             display: "flex",
@@ -2759,6 +3013,16 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                           <Button
                             variant="outlined"
                             onClick={() => addDynamicEnclosure(section.id)}
+                            sx={{
+                              color: "#17418F",
+                              borderColor: "#17418F",
+                              fontWeight: 600,
+                              borderRadius: "8px",
+                              "&:hover": {
+                                borderColor: "#0E2A5C",
+                                backgroundColor: "rgba(23, 65, 143, 0.06)",
+                              },
+                            }}
                           >
                             Add Document
                           </Button>
@@ -2769,16 +3033,15 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                 );
               })}
 
-              {/* Sticky Footer inside the form */}
               <Grid size={{ xs: 12, lg: 12 }}>
                 <Box
                   sx={{
                     position: "sticky",
                     bottom: 0,
-                    backgroundColor: "#FFF",
+                    backgroundColor: "#FFFFFF",
                     padding: "1.5rem",
-                    borderTop: "1px solid #A5B4FC",
-                    boxShadow: "0 -4px 12px rgba(0, 0, 0, 0.1)",
+                    borderTop: "1px solid #D9E2EC",
+                    boxShadow: "0 -4px 16px rgba(15, 23, 42, 0.08)",
                     display: "flex",
                     justifyContent: "center",
                     gap: 3,
@@ -2789,7 +3052,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                     <Button
                       sx={{
                         background:
-                          "linear-gradient(to bottom right, #E4630A, #F9A825)",
+                          "linear-gradient(135deg, #FF9933 0%, #C75B00 100%)",
                         color: "#FFFFFF",
                         fontSize: { xs: "0.9rem", md: "1rem" },
                         fontWeight: "600",
@@ -2798,24 +3061,24 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                         textTransform: "none",
                         "&:hover": {
                           background:
-                            "linear-gradient(to bottom right, #E4630A, #F9A825)",
+                            "linear-gradient(135deg, #C75B00 0%, #8A3E00 100%)",
                         },
                         "&.Mui-disabled": {
-                          background: "#D1D5DB",
-                          color: "#9CA3AF",
+                          background: "#E2E8F0",
+                          color: "#94A3B8",
                         },
                       }}
-                      disabled={buttonLoading || loading}
-                      onClick={(data) => onSubmit(data, "save")}
+                      disabled={buttonLoading || loading || isSubmitting}
+                      onClick={() => onSubmit(null, "save")}
                     >
-                      Save as Draft{buttonLoading ? "..." : ""}
+                      Save as Draft{buttonLoading || isSubmitting ? "…" : ""}
                     </Button>
                   )}
                   <Button
                     type="submit"
                     sx={{
                       background:
-                        "linear-gradient(to bottom right, #4CAF50, #81C784)",
+                        "linear-gradient(135deg, #17418F 0%, #2561E8 100%)",
                       color: "#FFFFFF",
                       fontSize: { xs: "0.9rem", md: "1rem" },
                       fontWeight: "600",
@@ -2824,16 +3087,21 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
                       textTransform: "none",
                       "&:hover": {
                         background:
-                          "linear-gradient(to bottom right, #4CAF50, #81C784)",
+                          "linear-gradient(135deg, #0E2A5C 0%, #17418F 100%)",
                       },
                       "&.Mui-disabled": {
-                        background: "#D1D5DB",
-                        color: "#9CA3AF",
+                        background: "#E2E8F0",
+                        color: "#94A3B8",
                       },
                     }}
-                    disabled={buttonLoading || loading}
+                    disabled={buttonLoading || loading || isSubmitting}
+                    startIcon={
+                      isSubmitting ? (
+                        <CircularProgress size={18} color="inherit" />
+                      ) : null
+                    }
                   >
-                    Submit{buttonLoading ? "..." : ""}
+                    {isSubmitting ? "Submitting…" : "Submit"}
                   </Button>
                 </Box>
               </Grid>
@@ -2872,7 +3140,7 @@ const DynamicScrollableForm = ({ mode = "new", data }) => {
             setOtpModal(false);
           }}
           onSubmit={handleOtpSubmit}
-          registeredAt="Mobile Number. Dummy OTP is 1234567"
+          registeredAt="Mobile Number."
         />
       )}
 

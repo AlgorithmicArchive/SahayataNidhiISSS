@@ -59,16 +59,19 @@ import ViewFeedbacks from "../screens/admin/ViewFeedbacks";
 import SubmissionLimitations from "../screens/designer/SubmissionLimitations";
 import AddOffices from "../screens/admin/AddOffices";
 import AddOfficeDetails from "../screens/admin/AddOfficeDetails";
+import ManageEligibilityCriteria from "../screens/admin/ManageEligibilityCriteria";
 import NotValidated from "../screens/home/NotValidated";
 import OfficerChoice from "../screens/home/OfficerChoice";
 import CreateExpirations from "../screens/designer/CreateExpirations";
+import WebServiceLogs from "../screens/admin/WebServiceLogs";
+import ApplicationTablePage from "../screens/officer/ApplicationTablePage";
 
 const RoutesComponent = () => {
   return (
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={<HomeScreen />} />
-      <Route path="/login" element={<LoginScreen />} />
+      <Route path="/securelogin" element={<LoginScreen />} />
       <Route path="/choice" element={<OfficerChoice />} />
       <Route path="/verification" element={<Verification />} />
       <Route path="/notValidated" element={<NotValidated />} />
@@ -108,6 +111,10 @@ const RoutesComponent = () => {
           <Route path="issuecorrigendum" element={<IssueCorrigendum />} />
           <Route path="withheld" element={<Withheld />} />
           <Route
+            path="/officer/applications"
+            element={<ApplicationTablePage />}
+          />
+          <Route
             path="aadhaarvalidations"
             element={<OfficerAadhaarValidations />}
           />
@@ -136,6 +143,11 @@ const RoutesComponent = () => {
           <Route path="addOfficeDetails" element={<AddOfficeDetails />} />
           <Route path="viewFeedbacks" element={<ViewFeedbacks />} />
           <Route path="validateofficer" element={<ValidateOfficer />} />
+          <Route path="webservicelogs" element={<WebServiceLogs />} />
+          <Route
+            path="manageEligibilityCriteria"
+            element={<ManageEligibilityCriteria />}
+          />
         </Route>
       </Route>
       <Route element={<ProtectedRoute requiredRoles={["Designer"]} />}>

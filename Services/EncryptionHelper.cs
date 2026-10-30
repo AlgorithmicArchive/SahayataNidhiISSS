@@ -69,13 +69,11 @@ namespace EncryptionHelper
                 Array.Copy(cipherBytes, 0, iv, 0, iv.Length);
                 aes.IV = iv;
 
-                using (var decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
-                using (var ms = new MemoryStream(cipherBytes, iv.Length, cipherBytes.Length - iv.Length))
-                using (var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
-                using (var sr = new StreamReader(cs))
-                {
-                    decrypted = sr.ReadToEnd();
-                }
+                using var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+                using var ms = new MemoryStream(cipherBytes, iv.Length, cipherBytes.Length - iv.Length);
+                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+                using var sr = new StreamReader(cs);
+                decrypted = sr.ReadToEnd();
             }
 
             return decrypted;
@@ -83,19 +81,22 @@ namespace EncryptionHelper
 
         private byte[] DeriveKey(string key)
         {
-            using (var deriveBytes = new Rfc2898DeriveBytes(key, _salt, 10000, HashAlgorithmName.SHA256))
-            {
-                return deriveBytes.GetBytes(32); // 256-bit key
-            }
+            // ✅ FIXED: Use the static Pbkdf2 method instead of the obsolete constructor 
+            // to resolve warning SYSLIB0060 and align with modern .NET security best practices.
+            return Rfc2898DeriveBytes.Pbkdf2(
+                password: key,
+                salt: _salt,
+                iterations: 10000,
+                hashAlgorithm: HashAlgorithmName.SHA256,
+                outputLength: 32 // 256-bit key
+            );
         }
 
         private byte[] GenerateIV()
         {
-            using (var aes = Aes.Create())
-            {
-                aes.GenerateIV();
-                return aes.IV;
-            }
+            using var aes = Aes.Create();
+            aes.GenerateIV();
+            return aes.IV;
         }
     }
 }

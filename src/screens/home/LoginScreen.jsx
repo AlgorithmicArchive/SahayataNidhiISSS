@@ -11,13 +11,13 @@ import {
   Button,
   IconButton,
   InputAdornment,
-  FormControl,
-  FormHelperText,
   Alert,
+  Paper,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
+import LockIcon from "@mui/icons-material/Lock";
 import { useForm, Controller } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import * as yup from "yup";
@@ -26,7 +26,7 @@ import { UserContext } from "../../UserContext";
 import { ToastContainer, toast } from "react-toastify";
 import CircularProgress from "@mui/material/CircularProgress";
 import "react-toastify/dist/ReactToastify.css";
-import { rsaService } from "../../services/rsaService"; // NEW: RSA encryption service
+import { rsaService } from "../../services/rsaService";
 
 // CAPTCHA generator
 const generateCaptcha = () => {
@@ -89,7 +89,6 @@ export default function LoginScreen() {
 
   const navigate = useNavigate();
 
-
   useEffect(() => {
     setCaptcha(generateCaptcha());
   }, []);
@@ -114,18 +113,15 @@ export default function LoginScreen() {
     event.preventDefault();
   };
 
-  // NEW: Encrypt password with RSA before submission
+  // Encrypt password with RSA before submission
   const onSubmit = async (data) => {
     setButtonLoading(true);
     setLoading(true);
     setLoginError("");
 
     try {
-      // In LoginScreen.jsx onSubmit
-      const encryptedUsername = await rsaService.encrypt(data.username);  // Add this
+      const encryptedUsername = await rsaService.encrypt(data.username);
       const encryptedPassword = await rsaService.encrypt(data.password);
-
-
 
       const formData = new FormData();
       formData.append("username", encryptedUsername);
@@ -255,55 +251,66 @@ export default function LoginScreen() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          background: "linear-gradient(to bottom right, #F4F9FF 0%, #F9F3EC 100%)",
+          bgcolor: "#F8FAFC",
         }}
       >
-        <CircularProgress size={80} sx={{ color: "#2562E9" }} />
+        <CircularProgress size={60} sx={{ color: "#2562E9" }} />
       </Box>
     );
 
   return (
     <Box
       sx={{
+        minHeight: "100vh",
+        bgcolor: "#F8FAFC",
         display: "flex",
-        flexDirection: "column",
-        justifyContent: "center",
         alignItems: "center",
-        minHeight: { xs: "90vh", lg: "80vh" },
-        background: "linear-gradient(to bottom right, #F4F9FF 0%, #F9F3EC 100%)",
-        padding: { xs: 2, md: 4 },
+        justifyContent: "center",
+        py: 4,
+        px: 2,
       }}
     >
-      <Box
+      <Paper
+        elevation={0}
         sx={{
-          backgroundColor: "#FFFFFF",
-          padding: { xs: 4, md: 6 },
-          borderRadius: 4,
-          width: { xs: "95%", sm: "80%", md: "50%", lg: "35%" },
-          maxWidth: 520,
-          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.12)",
-          transition: "all 0.3s ease-in-out",
-          "&:hover": {
-            transform: "translateY(-8px)",
-            boxShadow: "0 16px 48px rgba(0, 0, 0, 0.15)",
-          },
+          width: "100%",
+          maxWidth: 480,
+          p: { xs: 3, sm: 5 },
+          borderRadius: 3,
+          border: "1px solid #E2E8F0",
+          bgcolor: "white",
         }}
       >
-        {/* Login Title */}
+        {/* Header */}
         <Box sx={{ textAlign: "center", mb: 4 }}>
-          <Typography
-            variant="h3"
-            component="h1"
+          <Box
             sx={{
-              fontWeight: 700,
-              fontSize: { xs: "2.8rem", sm: "3.2rem", md: "3.5rem" },
-              background: "linear-gradient(to bottom right, #2561E8, #1F43B4)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              letterSpacing: "-0.5px",
+              width: 64,
+              height: 64,
+              borderRadius: 3,
+              bgcolor: "#EFF6FF",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              mx: "auto",
+              mb: 2,
             }}
           >
-            Login
+            <LockIcon sx={{ fontSize: 32, color: "#2562E9" }} />
+          </Box>
+          <Typography
+            variant="h4"
+            sx={{
+              fontWeight: 800,
+              color: "#0F172A",
+              letterSpacing: "-0.5px",
+              mb: 0.5,
+            }}
+          >
+            Welcome Back
+          </Typography>
+          <Typography variant="body1" sx={{ color: "#64748B" }}>
+            Sign in to access your dashboard
           </Typography>
         </Box>
 
@@ -313,152 +320,197 @@ export default function LoginScreen() {
           noValidate
           autoComplete="off"
           onSubmit={handleSubmit(onSubmit)}
-          sx={{ display: "flex", flexDirection: "column", gap: 3.5 }}
+          sx={{ display: "flex", flexDirection: "column", gap: 3 }}
         >
           {/* Username Field */}
-          <FormControl fullWidth error={!!errors.username}>
-            <Controller
-              name="username"
-              control={control}
-              defaultValue=""
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label={
-                    <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                      Username <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  placeholder="Enter your username"
-                  disabled={buttonLoading}
-                  error={!!errors.username}
-                  sx={{
-                    "& .MuiFormLabel-root": {
-                      color: "#235BDE",
-                      fontWeight: 600,
-                      fontSize: "1.05rem",
-                    },
-                    "& .MuiOutlinedInput-root": {
-                      borderRadius: 3,
-                      fontSize: "1.05rem",
-                    },
-                  }}
-                />
-              )}
-            />
-            {errors.username && (
-              <FormHelperText>{errors.username.message}</FormHelperText>
+          <Controller
+            name="username"
+            control={control}
+            defaultValue=""
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Username"
+                placeholder="Enter your username"
+                disabled={buttonLoading}
+                error={!!errors.username}
+                helperText={errors.username?.message}
+                fullWidth
+                required
+              />
             )}
-          </FormControl>
+          />
 
           {/* Password Field */}
-          <FormControl fullWidth error={!!errors.password}>
-            <Controller
-              name="password"
-              control={control}
-              defaultValue=""
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  label={
-                    <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                      Password <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  disabled={buttonLoading}
-                  error={!!errors.password}
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          aria-label="toggle password visibility"
-                          onClick={handleClickShowPassword}
-                          onMouseDown={handleMouseDownPassword}
-                          edge="end"
-                          disabled={buttonLoading}
-                        >
-                          {showPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{
-                    "& .MuiFormLabel-root": {
-                      color: "#235BDE",
-                      fontWeight: 600,
-                      fontSize: "1.05rem",
-                    },
-                    "& .MuiOutlinedInput-root": {
-                      borderRadius: 3,
-                      fontSize: "1.05rem",
-                    },
-                  }}
-                />
-              )}
-            />
-            {errors.password && (
-              <FormHelperText>{errors.password.message}</FormHelperText>
+          <Controller
+            name="password"
+            control={control}
+            defaultValue=""
+            render={({ field }) => (
+              <TextField
+                {...field}
+                label="Password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
+                disabled={buttonLoading}
+                error={!!errors.password}
+                helperText={errors.password?.message}
+                fullWidth
+                required
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={handleClickShowPassword}
+                        onMouseDown={handleMouseDownPassword}
+                        edge="end"
+                        disabled={buttonLoading}
+                        size="small"
+                      >
+                        {showPassword ? (
+                          <VisibilityOff fontSize="small" />
+                        ) : (
+                          <Visibility fontSize="small" />
+                        )}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
             )}
-          </FormControl>
+          />
 
-          {/* CAPTCHA */}
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 2,
-              mt: 3,
-              flexDirection: { xs: "column", sm: "row" },
-            }}
-          >
+          {/* CAPTCHA Section */}
+          <Box>
             <Box
               sx={{
-                background:
-                  "linear-gradient(to bottom right, #F0F7FE 0%, #FDF7F0 100%)",
-                border: "3px solid #2562E9",
-                borderRadius: 4,
-                padding: { xs: "14px 20px", sm: "16px 24px" },
-                boxShadow: "0 6px 16px rgba(0, 0, 0, 0.12)",
-                fontFamily: "monospace",
-                fontSize: { xs: "1.8rem", sm: "2.1rem", md: "2.3rem" },
-                fontWeight: 800,
-                color: "#2562E9",
-                letterSpacing: "4px",
-                minWidth: { xs: "180px", sm: "350px" },
-                textAlign: "center",
-                userSelect: "none",
-                textShadow: "1px 1px 2px rgba(0,0,0,0.1)",
+                display: "flex",
+                alignItems: "center",
+                gap: 1.5,
+                mb: 2,
               }}
             >
-              {captcha}
-            </Box>
-            <IconButton
-              onClick={handleRefreshCaptcha}
-              disabled={buttonLoading}
-              sx={{
-                background:
-                  "linear-gradient(to bottom, #2562E9 0%, #1F43B5 100%)",
-                color: "#FDF6F0",
-                width: { xs: 50, sm: 56 },
-                height: { xs: 50, sm: 56 },
-                borderRadius: 3,
-                boxShadow: "0 4px 12px rgba(37, 98, 233, 0.3)",
-                "&:hover": {
-                  background:
-                    "linear-gradient(to bottom, #1F43B5 0%, #2562E9 100%)",
-                  transform: "scale(1.1)",
-                  boxShadow: "0 6px 16px rgba(37, 98, 233, 0.4)",
-                },
-              }}
-            >
-              <RefreshIcon sx={{ fontSize: "1.6rem" }} />
-            </IconButton>
-          </Box>
+              <Paper
+                variant="outlined"
+                sx={{
+                  flex: 1,
+                  py: 2,
+                  px: 2,
+                  bgcolor: "#E8E4D8", // aged-paper beige
+                  border: "2px solid #A8A29E",
+                  borderRadius: 2,
+                  textAlign: "center",
+                  userSelect: "none",
+                  position: "relative",
+                  overflow: "hidden",
+                  minHeight: 64,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  // Multiple overlapping noise layers using gradients:
+                  // 1. Diagonal hash lines
+                  // 2. Counter-diagonal hash lines
+                  // 3. Thick strike-through line
+                  // 4. Second strike-through line at different angle
+                  backgroundImage: `
+      repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 9px,
+        rgba(120, 80, 60, 0.18) 9px,
+        rgba(120, 80, 60, 0.18) 10px
+      ),
+      repeating-linear-gradient(
+        -30deg,
+        transparent,
+        transparent 14px,
+        rgba(60, 80, 120, 0.14) 14px,
+        rgba(60, 80, 120, 0.14) 15px
+      ),
+      linear-gradient(
+        12deg,
+        transparent 46%,
+        rgba(80, 40, 20, 0.45) 46%,
+        rgba(80, 40, 20, 0.45) 54%,
+        transparent 54%
+      ),
+      linear-gradient(
+        -8deg,
+        transparent 52%,
+        rgba(40, 60, 100, 0.35) 52%,
+        rgba(40, 60, 100, 0.35) 58%,
+        transparent 58%
+      )
+    `,
+                  boxShadow: "inset 0 0 12px rgba(0,0,0,0.08)",
+                }}
+              >
+                {captcha.split("").map((char, i) => {
+                  // Deterministic "randomness" per character (so same captcha = same look)
+                  const seed = (char.charCodeAt(0) + i * 13) % 100;
+                  const rotation = (seed % 40) - 20; // -20° to +20°
+                  const translateY = (seed % 11) - 5; // -5px to +5px
+                  const fontSize = 1.4 + (seed % 10) / 25; // 1.4rem to 1.8rem
+                  const colors = [
+                    "#6B3410", // dark brown
+                    "#2F4F4F", // dark slate
+                    "#556B2F", // dark olive
+                    "#8B0000", // dark red
+                    "#4B0082", // indigo
+                    "#1C3A5E", // navy
+                  ];
+                  const color = colors[(seed + i) % colors.length];
+                  const fonts = [
+                    "Georgia",
+                    "'Courier New'",
+                    "'Times New Roman'",
+                    "Verdana",
+                  ];
+                  const fontFamily = fonts[(seed + i) % fonts.length];
+                  const fontStyle = seed % 3 === 0 ? "italic" : "normal";
+                  const fontWeight = seed % 2 === 0 ? 900 : 700;
+                  const opacity = 0.78 + (seed % 22) / 100;
+                  const letterSpacing = (seed % 6) + 2;
 
-          {/* CAPTCHA Input */}
-          <FormControl fullWidth error={!!errors.captcha}>
+                  return (
+                    <span
+                      key={i}
+                      style={{
+                        display: "inline-block",
+                        transform: `rotate(${rotation}deg) translateY(${translateY}px)`,
+                        fontSize: `${fontSize}rem`,
+                        color,
+                        fontFamily,
+                        fontStyle,
+                        fontWeight,
+                        opacity,
+                        letterSpacing: `${letterSpacing}px`,
+                        textShadow:
+                          "1px 1px 0 rgba(255,255,255,0.7), -1px -1px 0 rgba(0,0,0,0.15)",
+                        marginRight: `${seed % 4}px`,
+                      }}
+                    >
+                      {char}
+                    </span>
+                  );
+                })}
+              </Paper>
+              <IconButton
+                onClick={handleRefreshCaptcha}
+                disabled={buttonLoading}
+                sx={{
+                  bgcolor: "#EFF6FF",
+                  color: "#2562E9",
+                  width: 48,
+                  height: 48,
+                  "&:hover": { bgcolor: "#DBEAFE" },
+                }}
+              >
+                <RefreshIcon />
+              </IconButton>
+            </Box>
+
             <Controller
               name="captcha"
               control={control}
@@ -466,46 +518,28 @@ export default function LoginScreen() {
               render={({ field }) => (
                 <TextField
                   {...field}
-                  label={
-                    <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                      Enter CAPTCHA <span style={{ color: "red" }}>*</span>
-                    </span>
-                  }
+                  label="Enter CAPTCHA"
                   placeholder="Type the code above"
                   disabled={buttonLoading}
                   error={!!errors.captcha}
-                  sx={{
-                    "& .MuiFormLabel-root": {
-                      color: "#235BDE",
-                      fontWeight: 600,
-                      fontSize: "1.05rem",
-                    },
-                    "& .MuiOutlinedInput-root": {
-                      borderRadius: 3,
-                      fontSize: "1.05rem",
-                    },
-                  }}
+                  helperText={errors.captcha?.message}
+                  fullWidth
+                  required
                 />
               )}
             />
-            {errors.captcha && (
-              <FormHelperText>{errors.captcha.message}</FormHelperText>
-            )}
-          </FormControl>
+          </Box>
 
           {/* Forgot Password */}
-          <Box sx={{ textAlign: "right" }}>
+          <Box sx={{ textAlign: "right", mt: -1 }}>
             <Link
               href="/forgot-password"
               sx={{
-                fontSize: "0.95rem",
-                color: "#235BDE",
+                fontSize: "0.875rem",
+                color: "#2562E9",
                 fontWeight: 600,
                 textDecoration: "none",
-                "&:hover": {
-                  textDecoration: "underline",
-                  color: "#1F43B5",
-                },
+                "&:hover": { textDecoration: "underline" },
               }}
             >
               Forgot Password/Username?
@@ -514,131 +548,87 @@ export default function LoginScreen() {
 
           {/* Error Message */}
           {loginError && (
-            <Alert severity="error" sx={{ mt: 1, borderRadius: 2 }}>
+            <Alert severity="error" sx={{ borderRadius: 2 }}>
               {loginError}
             </Alert>
           )}
 
           {/* LOGIN BUTTON */}
-          <Box
-            component="button"
+          <Button
             type="submit"
+            variant="contained"
+            size="large"
             disabled={buttonLoading}
+            fullWidth
             sx={{
-              border: "none",
-              background:
-                "linear-gradient(to bottom, #2562E9 0%, #1F43B5 100%)",
-              padding: { xs: "1rem 1.5rem", sm: "1.2rem 2rem" },
-              width: "100%",
-              color: "#FDF6F0",
-              fontWeight: "bold",
-              fontSize: { xs: "1.1rem", sm: "1.2rem" },
-              borderRadius: 4,
-              cursor: "pointer",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 1,
+              py: 1.5,
+              fontSize: "1rem",
+              fontWeight: 700,
               textTransform: "none",
-              boxShadow: "0 6px 16px rgba(37, 98, 233, 0.3)",
-              transition: "all 0.3s ease",
-              "&:hover": {
-                background:
-                  "linear-gradient(to bottom, #1F43B5 0%, #2562E9 100%)",
-                transform: "translateY(-2px)",
-                boxShadow: "0 8px 20px rgba(37, 98, 233, 0.4)",
-              },
-              "&:disabled": {
-                opacity: 0.7,
-                cursor: "not-allowed",
-              },
+              bgcolor: "#2562E9",
+              "&:hover": { bgcolor: "#1D4ED8" },
+              boxShadow: "0 4px 12px rgba(37, 99, 233, 0.2)",
             }}
           >
             {buttonLoading ? (
-              <>
-                <CircularProgress size={22} color="inherit" />
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <CircularProgress size={20} color="inherit" />
                 Logging In...
-              </>
+              </Box>
             ) : (
               "Log In"
             )}
-          </Box>
+          </Button>
 
           {/* Sign Up Link */}
-          <Box sx={{ textAlign: "center", mt: 2 }}>
-            <Typography variant="body2" color="text.secondary">
+          <Box sx={{ textAlign: "center", mt: 1 }}>
+            <Typography variant="body2" sx={{ color: "#64748B" }}>
               Don't have an account?{" "}
               <Link
                 href="/register"
                 sx={{
-                  color: "#F67015",
+                  color: "#2562E9",
                   fontWeight: 600,
                   textDecoration: "none",
-                  "&:hover": {
-                    textDecoration: "underline",
-                    color: "#E4630A",
-                  },
+                  "&:hover": { textDecoration: "underline" },
                 }}
                 onClick={(e) => {
                   e.preventDefault();
                   navigate("/register");
                 }}
               >
-                Sign Up
+                Register here
               </Link>
             </Typography>
           </Box>
         </Box>
-      </Box>
+      </Paper>
 
       {/* OTP Modal */}
-      <Dialog open={otpModalOpen} onClose={() => setOtpModalOpen(false)}>
-        <DialogTitle
-          sx={{
-            background: "linear-gradient(to bottom right, #2561E8, #1F43B4)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            fontWeight: 700,
-            fontSize: "1.4rem",
-          }}
-        >
+      <Dialog
+        open={otpModalOpen}
+        onClose={() => setOtpModalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, color: "#0F172A", pb: 1 }}>
           Verify Your Email
         </DialogTitle>
-        <DialogContent
-          sx={{
-            background:
-              "linear-gradient(to bottom right, #F0F7FE 0%, #FDF7F0 100%)",
-            p: 3,
-          }}
-        >
-          <Typography variant="body1" mb={2} color="#1e1e1eff" fontWeight={500}>
-            Enter the 6-digit OTP sent to <strong>{email}</strong>
+        <DialogContent sx={{ px: 3, pb: 2 }}>
+          <Typography variant="body2" sx={{ color: "#475569", mb: 3 }}>
+            Enter the 6-digit OTP sent to{" "}
+            <strong style={{ color: "#0F172A" }}>{email}</strong>
           </Typography>
           <TextField
             fullWidth
-            label={
-              <span style={{ color: "#235BDE", fontWeight: 600 }}>
-                OTP <span style={{ color: "red" }}>*</span>
-              </span>
-            }
+            label="OTP"
             variant="outlined"
             value={otp}
             onChange={(e) => setOtp(e.target.value)}
             inputProps={{ maxLength: 6 }}
             disabled={buttonLoading}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: 3,
-                backgroundColor: "#FFFFFF",
-                boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
-                fontSize: "1.1rem",
-              },
-              "& .MuiFormLabel-root": {
-                color: "#235BDE",
-                fontWeight: 600,
-                fontSize: "1.05rem",
-              },
-            }}
+            autoFocus
           />
           <Box mt={2}>
             <Link
@@ -647,7 +637,7 @@ export default function LoginScreen() {
               onClick={handleResendOtp}
               disabled={buttonLoading}
               sx={{
-                color: "#0FB282",
+                color: "#2562E9",
                 fontWeight: 600,
                 textDecoration: "none",
                 "&:hover": { textDecoration: "underline" },
@@ -657,36 +647,23 @@ export default function LoginScreen() {
             </Link>
           </Box>
         </DialogContent>
-        <DialogActions
-          sx={{
-            backgroundColor: "#FFFFFF",
-            p: 2,
-            boxShadow: "0 -4px 12px rgba(0,0,0,0.05)",
-          }}
-        >
+        <DialogActions sx={{ px: 3, pb: 3, pt: 0 }}>
           <Button
             onClick={() => setOtpModalOpen(false)}
             disabled={buttonLoading}
-            sx={{ fontWeight: 600 }}
+            sx={{ textTransform: "none", color: "#64748B" }}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleOtpVerify}
-            disabled={buttonLoading}
+            disabled={buttonLoading || otp.length !== 6}
             sx={{
-              background:
-                "linear-gradient(to bottom, #2562E9 0%, #1F43B5 100%)",
-              color: "#FDF6F0",
-              borderRadius: 3,
-              fontWeight: 600,
-              px: 3,
               textTransform: "none",
-              "&:hover": {
-                background:
-                  "linear-gradient(to bottom, #1F43B5 0%, #2562E9 100%)",
-              },
+              fontWeight: 600,
+              bgcolor: "#2562E9",
+              "&:hover": { bgcolor: "#1D4ED8" },
             }}
           >
             Verify
@@ -694,7 +671,7 @@ export default function LoginScreen() {
         </DialogActions>
       </Dialog>
 
-      <ToastContainer />
+      <ToastContainer position="top-right" autoClose={3000} theme="colored" />
     </Box>
   );
 }

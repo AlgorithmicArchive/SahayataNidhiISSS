@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useForm, Controller } from "react-hook-form";
 import axiosInstance from "../../axiosConfig";
@@ -658,18 +659,10 @@ export default function UpdateExpiringDocument() {
       }}
     >
       <StyledContainer>
-        <Typography
-          variant="h4"
-          sx={{
-            textAlign: "center",
-            fontWeight: "700",
-            color: "#1976d2",
-            mb: 4,
-            textShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          Update Expiring Document
-        </Typography>
+        <GovPageHeader
+          title="Update Expiring Document"
+          hindiTitle="समाप्त हो रहे दस्तावेज़ को अपडेट करें"
+        />
 
         <Typography
           variant="h4"

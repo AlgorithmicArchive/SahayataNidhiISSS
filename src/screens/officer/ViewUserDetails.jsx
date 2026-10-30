@@ -1,5 +1,6 @@
 import { Box } from "@mui/system";
 import React, { useEffect, useState, useMemo } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import { useLocation, useNavigate } from "react-router-dom";
 import { fetchUserDetail } from "../../assets/fetch";
 import { Col, Row } from "react-bootstrap";
@@ -479,7 +480,14 @@ export default function ViewUserDetails() {
         gap: 3,
       }}
     >
-      <Typography variant="h3">USER DETAILS</Typography>
+      <GovPageHeader
+        title="User Details"
+        hindiTitle="उपयोगकर्ता विवरण"
+        crumbs={[
+          { label: "Officer", path: "/officer/home" },
+          { label: "User Details", path: "" },
+        ]}
+      />
       <CollapsibleFormDetails
         formDetails={formDetails}
         formatKey={formatKey}

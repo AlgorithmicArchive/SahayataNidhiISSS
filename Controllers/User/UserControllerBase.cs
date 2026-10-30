@@ -8,6 +8,7 @@ using SendEmails;
 using SahayataNidhi.Models.Entities;
 using System.Security.Claims;
 using Newtonsoft.Json.Linq;
+using SahayataNidhi.Services;
 
 namespace SahayataNidhi.Controllers.User
 {
@@ -22,20 +23,26 @@ namespace SahayataNidhi.Controllers.User
     IWebHostEnvironment webHostEnvironment,
     IBackgroundTaskQueue taskQueue,
     IHttpClientFactory httpClientFactory,
-    IServiceScopeFactory serviceScopeFactory
+    IServiceScopeFactory serviceScopeFactory,
+    IReferenceDataService referenceData,
+    ApplicationCounterService applicationCounterService,
+    INotificationDispatcher notifier
 ) : Controller
     {
         protected readonly SwdjkContext dbcontext = dbcontext;
         private readonly IAuditLogService _auditService = auditService;
         protected readonly ILogger<UserController> _logger = logger;
         protected readonly UserHelperFunctions helper = helper;
+        protected readonly ApplicationCounterService _applicationCounter = applicationCounterService;
         protected readonly EmailSender emailSender = emailSender;
         protected readonly PdfService _pdfService = pdfService;
         private readonly IWebHostEnvironment _webHostEnvironment = webHostEnvironment;
 
+        protected readonly INotificationDispatcher _notifier = notifier;
         private readonly IBackgroundTaskQueue _taskQueue = taskQueue;
         private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
         private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+        protected readonly IReferenceDataService _referenceData = referenceData;
 
         public override void OnActionExecuted(ActionExecutedContext context)
         {

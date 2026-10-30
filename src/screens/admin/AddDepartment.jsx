@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useContext, useMemo } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Box,
   Container,
@@ -227,9 +228,10 @@ export default function AddDepartment() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 8 }}>
-      <Typography variant="h4" fontWeight="bold" align="center" gutterBottom>
-        Add New Department
-      </Typography>
+      <GovPageHeader
+          title="Add New Department"
+          hindiTitle="नया विभाग जोड़ें"
+        />
       {errorMessage && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {errorMessage}

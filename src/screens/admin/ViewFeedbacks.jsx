@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useContext } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Container,
   Typography,
@@ -201,9 +202,10 @@ export default function ViewFeedbacks() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 8 }}>
-      <Typography variant="h4" fontWeight="bold" align="center" gutterBottom>
-        Feedback List
-      </Typography>
+      <GovPageHeader
+          title="Feedback List"
+          hindiTitle="प्रतिक्रिया सूची"
+        />
       {errorMessage && (
         <Alert severity="error" sx={{ mb: 4 }}>
           {errorMessage}

@@ -1,126 +1,75 @@
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import {
   Box,
-  Card,
-  CardContent,
   Typography,
   CircularProgress,
-  Fade,
   Container,
   Button,
+  Grid,
+  Paper,
+  Avatar,
 } from "@mui/material";
-import { Row, Col } from "react-bootstrap";
-import React, {
-  useEffect,
-  useState,
-  useRef,
-  forwardRef,
-  useContext,
-} from "react";
+import { alpha } from "@mui/material/styles";
+import React, { useEffect, useState, useRef, useContext } from "react";
 import PeopleIcon from "@mui/icons-material/People";
 import PersonAddIcon from "@mui/icons-material/PersonAdd";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import MiscellaneousServicesIcon from "@mui/icons-material/MiscellaneousServices";
-import VerifiedUserIcon from "@mui/icons-material/VerifiedUser"; // NEW: Icon for DSC Validations
+import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
+import DashboardIcon from "@mui/icons-material/Dashboard";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axiosInstance from "../../axiosConfig";
 import ServerSideTable from "../../components/ServerSideTable";
-import Chart from "chart.js/auto";
-import styled from "@emotion/styled";
 import { ArrowRightAlt } from "@mui/icons-material";
 import { UserContext } from "../../UserContext";
 
-// Styled components
-const StatCard = styled(Card)(({ theme }) => ({
-  borderRadius: "16px",
-  boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
-  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-  border: "1px solid rgba(0,0,0,0.08)",
-  cursor: "pointer",
-  overflow: "hidden",
-  "&:hover": {
-    transform: "translateY(-8px) scale(1.02)",
-    boxShadow: "0 16px 40px rgba(0,0,0,0.15)",
-    borderColor: "rgba(0,0,0,0.12)",
-  },
-  "&:active": {
-    transform: "translateY(-4px) scale(1.01)",
-  },
-  [theme.breakpoints.down("sm")]: {
-    "&:hover": {
-      transform: "translateY(-4px) scale(1.01)",
-    },
-  },
-}));
+// Recharts imports (replaces chart.js for consistency)
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
-const StyledCard = styled(Card)(({ theme }) => ({
-  background: "linear-gradient(135deg, #ffffff, #f8f9fa)",
-  border: "1px solid #e0e0e0",
-  borderRadius: "16px",
-  boxShadow: "0 6px 24px rgba(0,0,0,0.08)",
-  transition: "transform 0.3s ease, box-shadow 0.3s ease",
-  marginBottom: "24px",
-  "&:hover": {
-    transform: "translateY(-3px) scale(1.005)",
-    boxShadow: "0 12px 36px rgba(0,0,0,0.12)",
-  },
-}));
-
-const SectionContainer = styled(Box)(({ theme }) => ({
-  maxWidth: "1400px",
-  margin: "0 auto",
-  padding: theme.spacing(0, 2),
-  [theme.breakpoints.up("md")]: {
-    padding: theme.spacing(0, 4),
-  },
-}));
-
-const CardGrid = styled(Box)(({ theme }) => ({
-  display: "grid",
-  gap: theme.spacing(3),
-  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 320px))",
-  justifyContent: "center",
-  marginBottom: theme.spacing(4),
-  [theme.breakpoints.down("sm")]: {
-    gridTemplateColumns: "1fr",
-    gap: theme.spacing(2),
-  },
-}));
-
-// Define card data with colors and types (NEW: Added Pending DSC Validations)
+// Define card data with modern enterprise colors
 const cardData = [
   {
-    title: "Total Registered Officers",
+    title: "Registered Officers",
     icon: <PeopleIcon />,
-    color: "#1976d2",
+    color: "#2562E9", // Royal Blue
     dataKey: "totalOfficers",
     type: "Officer",
   },
   {
-    title: "Total Registered Citizens",
+    title: "Registered Citizens",
     icon: <PersonAddIcon />,
-    color: "#dc004e",
+    color: "#DB2777", // Pink
     dataKey: "totalRegisteredUsers",
     type: "Citizen",
   },
   {
-    title: "Total Applications Received",
+    title: "Applications Received",
     icon: <AssignmentIcon />,
-    color: "#f57c00",
+    color: "#F59E0B", // Amber
     dataKey: "totalApplicationsSubmitted",
     type: "Applications",
   },
   {
-    title: "Total Services",
+    title: "Active Services",
     icon: <MiscellaneousServicesIcon />,
-    color: "#388e3c",
+    color: "#10B981", // Emerald
     dataKey: "totalServices",
     type: "Services",
   },
   {
-    title: "Pending DSC Validations",
+    title: "DSC Validations",
     icon: <VerifiedUserIcon />,
-    color: "#9c27b0", // Purple for pending actions
+    color: "#8B5CF6", // Violet
     dataKey: "pendingDscCount",
     type: "DSC",
   },
@@ -141,10 +90,34 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <Box sx={{ p: 4, textAlign: "center" }}>
-          <Typography variant="h6" color="error">
-            Something went wrong. Please try refreshing the page.
+        <Box
+          sx={{
+            p: 8,
+            textAlign: "center",
+            bgcolor: "#F8FAFC",
+            minHeight: "50vh",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Typography
+            variant="h5"
+            sx={{ color: "#DC2626", fontWeight: 700, mb: 2 }}
+          >
+            Something went wrong.
           </Typography>
+          <Typography variant="body1" sx={{ color: "#64748B", mb: 3 }}>
+            Please try refreshing the page.
+          </Typography>
+          <Button
+            variant="contained"
+            onClick={() => window.location.reload()}
+            sx={{ bgcolor: "#2562E9" }}
+          >
+            Refresh Page
+          </Button>
         </Box>
       );
     }
@@ -152,64 +125,62 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// DashboardChart component with forwardRef
-const DashboardChart = forwardRef(({ data }, ref) => {
-  const canvasRef = useRef(null);
+// Modern Recharts Bar Chart
+const DashboardChart = ({ data }) => {
+  const chartData = [
+    { name: "Officers", value: data.totalOfficers || 0, color: "#2562E9" },
+    {
+      name: "Citizens",
+      value: data.totalRegisteredUsers || 0,
+      color: "#DB2777",
+    },
+    {
+      name: "Applications",
+      value: data.totalApplicationsSubmitted || 0,
+      color: "#F59E0B",
+    },
+    { name: "Services", value: data.totalServices || 0, color: "#10B981" },
+  ];
 
-  useEffect(() => {
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext("2d");
-      const chart = new Chart(ctx, {
-        type: "bar",
-        data: {
-          labels: ["Officers", "Citizens", "Applications", "Services"],
-          datasets: [
-            {
-              label: "Total",
-              data: [
-                data.totalOfficers,
-                data.totalRegisteredUsers,
-                data.totalApplicationsSubmitted,
-                data.totalServices,
-              ],
-              backgroundColor: ["#1976d2", "#dc004e", "#f57c00", "#388e3c"],
-              borderColor: ["#1976d2", "#dc004e", "#f57c00", "#388e3c"],
-              borderWidth: 1,
-            },
-          ],
-        },
-        options: {
-          scales: {
-            y: {
-              beginAtZero: true,
-            },
-          },
-          plugins: {
-            legend: {
-              position: "top",
-              labels: {
-                font: {
-                  family: "'Inter', sans-serif",
-                  size: 14,
-                },
-                color: "#333333",
-              },
-            },
-          },
-        },
-      });
-
-      return () => {
-        chart.destroy();
-      };
-    }
-  }, [data]);
-
-  return <canvas ref={ref} style={{ maxWidth: "100%", height: "400px" }} />;
-});
-
-// Ensure DashboardChart has a display name for debugging
-DashboardChart.displayName = "DashboardChart";
+  return (
+    <ResponsiveContainer width="100%" height={350}>
+      <BarChart
+        data={chartData}
+        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+      >
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="#E2E8F0"
+          vertical={false}
+        />
+        <XAxis
+          dataKey="name"
+          tick={{ fill: "#64748B", fontSize: 12, fontWeight: 600 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis
+          tick={{ fill: "#64748B", fontSize: 12 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <Tooltip
+          cursor={{ fill: "#F8FAFC" }}
+          contentStyle={{
+            borderRadius: 8,
+            border: "1px solid #E2E8F0",
+            boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
+          }}
+        />
+        <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={60}>
+          {chartData.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+};
 
 export default function AdminHome() {
   const [dashboardData, setDashboardData] = useState({
@@ -217,7 +188,7 @@ export default function AdminHome() {
     totalRegisteredUsers: 0,
     totalApplicationsSubmitted: 0,
     totalServices: 0,
-    pendingDscCount: 0, // NEW: Added for DSC count
+    pendingDscCount: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -228,11 +199,9 @@ export default function AdminHome() {
 
   const { department } = useContext(UserContext);
 
-  // NEW: Added ApproveDSC and RejectDSC to action functions
   const actionFunctions = {
     ValidateOfficer: async (row) => {
       const userdata = row.original;
-      console.log("Validating officer:", userdata.username);
       const formdata = new FormData();
       formdata.append("username", userdata.username);
       try {
@@ -240,25 +209,20 @@ export default function AdminHome() {
           "/Admin/ValidateOfficer",
           formdata,
         );
-
         if (response.data.status) {
           toast.success("Officer validated successfully!", {
             position: "top-right",
-            autoClose: 2000,
             theme: "colored",
           });
         } else {
           toast.error("Validation failed.", {
             position: "top-right",
-            autoClose: 3000,
             theme: "colored",
           });
         }
       } catch (error) {
-        console.error("Error validating officer:", error);
         toast.error("An error occurred while validating officer.", {
           position: "top-right",
-          autoClose: 3000,
           theme: "colored",
         });
       }
@@ -268,28 +232,22 @@ export default function AdminHome() {
       const formData = new FormData();
       formData.append("certificateId", data.certificateId);
       formData.append("action", "APPROVED");
-
       try {
         const response = await axiosInstance.post("/Admin/ReviewDSC", formData);
         if (response.data.status) {
           toast.success(response.data.message || "DSC approved successfully!", {
             position: "top-right",
-            autoClose: 2000,
             theme: "colored",
           });
-          // Note: If your ServerSideTable has a refresh method/prop, trigger it here to update the table instantly
         } else {
           toast.error(response.data.message || "Approval failed.", {
             position: "top-right",
-            autoClose: 3000,
             theme: "colored",
           });
         }
       } catch (error) {
-        console.error("Error approving DSC:", error);
         toast.error("An error occurred while approving DSC.", {
           position: "top-right",
-          autoClose: 3000,
           theme: "colored",
         });
       }
@@ -299,27 +257,22 @@ export default function AdminHome() {
       const formData = new FormData();
       formData.append("certificateId", data.certificateId);
       formData.append("action", "REJECTED");
-
       try {
         const response = await axiosInstance.post("/Admin/ReviewDSC", formData);
         if (response.data.status) {
           toast.success(response.data.message || "DSC rejected successfully!", {
             position: "top-right",
-            autoClose: 2000,
             theme: "colored",
           });
         } else {
           toast.error(response.data.message || "Rejection failed.", {
             position: "top-right",
-            autoClose: 3000,
             theme: "colored",
           });
         }
       } catch (error) {
-        console.error("Error rejecting DSC:", error);
         toast.error("An error occurred while rejecting DSC.", {
           position: "top-right",
-          autoClose: 3000,
           theme: "colored",
         });
       }
@@ -340,31 +293,22 @@ export default function AdminHome() {
         setError("Failed to load dashboard data");
         toast.error("Failed to load dashboard data", {
           position: "top-right",
-          autoClose: 3000,
           theme: "colored",
         });
       } finally {
         setLoading(false);
       }
     };
-
     fetchDashboardData();
   }, []);
 
   const handleCardClick = (type) => {
-    if (type === "Officer") {
-      setUrl("/Admin/GetOfficersList");
-    } else if (type === "Citizen") {
-      setUrl("/Admin/GetUsersList");
-    } else if (type === "Applications") {
-      setUrl("/Admin/GetApplicationsList");
-    } else if (type === "Services") {
-      setUrl("/Admin/GetServices");
-    } else if (type === "DSC") {
-      setUrl("/Admin/GetPendingDSCList"); // NEW: Route for DSC table
-    }
+    if (type === "Officer") setUrl("/Admin/GetOfficersList");
+    else if (type === "Citizen") setUrl("/Admin/GetUsersList");
+    else if (type === "Applications") setUrl("/Admin/GetApplicationsList");
+    else if (type === "Services") setUrl("/Admin/GetServices");
+    else if (type === "DSC") setUrl("/Admin/GetPendingDSCList");
 
-    // NEW: Display a cleaner title for the DSC table
     setListType(type === "DSC" ? "Pending DSC Validations" : type);
     setShowTable(true);
 
@@ -372,135 +316,94 @@ export default function AdminHome() {
       if (tableRef.current) {
         tableRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
       } else {
-        console.warn(
-          "tableRef.current is null, table may not be rendered yet.",
-        );
         setTimeout(() => {
-          if (tableRef.current) {
+          if (tableRef.current)
             tableRef.current.scrollIntoView({
               behavior: "smooth",
               block: "start",
             });
-          } else {
-            console.error("tableRef.current is still null after retry.");
-          }
         }, 500);
       }
     });
   };
 
   const renderStatCard = (card, index) => (
-    <StatCard
-      key={index}
-      sx={{
-        backgroundColor: card.color,
-        padding: "24px",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        height: "200px",
-        minHeight: "200px",
-        position: "relative",
-        overflow: "visible",
-        "&::before": {
-          content: '""',
-          position: "absolute",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: `linear-gradient(135deg, ${card.color}, ${card.color
-            .replace(")", ", 0.8)")
-            .replace("rgb", "rgba")})`,
-          borderRadius: "inherit",
-        },
-        "& > *": {
-          position: "relative",
-          zIndex: 1,
-        },
-      }}
-      onClick={() => handleCardClick(card.type)}
-    >
-      <Box
+    <Grid item xs={12} sm={6} md={4} lg={2.4} key={index}>
+      <Paper
+        elevation={0}
+        onClick={() => handleCardClick(card.type)}
         sx={{
+          p: 3,
+          borderRadius: 2,
+          border: "1px solid #E2E8F0",
+          borderLeft: `4px solid ${card.color}`,
+          cursor: "pointer",
+          transition: "all 0.2s ease",
+          height: "100%",
           display: "flex",
+          flexDirection: "column",
           justifyContent: "space-between",
-          alignItems: "flex-start",
-          mb: 2,
+          "&:hover": {
+            borderColor: card.color,
+            boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
+            transform: "translateY(-2px)",
+          },
         }}
       >
-        <Typography
-          variant="subtitle1"
-          sx={{
-            fontWeight: "700",
-            color: "#FFFFFF",
-            fontSize: "0.95rem",
-            lineHeight: 1.3,
-            flex: 1,
-            pr: 1,
-            fontFamily: "'Inter', sans-serif",
-          }}
-        >
-          {card.title}
-        </Typography>
         <Box
           sx={{
-            width: 48,
-            height: 48,
-            borderRadius: "50%",
-            backgroundColor: "rgba(255, 255, 255, 0.2)",
             display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            backdropFilter: "blur(10px)",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            mb: 2,
           }}
         >
-          {React.cloneElement(card.icon, {
-            sx: { fontSize: 24, color: "#FFFFFF" },
-          })}
+          <Typography
+            variant="body2"
+            sx={{
+              color: "#64748B",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              fontSize: "0.75rem",
+            }}
+          >
+            {card.title}
+          </Typography>
+          <Avatar
+            sx={{
+              bgcolor: `${card.color}15`,
+              color: card.color,
+              width: 40,
+              height: 40,
+            }}
+          >
+            {React.cloneElement(card.icon, { sx: { fontSize: 22 } })}
+          </Avatar>
         </Box>
-      </Box>
 
-      <Typography
-        variant="h2"
-        sx={{
-          fontWeight: "800",
-          color: "#FFFFFF",
-          textAlign: "center",
-          fontSize: "3.5rem",
-          lineHeight: 1,
-          fontFamily: "'Inter', sans-serif",
-          textShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        }}
-      >
-        {dashboardData[card.dataKey]}
-      </Typography>
-
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          mt: "auto",
-        }}
-      >
-        <Typography
-          variant="body2"
-          sx={{
-            color: "#FFFFFF",
-            fontSize: "0.8rem",
-            display: "inline-flex",
-            alignItems: "center",
-            fontWeight: "600",
-            fontFamily: "'Inter', sans-serif",
-            transition: "all 0.2s ease",
-            "&:hover": { transform: "translateX(4px)" },
-          }}
-        >
-          View All <ArrowRightAlt sx={{ fontSize: 18, ml: 0.5 }} />
-        </Typography>
-      </Box>
-    </StatCard>
+        <Box>
+          <Typography
+            variant="h4"
+            sx={{ fontWeight: 800, color: "#0F172A", lineHeight: 1, mb: 2 }}
+          >
+            {(dashboardData[card.dataKey] || 0).toLocaleString("en-IN")}
+          </Typography>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              color: card.color,
+              fontWeight: 600,
+              fontSize: "0.875rem",
+            }}
+          >
+            View Details <ArrowRightAlt sx={{ fontSize: 16 }} />
+          </Box>
+        </Box>
+      </Paper>
+    </Grid>
   );
 
   if (loading) {
@@ -512,10 +415,10 @@ export default function AdminHome() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          bgcolor: "#f9fafb",
+          bgcolor: "#F8FAFC",
         }}
       >
-        <CircularProgress size={60} sx={{ color: "#1976d2" }} />
+        <CircularProgress size={60} sx={{ color: "#2562E9" }} />
       </Box>
     );
   }
@@ -530,27 +433,17 @@ export default function AdminHome() {
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
-          bgcolor: "#f9fafb",
+          bgcolor: "#F8FAFC",
+          gap: 2,
         }}
       >
-        <Typography color="error" variant="h6" sx={{ mb: 2 }}>
+        <Typography color="error" variant="h6" sx={{ fontWeight: 600 }}>
           {error}
         </Typography>
         <Button
           variant="contained"
-          sx={{
-            background: "linear-gradient(45deg, #1976d2, #2196f3)",
-            padding: "12px 24px",
-            fontWeight: 600,
-            borderRadius: "8px",
-            textTransform: "none",
-            color: "#ffffff",
-            "&:hover": {
-              background: "linear-gradient(45deg, #1565c0, #1976d2)",
-              transform: "scale(1.05)",
-            },
-          }}
           onClick={() => window.location.reload()}
+          sx={{ bgcolor: "#2562E9", textTransform: "none", fontWeight: 600 }}
         >
           Retry
         </Button>
@@ -560,107 +453,78 @@ export default function AdminHome() {
 
   return (
     <ErrorBoundary>
-      <Box
-        sx={{
-          width: "100%",
-          minHeight: "100vh",
-          backgroundColor: "#f9fafb",
-          pb: 6,
-        }}
-      >
-        {/* Header */}
+      <Box sx={{ bgcolor: "#F8FAFC", minHeight: "100vh", pb: 8 }}>
+        {/* Authoritative Header */}
         <Box
           sx={{
-            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-            py: 6,
+            bgcolor: "#0F172A",
+            color: "white",
+            py: { xs: 4, md: 6 },
             mb: 6,
+            borderBottom: "4px solid #2562E9",
           }}
         >
-          <Container>
+          <Container maxWidth="xl">
+            <GovPageHeader title={`${department || "Admin"} Dashboard`} />
             <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 700,
-                color: "#FFFFFF",
-                textAlign: "center",
-                fontFamily: "'Inter', sans-serif",
-                textShadow: "0 2px 4px rgba(0,0,0,0.1)",
-              }}
+              variant="body1"
+              sx={{ color: "#94A3B8", mt: 1, fontWeight: 500 }}
             >
-              {department}
-            </Typography>
-            <Typography
-              variant="h3"
-              sx={{
-                fontWeight: 700,
-                color: "#FFFFFF",
-                textAlign: "center",
-                fontFamily: "'Inter', sans-serif",
-                textShadow: "0 2px 4px rgba(0,0,0,0.1)",
-              }}
-            >
-              Admin Dashboard
+              System-wide analytics and management overview
             </Typography>
           </Container>
         </Box>
 
-        <SectionContainer>
-          {/* Cards Section */}
-          <Typography
-            variant="h4"
+        <Container maxWidth="xl">
+          {/* Overview Title */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}>
+            <DashboardIcon sx={{ color: "#2562E9" }} />
+            <Typography variant="h5" sx={{ fontWeight: 700, color: "#0F172A" }}>
+              Dashboard Overview
+            </Typography>
+          </Box>
+
+          {/* Stat Cards */}
+          <Grid container spacing={3} sx={{ mb: 6 }}>
+            {cardData.map((card, index) => renderStatCard(card, index))}
+          </Grid>
+
+          {/* Chart Section */}
+          <Paper
+            elevation={0}
             sx={{
-              mb: 4,
-              fontWeight: 600,
-              color: "#2d3748",
-              textAlign: "center",
-              fontFamily: "'Inter', sans-serif",
+              p: 4,
+              mb: 6,
+              borderRadius: 3,
+              border: "1px solid #E2E8F0",
+              bgcolor: "white",
             }}
           >
-            Dashboard Overview
-          </Typography>
-
-          <CardGrid>
-            {cardData.map((card, index) => renderStatCard(card, index))}
-          </CardGrid>
+            <Typography
+              variant="h6"
+              sx={{ fontWeight: 700, color: "#0F172A", mb: 3 }}
+            >
+              System Metrics
+            </Typography>
+            <DashboardChart data={dashboardData} />
+          </Paper>
 
           {/* Table Section */}
           {showTable && (
-            <Box ref={tableRef} sx={{ mt: 6 }}>
-              <StyledCard>
-                <CardContent sx={{ p: 4 }}>
-                  <Typography
-                    variant="h5"
-                    sx={{
-                      mb: 4,
-                      fontWeight: 600,
-                      color: "#2d3748",
-                      fontFamily: "'Inter', sans-serif",
-                    }}
-                  >
-                    List of {listType}
-                  </Typography>
-                  <ServerSideTable
-                    key={listType} // Forces re-fetch when listType changes
-                    url={url}
-                    extraParams={{}}
-                    actionFunctions={actionFunctions}
-                    Title={listType}
-                    sx={{
-                      "& .MuiTable-root": { background: "#ffffff" },
-                      "& .MuiTableCell-root": {
-                        color: "#2d3748",
-                        borderColor: "#e0e0e0",
-                      },
-                      "& .MuiButton-root": { color: "#1976d2" },
-                    }}
-                  />
-                </CardContent>
-              </StyledCard>
+            <Box ref={tableRef}>
+              <ServerSideTable
+                key={listType}
+                url={url}
+                extraParams={{}}
+                actionFunctions={actionFunctions}
+                Title={listType}
+                showDownloadButtons={true}
+              />
             </Box>
           )}
-        </SectionContainer>
+        </Container>
 
-        <ToastContainer />
+        <ToastContainer position="top-right" autoClose={3000} theme="colored" />
       </Box>
     </ErrorBoundary>
   );

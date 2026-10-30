@@ -6,167 +6,29 @@ import {
   Button,
   CircularProgress,
   Divider,
-  Grid2,
   Tooltip,
   IconButton,
-  Input,
+  Paper,
 } from "@mui/material";
-import { Edit, Upload, Visibility, VisibilityOff } from "@mui/icons-material";
+import {
+  Edit,
+  Visibility,
+  VisibilityOff,
+  Email,
+  Phone,
+  Person,
+  Description,
+  WarningAmber,
+} from "@mui/icons-material";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import axiosInstance from "../../axiosConfig";
 import { useNavigate } from "react-router-dom";
-import styled from "@emotion/styled";
-
-const MainContainer = styled(Box)`
-  min-height: 100vh;
-  background: linear-gradient(to bottom right, #f4f9ff 0%, #f9f3ec 100%);
-  display: flex;
-  justify-content: center;
-  padding: 3rem 1rem; /* Reduced padding for smaller screens */
-  box-sizing: border-box;
-
-  @media (max-width: 600px) {
-    padding: 1.5rem 0.5rem;
-  }
-`;
-
-const ProfileCard = styled(Box)`
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 2rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-  max-width: 500px;
-  width: 90%; /* Use percentage for responsiveness */
-  height: max-content;
-  transition:
-    transform 0.3s ease,
-    box-shadow 0.3s ease;
-  &:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-  }
-
-  @media (max-width: 600px) {
-    padding: 1.5rem;
-    border-radius: 12px;
-  }
-`;
-
-const StyledAvatar = styled(Avatar)`
-  width: 100px; /* Slightly smaller for mobile */
-  height: 100px;
-  border: 3px solid #235bde;
-  box-shadow: 0 4px 12px rgba(35, 91, 222, 0.3);
-  transition: transform 0.3s ease;
-  margin: 0 auto;
-  &:hover {
-    transform: scale(1.1);
-  }
-
-  @media (max-width: 600px) {
-    width: 80px;
-    height: 80px;
-  }
-`;
-
-const UploadButton = styled(IconButton)`
-  background: linear-gradient(to bottom, #2562e9 0%, #1f43b5 100%);
-  color: #ffffff;
-  position: absolute;
-  bottom: -8px;
-  right: -8px;
-  border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  &:hover {
-    background: linear-gradient(to bottom, #1f43b5 0%, #1565c0 100%);
-    transform: scale(1.1);
-  }
-
-  @media (max-width: 600px) {
-    bottom: -4px;
-    right: -4px;
-    padding: 6px; /* Smaller touch target */
-  }
-`;
-
-const StatContainer = styled(Box)`
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  margin: 1.5rem 0;
-
-  @media (max-width: 600px) {
-    flex-direction: column; /* Stack vertically on small screens */
-    gap: 0.75rem;
-  }
-`;
-
-const StatBox = styled(Box)`
-  flex: 1;
-  background: #f4f9ff;
-  border-radius: 10px;
-  padding: 1rem;
-  text-align: center;
-  border: 1px solid #e0e7ff;
-  transition:
-    transform 0.3s ease,
-    box-shadow 0.3s ease;
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  @media (max-width: 600px) {
-    padding: 0.75rem;
-  }
-`;
-
-const InfoItem = styled(Box)`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid #e0e7ff;
-  &:last-of-type {
-    border-bottom: none;
-  }
-
-  @media (max-width: 600px) {
-    flex-direction: column; /* Stack label and value */
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-`;
-
-const ActionButton = styled(Button)`
-  background: linear-gradient(to bottom, #2562e9 0%, #1f43b5 100%);
-  color: #fdf6f0;
-  font-weight: 600;
-  text-transform: none;
-  border-radius: 10px;
-  padding: 0.75rem 2rem;
-  margin-top: 1.5rem;
-  width: 100%;
-  transition: all 0.3s ease;
-  &:hover {
-    background: linear-gradient(to bottom, #1f43b5 0%, #1565c0 100%);
-    box-shadow: 0 4px 12px rgba(35, 91, 222, 0.3);
-  }
-
-  @media (max-width: 600px) {
-    padding: 0.5rem 1.5rem;
-    font-size: 0.875rem; /* Smaller font for mobile */
-  }
-`;
 
 export default function UserHome() {
   const [userDetails, setUserDetails] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState({
-    file: "",
-    url: "/assets/images/profile.jpg",
-  });
+  const [profileUrl, setProfileUrl] = useState("/assets/images/profile.jpg");
   const [showEmail, setShowEmail] = useState(false);
   const [showMobileNumber, setShowMobileNumber] = useState(false);
 
@@ -176,12 +38,11 @@ export default function UserHome() {
     try {
       const response = await axiosInstance.get("/User/GetUserDetails");
       setUserDetails(response.data);
-      setProfile({
-        file: "",
-        url: response.data.profile
+      setProfileUrl(
+        response.data.profile
           ? `/Base/DisplayFile?fileName=${response.data.profile}`
           : "/assets/images/profile.jpg",
-      });
+      );
     } catch (error) {
       toast.error("Failed to load user details. Please try again.", {
         position: "top-center",
@@ -199,47 +60,34 @@ export default function UserHome() {
 
   const maskEmail = (email) => {
     if (!email) return "N/A";
-
     const [localPart, domain] = email.split("@");
-
     let maskedLocal;
     if (localPart.length > 5) {
-      const middleLength = localPart.length - 4; // first 2 + last 2 visible
+      const middleLength = localPart.length - 4;
       maskedLocal =
         localPart.slice(0, 2) + "*".repeat(middleLength) + localPart.slice(-2);
     } else {
       maskedLocal =
         localPart.slice(0, 2) + "*".repeat(Math.max(localPart.length - 2, 1));
     }
-
     const domainParts = domain.split(".");
     const maskedDomain = domainParts
       .map((part, index) =>
         index === 0 ? part[0] + "*".repeat(Math.max(part.length - 1, 1)) : part,
       )
       .join(".");
-
     return `${maskedLocal}@${maskedDomain}`;
   };
 
   const maskMobileNumber = (mobileNumber) => {
     if (!mobileNumber) return "N/A";
     if (mobileNumber.length <= 4) return "*".repeat(mobileNumber.length);
-
-    const middleLength = mobileNumber.length - 4; // first 2 + last 2 visible
+    const middleLength = mobileNumber.length - 4;
     return (
       mobileNumber.slice(0, 2) +
       "*".repeat(middleLength) +
       mobileNumber.slice(-2)
     );
-  };
-
-  const toggleEmailVisibility = () => {
-    setShowEmail((prev) => !prev);
-  };
-
-  const toggleMobileNumberVisibility = () => {
-    setShowMobileNumber((prev) => !prev);
   };
 
   if (loading) {
@@ -249,231 +97,265 @@ export default function UserHome() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          minHeight: "100vh",
-          bgcolor: "#F9F3EC",
+          minHeight: "80vh",
+          bgcolor: "#F8FAFC",
         }}
-        aria-live="polite"
       >
-        <CircularProgress
-          color="inherit"
-          size={40}
-          sx={{ color: "#235BDE" }}
-          aria-label="Loading user profile"
-        />
+        <CircularProgress sx={{ color: "#2562E9" }} />
       </Box>
     );
   }
 
   return (
-    <MainContainer>
-      <ProfileCard>
-        <Box sx={{ textAlign: "center", mb: 2 }}>
-          <Box sx={{ position: "relative", display: "inline-block" }}>
-            <StyledAvatar
-              src={profile.url}
-              alt={`${userDetails?.name || "User"}'s profile picture`}
+    <Box
+      sx={{
+        minHeight: "100vh",
+        bgcolor: "#F8FAFC",
+        py: { xs: 4, md: 8 },
+        px: 2,
+      }}
+    >
+      <Paper
+        elevation={0}
+        sx={{
+          maxWidth: 600,
+          mx: "auto",
+          borderRadius: 3,
+          border: "1px solid #E2E8F0",
+          overflow: "hidden",
+          bgcolor: "#FFFFFF",
+        }}
+      >
+        {/* Premium Cover Banner */}
+        <Box
+          sx={{
+            height: 140,
+            background: "linear-gradient(135deg, #2562E9 0%, #1E40AF 100%)",
+            position: "relative",
+          }}
+        />
+
+        {/* Profile Header */}
+        <Box sx={{ px: { xs: 3, sm: 4 }, pb: 3, mt: -6 }}>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-end",
+              mb: 3,
+              flexWrap: "wrap",
+              gap: 2,
+            }}
+          >
+            <Avatar
+              src={profileUrl}
+              alt={userDetails?.name}
+              sx={{
+                width: 120,
+                height: 120,
+                border: "4px solid #FFFFFF",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                bgcolor: "#E2E8F0",
+              }}
             />
           </Box>
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 700,
-              color: "#1e1e1eff",
-              fontFamily: "'Inter', sans-serif",
-              mt: 2,
-              fontSize: { xs: "1.5rem", sm: "2rem" } /* Responsive font size */,
-            }}
-            id="user-profile-title"
-          >
+
+          <Typography variant="h5" sx={{ fontWeight: 700, color: "#0F172A" }}>
             {userDetails?.name || "Unknown User"}
           </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              color: "#6b7280",
-              fontWeight: 500,
-              fontSize: { xs: "0.875rem", sm: "1rem" },
-            }}
-          >
-            {userDetails?.location || "Jammu, Jammu"}
+          <Typography variant="body2" sx={{ color: "#64748B", mt: 0.5 }}>
+            {userDetails?.location || "Jammu & Kashmir"}
           </Typography>
         </Box>
-        <Divider sx={{ my: 2, borderColor: "#E0E7FF" }} />
-        <StatContainer>
-          <StatBox
-            sx={{ cursor: "pointer" }}
+
+        <Divider />
+
+        {/* Dashboard-Style Stat Cards */}
+        <Box
+          sx={{
+            p: { xs: 3, sm: 4 },
+            display: "flex",
+            gap: 2,
+            flexDirection: { xs: "column", sm: "row" },
+          }}
+        >
+          <StatCard
+            title="Initiated"
+            value={userDetails?.initiated ?? 0}
+            color="#10B582"
+            icon={<Description />}
             onClick={() => navigate("/user/initiated")}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                fontWeight: 600,
-                color: "#0FB282",
-                fontSize: { xs: "0.75rem", sm: "0.875rem" },
-              }}
-            >
-              INITIATED
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{
-                fontWeight: 700,
-                color: "#1e1e1eff",
-                fontSize: { xs: "1.25rem", sm: "1.5rem" },
-              }}
-            >
-              {userDetails?.initiated ?? "N/A"}
-            </Typography>
-          </StatBox>
-          <StatBox
-            sx={{ cursor: "pointer" }}
+          />
+          <StatCard
+            title="Incomplete"
+            value={userDetails?.incomplete ?? 0}
+            color="#F59E0B"
+            icon={<WarningAmber />}
             onClick={() => navigate("/user/incomplete")}
+          />
+        </Box>
+
+        <Divider />
+
+        {/* Contact Information */}
+        <Box sx={{ p: { xs: 3, sm: 4 } }}>
+          <Typography
+            variant="overline"
+            sx={{
+              color: "#64748B",
+              fontWeight: 600,
+              letterSpacing: 1,
+              mb: 2,
+              display: "block",
+            }}
           >
-            <Typography
-              variant="caption"
-              sx={{
-                fontWeight: 600,
-                color: "#F67015",
-                fontSize: { xs: "0.75rem", sm: "0.875rem" },
-              }}
-            >
-              INCOMPLETE
-            </Typography>
-            <Typography
-              variant="h5"
-              sx={{
-                fontWeight: 700,
-                color: "#1e1e1eff",
-                fontSize: { xs: "1.25rem", sm: "1.5rem" },
-              }}
-            >
-              {userDetails?.incomplete ?? "N/A"}
-            </Typography>
-          </StatBox>
-        </StatContainer>
-        <Divider sx={{ my: 2, borderColor: "#E0E7FF" }} />
-        <Box>
-          <InfoItem>
-            <Typography
-              variant="body1"
-              sx={{
-                fontWeight: 600,
-                color: "#6b7280",
-                fontSize: { xs: "0.875rem", sm: "1rem" },
-              }}
-            >
-              Username
-            </Typography>
-            <Typography
-              variant="body1"
-              sx={{
-                fontWeight: 500,
-                color: "#1e1e1eff",
-                fontSize: { xs: "0.875rem", sm: "1rem" },
-              }}
-            >
-              {userDetails?.username || "N/A"}
-            </Typography>
-          </InfoItem>
-          <InfoItem>
-            <Typography
-              variant="body1"
-              sx={{
-                fontWeight: 600,
-                color: "#6b7280",
-                fontSize: { xs: "0.875rem", sm: "1rem" },
-              }}
-            >
-              Email
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Typography
-                variant="body1"
-                sx={{
-                  fontWeight: 500,
-                  color: "#1e1e1eff",
-                  wordBreak: "break-word",
-                  fontSize: { xs: "0.875rem", sm: "1rem" },
-                }}
-              >
-                {showEmail
-                  ? userDetails?.email || "N/A"
-                  : maskEmail(userDetails?.email)}
-              </Typography>
+            Contact Information
+          </Typography>
+
+          <InfoRow
+            icon={<Person />}
+            label="Username"
+            value={userDetails?.username || "N/A"}
+          />
+          <InfoRow
+            icon={<Email />}
+            label="Email Address"
+            value={
+              showEmail ? userDetails?.email : maskEmail(userDetails?.email)
+            }
+            action={
               <Tooltip title={showEmail ? "Hide Email" : "Show Email"} arrow>
                 <IconButton
-                  onClick={toggleEmailVisibility}
-                  aria-label={showEmail ? "Hide email" : "Show email"}
-                  sx={{ color: "#235BDE", padding: { xs: "4px", sm: "8px" } }}
+                  size="small"
+                  onClick={() => setShowEmail(!showEmail)}
+                  sx={{ color: "#64748B" }}
                 >
-                  {showEmail ? <VisibilityOff /> : <Visibility />}
+                  {showEmail ? (
+                    <VisibilityOff fontSize="small" />
+                  ) : (
+                    <Visibility fontSize="small" />
+                  )}
                 </IconButton>
               </Tooltip>
-            </Box>
-          </InfoItem>
-          <InfoItem>
-            <Typography
-              variant="body1"
-              sx={{
-                fontWeight: 600,
-                color: "#6b7280",
-                fontSize: { xs: "0.875rem", sm: "1rem" },
-              }}
-            >
-              Mobile Number
-            </Typography>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Typography
-                variant="body1"
-                sx={{
-                  fontWeight: 500,
-                  color: "#1e1e1eff",
-                  fontSize: { xs: "0.875rem", sm: "1rem" },
-                }}
-              >
-                {showMobileNumber
-                  ? userDetails?.mobilenumber || "N/A"
-                  : maskMobileNumber(userDetails?.mobilenumber)}
-              </Typography>
+            }
+          />
+          <InfoRow
+            icon={<Phone />}
+            label="Mobile Number"
+            value={
+              showMobileNumber
+                ? userDetails?.mobilenumber
+                : maskMobileNumber(userDetails?.mobilenumber)
+            }
+            action={
               <Tooltip
-                title={
-                  showMobileNumber ? "Hide Mobile Number" : "Show Mobile Number"
-                }
+                title={showMobileNumber ? "Hide Number" : "Show Number"}
                 arrow
               >
                 <IconButton
-                  onClick={toggleMobileNumberVisibility}
-                  aria-label={
-                    showMobileNumber
-                      ? "Hide mobile number"
-                      : "Show mobile number"
-                  }
-                  sx={{ color: "#235BDE", padding: { xs: "4px", sm: "8px" } }}
+                  size="small"
+                  onClick={() => setShowMobileNumber(!showMobileNumber)}
+                  sx={{ color: "#64748B" }}
                 >
-                  {showMobileNumber ? <VisibilityOff /> : <Visibility />}
+                  {showMobileNumber ? (
+                    <VisibilityOff fontSize="small" />
+                  ) : (
+                    <Visibility fontSize="small" />
+                  )}
                 </IconButton>
               </Tooltip>
-            </Box>
-          </InfoItem>
+            }
+          />
         </Box>
-        <ActionButton
-          variant="contained"
-          startIcon={<Edit />}
-          aria-label="Edit profile"
-          onClick={() => navigate("/settings")}
-        >
-          Edit Profile
-        </ActionButton>
-      </ProfileCard>
+      </Paper>
+
       <ToastContainer
+        position="top-center"
         toastStyle={{
-          background: "white",
-          color: "#1e1e1eff",
-          borderRadius: 8,
-          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-          fontSize: { xs: "0.875rem", sm: "1rem" },
+          background: "#FFFFFF",
+          color: "#0F172A",
+          borderRadius: "8px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+          border: "1px solid #E2E8F0",
+          fontSize: "0.9rem",
         }}
       />
-    </MainContainer>
+    </Box>
   );
 }
+
+// ==================== Sub-Components ====================
+
+const StatCard = ({ title, value, color, icon, onClick }) => (
+  <Paper
+    elevation={0}
+    onClick={onClick}
+    sx={{
+      flex: 1,
+      p: 2.5,
+      borderRadius: 2,
+      border: "1px solid #E2E8F0",
+      cursor: "pointer",
+      transition: "all 0.2s ease",
+      "&:hover": {
+        borderColor: color,
+        boxShadow: `0 4px 12px ${color}20`,
+        transform: "translateY(-2px)",
+      },
+    }}
+  >
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 1.5 }}>
+      <Box
+        sx={{
+          p: 1,
+          borderRadius: 1.5,
+          bgcolor: `${color}15`,
+          color: color,
+          display: "flex",
+        }}
+      >
+        {icon}
+      </Box>
+      <Typography variant="body2" sx={{ color: "#64748B", fontWeight: 500 }}>
+        {title}
+      </Typography>
+    </Box>
+    <Typography variant="h4" sx={{ fontWeight: 700, color: "#0F172A" }}>
+      {value}
+    </Typography>
+  </Paper>
+);
+
+const InfoRow = ({ icon, label, value, action }) => (
+  <Box
+    sx={{
+      display: "flex",
+      alignItems: "center",
+      py: 2,
+      borderBottom: "1px solid #F1F5F9",
+      "&:last-child": { borderBottom: "none" },
+    }}
+  >
+    <Box sx={{ color: "#94A3B8", mr: 2, display: "flex" }}>{icon}</Box>
+    <Box sx={{ flex: 1 }}>
+      <Typography
+        variant="caption"
+        sx={{
+          color: "#94A3B8",
+          fontWeight: 500,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
+        {label}
+      </Typography>
+      <Typography
+        variant="body1"
+        sx={{ color: "#0F172A", fontWeight: 500, wordBreak: "break-word" }}
+      >
+        {value || "N/A"}
+      </Typography>
+    </Box>
+    {action && <Box sx={{ ml: 2 }}>{action}</Box>}
+  </Box>
+);

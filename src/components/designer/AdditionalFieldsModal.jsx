@@ -12,6 +12,8 @@ import {
   Alert,
   IconButton,
   Paper,
+  Breadcrumbs,
+  Link,
 } from "@mui/material";
 import FieldEditModal from "./FieldEditModal";
 import {
@@ -29,96 +31,68 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { SortableItem } from "./SortableItem"; // Your existing SortableItem
+import { SortableItem } from "./SortableItem";
 import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import AddIcon from "@mui/icons-material/Add";
 import { toast } from "react-toastify";
 
-// Function to normalize a field, preserving existing values INCLUDING DECLARATION
-const normalizeField = (field) => {
-  const normalized = {
-    id:
-      field.id ||
-      `field-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    type: field.type || "text",
-    label: field.label || "New Field",
-    name: field.name || `NewField_${Date.now()}`,
-    minLength: field.minLength ?? 5,
-    maxLength: field.maxLength ?? 50,
-    options: Array.isArray(field.options) ? field.options : [],
-    span: field.span ?? 12,
-    validationFunctions: Array.isArray(field.validationFunctions)
-      ? field.validationFunctions
-      : [],
-    transformationFunctions: Array.isArray(field.transformationFunctions)
-      ? field.transformationFunctions
-      : [],
-    additionalFields: normalizeAdditionalFields(field.additionalFields || {}),
-    accept: field.accept || "",
-    editable: field.editable ?? true,
-    value: field.value ?? undefined,
-    dependentOn: field.dependentOn ?? undefined,
-    dependentOptions: field.dependentOptions ?? undefined,
-    dependentTable: field.dependentTable ?? "", // ✅ ADD THIS
-    isDependentEnclosure: field.isDependentEnclosure ?? false,
-    dependentField: field.dependentField ?? undefined,
-    dependentValues: Array.isArray(field.dependentValues)
-      ? field.dependentValues
-      : [],
-    optionsType:
-      field.optionsType || (field.type === "select" ? "independent" : ""),
-    // NEW: Declaration properties
-    isConsentCheckbox: field.isConsentCheckbox || false,
-    isDeclaration: field.isDeclaration || false,
-    declaration: field.declaration || "",
-    declarationFields: Array.isArray(field.declarationFields)
-      ? field.declarationFields
-      : [],
-    // ✅ ADD THESE VALUE DEPENDENCY PROPERTIES
-    enableValueDependency: field.enableValueDependency || false,
-    valueDependentOn: field.valueDependentOn || "",
-    isOfficeField:
-      field.isOfficeField !== undefined ? field.isOfficeField : false,
-    officeTypeId: field.officeTypeId !== undefined ? field.officeTypeId : null,
-    enableConditionalVisibility: field.enableConditionalVisibility || false,
-    conditionalField: field.conditionalField || "",
-    conditionalValues: field.conditionalValues || [],
-  };
-  return normalized;
-};
+const normalizeField = (field) => ({
+  id:
+    field.id ||
+    `field-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  type: field.type || "text",
+  label: field.label || "New Field",
+  name: field.name || `NewField_${Date.now()}`,
+  minLength: field.minLength ?? 5,
+  maxLength: field.maxLength ?? 50,
+  options: Array.isArray(field.options) ? field.options : [],
+  span: field.span ?? 12,
+  validationFunctions: Array.isArray(field.validationFunctions)
+    ? field.validationFunctions
+    : [],
+  transformationFunctions: Array.isArray(field.transformationFunctions)
+    ? field.transformationFunctions
+    : [],
+  additionalFields: normalizeAdditionalFields(field.additionalFields || {}),
+  accept: field.accept || "",
+  editable: field.editable ?? true,
+  value: field.value ?? undefined,
+  dependentOn: field.dependentOn ?? undefined,
+  dependentOptions: field.dependentOptions ?? undefined,
+  dependentTable: field.dependentTable ?? "",
+  isDependentEnclosure: field.isDependentEnclosure ?? false,
+  dependentField: field.dependentField ?? undefined,
+  dependentValues: Array.isArray(field.dependentValues)
+    ? field.dependentValues
+    : [],
+  optionsType:
+    field.optionsType || (field.type === "select" ? "independent" : ""),
+  isConsentCheckbox: field.isConsentCheckbox || false,
+  isDeclaration: field.isDeclaration || false,
+  declaration: field.declaration || "",
+  declarationFields: Array.isArray(field.declarationFields)
+    ? field.declarationFields
+    : [],
+  enableValueDependency: field.enableValueDependency || false,
+  valueDependentOn: field.valueDependentOn || "",
+  isOfficeField:
+    field.isOfficeField !== undefined ? field.isOfficeField : false,
+  officeTypeId: field.officeTypeId !== undefined ? field.officeTypeId : null,
+  enableConditionalVisibility: field.enableConditionalVisibility || false,
+  conditionalField: field.conditionalField || "",
+  conditionalValues: field.conditionalValues || [],
+});
 
-// Function to normalize additionalFields recursively
 const normalizeAdditionalFields = (additionalFields) => {
   const normalized = {};
   Object.keys(additionalFields).forEach((option) => {
-    normalized[option] = (additionalFields[option] || []).map((field) =>
-      normalizeField(field),
+    normalized[option] = (additionalFields[option] || []).map((f) =>
+      normalizeField(f),
     );
   });
   return normalized;
-};
-
-// Helper function to clean declaration data
-const cleanDeclarationData = (fieldData) => {
-  if (fieldData.isConsentCheckbox && fieldData.type === "checkbox") {
-    return {
-      ...fieldData,
-      isConsentCheckbox: true,
-      isDeclaration: true,
-      declaration: fieldData.declaration || "",
-      declarationFields: Array.isArray(fieldData.declarationFields)
-        ? fieldData.declarationFields.map((f) => ({
-            id: f.id || f.name,
-            name: f.name,
-            label: f.label || f.name,
-            type: f.type || "text",
-            required: f.required || false,
-          }))
-        : [],
-    };
-  }
-  return fieldData;
 };
 
 const AdditionalFieldsModal = ({
@@ -126,7 +100,7 @@ const AdditionalFieldsModal = ({
   selectedField,
   onClose,
   updateField,
-  onFieldUpdate, // NEW: Callback to parent for field updates
+  onFieldUpdate,
   isNested = false,
   serviceId,
   availableFormFields = [],
@@ -135,21 +109,14 @@ const AdditionalFieldsModal = ({
     normalizeAdditionalFields(selectedField.additionalFields || {}),
   );
   const [selectedOption, setSelectedOption] = useState(
-    selectedField.options && selectedField.options.length > 0
-      ? selectedField.options[0].value
-      : "",
+    selectedField.options?.length > 0 ? selectedField.options[0].value : "",
   );
   const [editingField, setEditingField] = useState(null);
   const [nestedFieldToEdit, setNestedFieldToEdit] = useState(null);
   const [activeId, setActiveId] = useState(null);
 
-  // Configure sensors for drag and drop
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8, // 8px delay before drag starts
-      },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -161,209 +128,115 @@ const AdditionalFieldsModal = ({
     );
   }, [selectedField]);
 
-  const handleOptionChange = (e) => {
-    setSelectedOption(e.target.value);
+  /* 🔥 THE FIX: every change is pushed to the parent form IMMEDIATELY.
+     No separate "Save" needed in this modal anymore. */
+  const pushToParent = (next) => {
+    setLocalAdditionalFields(next);
+    const updated = {
+      ...selectedField,
+      additionalFields: normalizeAdditionalFields(next),
+    };
+    if (onFieldUpdate) onFieldUpdate(updated);
+    else updateField(updated);
   };
 
   const addAdditionalField = () => {
-    const newField = {
-      id: `field-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: "text",
-      label: "New Field",
+    const newField = normalizeField({
+      label: "New field",
       name: `NewField_${Date.now()}`,
-      minLength: 5,
-      maxLength: 50,
-      options: [],
-      span: 12,
-      validationFunctions: [],
-      transformationFunctions: [],
-      additionalFields: {},
-      accept: "",
-      editable: true,
-      value: undefined,
-      dependentOn: undefined,
-      dependentOptions: undefined,
-      isDependentEnclosure: false,
-      dependentField: undefined,
-      dependentValues: [],
-      // NEW: Default declaration properties
-      isConsentCheckbox: false,
-      isDeclaration: false,
-      declaration: "",
-      declarationFields: [],
-    };
-    setLocalAdditionalFields((prev) => ({
-      ...prev,
-      [selectedOption]: prev[selectedOption]
-        ? [...prev[selectedOption], newField]
-        : [newField],
-    }));
+    });
+    pushToParent({
+      ...localAdditionalFields,
+      [selectedOption]: [
+        ...(localAdditionalFields[selectedOption] || []),
+        newField,
+      ],
+    });
+    toast.info("field added — edit it or press Done when finished.", {
+      position: "top-center",
+      autoClose: 2000,
+    });
   };
 
   const removeAdditionalField = (fieldId) => {
-    setLocalAdditionalFields((prev) => ({
-      ...prev,
-      [selectedOption]: (prev[selectedOption] || []).filter(
-        (field) => field.id !== fieldId,
+    pushToParent({
+      ...localAdditionalFields,
+      [selectedOption]: (localAdditionalFields[selectedOption] || []).filter(
+        (f) => f.id !== fieldId,
       ),
-    }));
-  };
-
-  const handleEditField = (field) => {
-    setEditingField({
-      ...field,
-      parentOption: selectedOption,
-      // Ensure declaration properties are included
-      isConsentCheckbox: field.isConsentCheckbox || false,
-      isDeclaration: field.isDeclaration || false,
-      declaration: field.declaration || "",
-      declarationFields: Array.isArray(field.declarationFields)
-        ? field.declarationFields
-        : [],
     });
   };
 
-  const handleAddNestedFields = (field) => {
-    setNestedFieldToEdit(field);
-  };
-
-  // UPDATED: Handle field updates with declaration data
   const handleSaveField = (updatedField) => {
-    // Clean the field data
-    const cleanedField = cleanDeclarationData(updatedField);
-
-    setLocalAdditionalFields((prev) => {
-      const updatedFields = {
-        ...prev,
-        [selectedOption]: (prev[selectedOption] || []).map((field) =>
-          field.id === cleanedField.id ? normalizeField(cleanedField) : field,
-        ),
-      };
-
-      return updatedFields;
+    pushToParent({
+      ...localAdditionalFields,
+      [selectedOption]: (localAdditionalFields[selectedOption] || []).map(
+        (f) => (f.id === updatedField.id ? normalizeField(updatedField) : f),
+      ),
     });
-
-    // Notify parent component about the update
-    if (onFieldUpdate) {
-      onFieldUpdate(cleanedField);
-    }
-
     setEditingField(null);
-    toast.success("Field updated successfully");
   };
 
   const handleSaveNestedFields = (updatedNestedField) => {
-    const cleanedField = cleanDeclarationData(updatedNestedField);
-
-    setLocalAdditionalFields((prev) => {
-      const updatedFields = {
-        ...prev,
-        [selectedOption]: (prev[selectedOption] || []).map((field) => {
-          if (field.id === cleanedField.id) {
-            return normalizeField(cleanedField);
-          }
-          if (field.additionalFields) {
-            const updatedAdditionalFields = Object.fromEntries(
-              Object.entries(field.additionalFields).map(
-                ([option, nestedFields]) => [
-                  option,
-                  nestedFields.map((nestedField) =>
-                    nestedField.id === cleanedField.id
-                      ? normalizeField(cleanedField)
-                      : nestedField,
+    pushToParent({
+      ...localAdditionalFields,
+      [selectedOption]: (localAdditionalFields[selectedOption] || []).map(
+        (f) => {
+          if (f.id === updatedNestedField.id)
+            return normalizeField(updatedNestedField);
+          if (f.additionalFields) {
+            return {
+              ...f,
+              additionalFields: Object.fromEntries(
+                Object.entries(f.additionalFields).map(([opt, nested]) => [
+                  opt,
+                  nested.map((n) =>
+                    n.id === updatedNestedField.id
+                      ? normalizeField(updatedNestedField)
+                      : n,
                   ),
-                ],
+                ]),
               ),
-            );
-            return { ...field, additionalFields: updatedAdditionalFields };
+            };
           }
-          return field;
-        }),
-      };
-      return updatedFields;
+          return f;
+        },
+      ),
     });
-
-    if (onFieldUpdate) {
-      onFieldUpdate(cleanedField);
-    }
-
     setNestedFieldToEdit(null);
-    toast.success("Nested field updated");
-  };
-
-  // Drag and Drop handlers using @dnd-kit
-  const handleDragStart = (event) => {
-    setActiveId(event.active.id);
   };
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
-
-    if (active.id !== over?.id) {
-      const currentFields = localAdditionalFields[selectedOption] || [];
-      const oldIndex = currentFields.findIndex(
-        (field) => field.id === active.id,
-      );
-      const newIndex = currentFields.findIndex(
-        (field) => field.id === over?.id,
-      );
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const newFields = arrayMove(currentFields, oldIndex, newIndex);
-        setLocalAdditionalFields((prev) => ({
-          ...prev,
-          [selectedOption]: newFields,
-        }));
-      }
-    }
-
     setActiveId(null);
-  };
-
-  const handleDragCancel = () => {
-    setActiveId(null);
-  };
-
-  const handleSave = () => {
-    const updatedAdditionalFields = normalizeAdditionalFields(
-      localAdditionalFields,
-    );
-    const updatedField = {
-      ...selectedField,
-      additionalFields: updatedAdditionalFields,
-    };
-
-    // Use onFieldUpdate if available, otherwise use updateField
-    if (onFieldUpdate) {
-      onFieldUpdate(updatedField);
-    } else {
-      updateField(updatedField);
+    if (!over || active.id === over.id) return;
+    const current = localAdditionalFields[selectedOption] || [];
+    const oldIndex = current.findIndex((f) => f.id === active.id);
+    const newIndex = current.findIndex((f) => f.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      pushToParent({
+        ...localAdditionalFields,
+        [selectedOption]: arrayMove(current, oldIndex, newIndex),
+      });
     }
-
-    onClose();
-    toast.success("Additional fields saved successfully");
   };
 
-  // Get the active field for DragOverlay
   const activeField = activeId
     ? (localAdditionalFields[selectedOption] || []).find(
-        (field) => field.id === activeId,
+        (f) => f.id === activeId,
       )
     : null;
+  const currentFields = localAdditionalFields[selectedOption] || [];
 
-  // Render a single field item
   const renderFieldItem = (field) => (
     <Paper
-      elevation={1}
+      elevation={0}
       sx={{
         mb: 2,
         p: 2,
-        borderRadius: 1,
-        backgroundColor: field.isConsentCheckbox
-          ? "primary.light"
-          : "background.paper",
-        border: "1px solid",
-        borderColor: "divider",
+        borderRadius: 2,
+        bgcolor: field.isConsentCheckbox ? "#EFF6FF" : "#fff",
+        border: "1px solid #E2E8F0",
       }}
     >
       <Box
@@ -371,19 +244,26 @@ const AdditionalFieldsModal = ({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          flexWrap: "wrap",
+          gap: 1,
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <DragIndicatorIcon sx={{ color: "action.active" }} />
+          <DragIndicatorIcon sx={{ color: "#94A3B8" }} />
           <Box>
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              {field.label} ({field.type})
-              {field.isConsentCheckbox && " 📝 Declaration"}
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              {field.label}{" "}
+              <Typography
+                component="span"
+                variant="caption"
+                sx={{ color: "#64748B" }}
+              >
+                ({field.type})
+              </Typography>
+              {field.isConsentCheckbox && " • consent text"}
             </Typography>
             <Typography variant="caption" color="text.secondary">
               {field.name}
-              {field.declaration &&
-                ` | ${field.declaration.substring(0, 50)}...`}
             </Typography>
           </Box>
         </Box>
@@ -391,90 +271,38 @@ const AdditionalFieldsModal = ({
           <Button
             variant="outlined"
             size="small"
-            onClick={() => handleEditField(field)}
+            onClick={() =>
+              setEditingField({ ...field, parentOption: selectedOption })
+            }
             startIcon={<EditIcon />}
+            sx={{ textTransform: "none" }}
           >
             Edit
           </Button>
           <Button
             variant="outlined"
             size="small"
-            onClick={() => handleAddNestedFields(field)}
+            onClick={() => setNestedFieldToEdit(field)}
+            sx={{ textTransform: "none" }}
           >
-            Nested
+            Sub-fields
           </Button>
           <Button
             variant="outlined"
             size="small"
             color="error"
             onClick={() => removeAdditionalField(field.id)}
+            sx={{ textTransform: "none" }}
           >
             Remove
           </Button>
         </Box>
       </Box>
-
-      {/* Show declaration preview */}
       {field.isConsentCheckbox && field.declaration && (
-        <Box
-          sx={{ mt: 1, p: 1, bgcolor: "background.default", borderRadius: 1 }}
-        >
+        <Box sx={{ mt: 1, p: 1, bgcolor: "#F8FAFC", borderRadius: 1 }}>
           <Typography variant="caption" sx={{ fontStyle: "italic" }}>
-            Declaration: {field.declaration.substring(0, 100)}...
+            Consent text: {field.declaration.substring(0, 100)}…
           </Typography>
-        </Box>
-      )}
-
-      {field.additionalFields && (
-        <Box sx={{ marginLeft: 2, mt: 1 }}>
-          <Typography variant="body2" sx={{ mb: 1, fontWeight: "bold" }}>
-            Nested Additional Fields:
-          </Typography>
-          {Object.entries(field.additionalFields).map(
-            ([option, nestedFields]) => (
-              <Box key={option} sx={{ mb: 1 }}>
-                <Typography
-                  variant="body2"
-                  sx={{ fontWeight: "bold", color: "primary.main" }}
-                >
-                  {option}:
-                </Typography>
-                {nestedFields.map((nestedField) => (
-                  <Paper
-                    key={nestedField.id}
-                    sx={{
-                      p: 1,
-                      mt: 0.5,
-                      ml: 2,
-                      bgcolor: nestedField.isConsentCheckbox
-                        ? "primary.light"
-                        : "grey.50",
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <Typography variant="body2">
-                        {nestedField.label} ({nestedField.type})
-                        {nestedField.isConsentCheckbox && " 📝"}
-                      </Typography>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() => handleEditField(nestedField)}
-                      >
-                        Edit
-                      </Button>
-                    </Box>
-                  </Paper>
-                ))}
-              </Box>
-            ),
-          )}
         </Box>
       )}
     </Paper>
@@ -487,12 +315,23 @@ const AdditionalFieldsModal = ({
           sx={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
           }}
         >
-          <Typography variant="h6">
-            {isNested ? "Nested Additional Fields" : "Additional Properties"}
-          </Typography>
+          <Box>
+            <Breadcrumbs sx={{ mb: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                {isNested ? "Sub-fields" : "Follow-up fields"}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {selectedField.label}
+              </Typography>
+              <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                Option: "{selectedOption}"
+              </Typography>
+            </Breadcrumbs>
+            <Typography variant="h6">Follow-up fields</Typography>
+          </Box>
           <IconButton onClick={onClose} size="small">
             <CloseIcon />
           </IconButton>
@@ -500,19 +339,20 @@ const AdditionalFieldsModal = ({
       </DialogTitle>
       <DialogContent>
         <Alert severity="info" sx={{ mb: 2 }}>
-          Configure additional fields that appear based on the selected action.
-          Declaration checkboxes configured here will be properly saved with all
-          declaration data.
+          These extra fields appear on the citizen's form{" "}
+          <b>only when they choose "{selectedOption}"</b>. Changes are applied
+          instantly — just press <b>Done</b> when finished.
         </Alert>
 
-        <Typography variant="subtitle1" sx={{ mb: 2 }}>
-          Select an option to configure additional fields:
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          When the citizen chooses:
         </Typography>
         <Select
           fullWidth
-          margin="dense"
+          size="small"
           value={selectedOption}
-          onChange={handleOptionChange}
+          onChange={(e) => setSelectedOption(e.target.value)}
+          sx={{ mb: 3 }}
         >
           {selectedField.options.map((item) => (
             <MenuItem key={item.value} value={item.value}>
@@ -521,89 +361,81 @@ const AdditionalFieldsModal = ({
           ))}
         </Select>
 
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: "bold" }}>
-            Additional Fields for Option: {selectedOption}
-          </Typography>
+        <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+          Extra fields for "{selectedOption}" ({currentFields.length})
+        </Typography>
 
-          {/* Debug info */}
-          {localAdditionalFields[selectedOption]?.some(
-            (f) => f.isConsentCheckbox,
-          ) && (
-            <Alert severity="success" sx={{ mb: 2 }}>
-              Contains{" "}
-              {
-                localAdditionalFields[selectedOption]?.filter(
-                  (f) => f.isConsentCheckbox,
-                ).length
-              }
-              declaration field(s) with saved data
-            </Alert>
-          )}
-
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={(e) => setActiveId(e.active.id)}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveId(null)}
+        >
+          <SortableContext
+            items={currentFields.map((f) => f.id)}
+            strategy={verticalListSortingStrategy}
           >
-            <SortableContext
-              items={
-                localAdditionalFields[selectedOption]?.map((f) => f.id) || []
-              }
-              strategy={verticalListSortingStrategy}
-            >
-              <Box sx={{ maxHeight: "400px", overflowY: "auto" }}>
-                {(localAdditionalFields[selectedOption] || []).map((field) => (
+            <Box sx={{ maxHeight: 400, overflowY: "auto", pr: 1 }}>
+              {currentFields.length === 0 ? (
+                <Box
+                  sx={{
+                    textAlign: "center",
+                    py: 3,
+                    border: "1px dashed #CBD5E1",
+                    borderRadius: 2,
+                  }}
+                >
+                  <Typography variant="body2" sx={{ color: "#64748B" }}>
+                    No extra fields yet for this option.
+                  </Typography>
+                </Box>
+              ) : (
+                currentFields.map((field) => (
                   <SortableItem key={field.id} id={field.id}>
                     {renderFieldItem(field)}
                   </SortableItem>
-                ))}
-              </Box>
-            </SortableContext>
-            <DragOverlay>
-              {activeField ? (
-                <Paper
-                  elevation={3}
-                  sx={{
-                    p: 2,
-                    borderRadius: 1,
-                    backgroundColor: activeField.isConsentCheckbox
-                      ? "primary.light"
-                      : "background.paper",
-                    border: "2px solid",
-                    borderColor: "primary.main",
-                    cursor: "grabbing",
-                    transform: "rotate(3deg)",
-                  }}
-                >
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <DragIndicatorIcon sx={{ color: "primary.main" }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {activeField.label} ({activeField.type})
-                      {activeField.isConsentCheckbox && " 📝 Declaration"}
-                    </Typography>
-                  </Box>
-                </Paper>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+                ))
+              )}
+            </Box>
+          </SortableContext>
+          <DragOverlay>
+            {activeField ? (
+              <Paper
+                elevation={4}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: "2px solid #2562E9",
+                  bgcolor: "#fff",
+                  cursor: "grabbing",
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {activeField.label}
+                </Typography>
+              </Paper>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
 
-          <Button
-            variant="contained"
-            onClick={addAdditionalField}
-            sx={{ mt: 2 }}
-            fullWidth
-          >
-            Add Additional Field
-          </Button>
-        </Box>
+        <Button
+          variant="outlined"
+          fullWidth
+          startIcon={<AddIcon />}
+          onClick={addAdditionalField}
+          sx={{ mt: 2, textTransform: "none", fontWeight: 600 }}
+        >
+          Add extra field
+        </Button>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave}>
-          Save Changes
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button
+          variant="contained"
+          onClick={onClose}
+          sx={{ textTransform: "none", fontWeight: 700, px: 4 }}
+        >
+          Done
         </Button>
       </DialogActions>
 
@@ -623,7 +455,7 @@ const AdditionalFieldsModal = ({
           selectedField={nestedFieldToEdit}
           onClose={() => setNestedFieldToEdit(null)}
           updateField={handleSaveNestedFields}
-          onFieldUpdate={onFieldUpdate} // Pass onFieldUpdate to nested modal
+          onFieldUpdate={onFieldUpdate}
           isNested={true}
           serviceId={serviceId}
           availableFormFields={availableFormFields}

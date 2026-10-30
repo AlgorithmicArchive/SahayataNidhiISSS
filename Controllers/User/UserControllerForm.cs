@@ -7,6 +7,7 @@ using Newtonsoft.Json.Linq;
 using System.Globalization;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using SahayataNidhi.Services;
 
 namespace SahayataNidhi.Controllers.User
 {
@@ -17,10 +18,10 @@ namespace SahayataNidhi.Controllers.User
         //     _logger.LogInformation($"--------- SERVICE ID: {Serviceid} ------------------------------");
         //     if (Serviceid == 1)
         //     {
-        //         var KindOfDisability = FindFieldRecursively(formDetails, "KindOfDisability");
+        //         var KindOfDisability = FormJsonHelper.FindFieldRecursively(formDetails, "KindOfDisability");
         //         if (KindOfDisability != null && (string)KindOfDisability!["value"]! == "TEMPORARY")
         //         {
-        //             string ExpirationDate = (string)FindFieldRecursively(formDetails, "IfTemporaryDisabilityUdidCardValidUpto")!["value"]!;
+        //             string ExpirationDate = (string)FormJsonHelper.FindFieldRecursively(formDetails, "IfTemporaryDisabilityUdidCardValidUpto")!["value"]!;
         //             var expiringEligibility = new Applicationswithexpiringeligibility
         //             {
         //                 Serviceid = Serviceid,
@@ -125,10 +126,10 @@ namespace SahayataNidhi.Controllers.User
                     field["File"] = filePath;
             }
 
-            int districtId = Convert.ToInt32(FindFieldRecursively(formdetailsToken, "District")!["value"]);
+            int districtId = Convert.ToInt32(FormJsonHelper.FindFieldRecursively(formdetailsToken, "District")!["value"]);
 
-            var districtDetails = await dbcontext.District.FirstOrDefaultAsync(s => s.Districtid == districtId);
-            var service = await dbcontext.Services.FirstOrDefaultAsync(s => s.Serviceid == serviceId);
+            var districtDetails = await dbcontext.District.AsNoTracking().FirstOrDefaultAsync(s => s.Districtid == districtId);
+            var service = await dbcontext.Services.AsNoTracking().FirstOrDefaultAsync(s => s.Serviceid == serviceId);
 
             if (districtDetails == null || service == null)
                 return Json(new { status = false, message = "District or service not found." });
@@ -137,7 +138,7 @@ namespace SahayataNidhi.Controllers.User
             int locationValue;
             string locationLevel;
 
-            string? tehsilValue = FindFieldRecursively(formdetailsToken, "Tehsil")?["value"]?.ToString();
+            string? tehsilValue = FormJsonHelper.FindFieldRecursively(formdetailsToken, "Tehsil")?["value"]?.ToString();
             if (!string.IsNullOrWhiteSpace(tehsilValue))
             {
                 locationLevel = "Tehsil";
@@ -151,11 +152,21 @@ namespace SahayataNidhi.Controllers.User
 
             if (locationLevel == "Tehsil")
             {
-                var tehsil = await dbcontext.Tehsil.FirstOrDefaultAsync(t => t.Tehsilid == locationValue);
+                // OPTIMIZATION: re-use the already-fetched district row instead of a second query;
+                // fall back to a lookup only if the tehsil's parent differs from the form's district.
+                var tehsil = await dbcontext.Tswotehsil.AsNoTracking().FirstOrDefaultAsync(t => t.Tehsilid == locationValue);
                 if (tehsil != null)
                 {
-                    var district = await dbcontext.District.FirstOrDefaultAsync(d => d.Districtid == tehsil.Districtid);
-                    divisionCode = district?.Division ?? 0;
+                    if (tehsil.Districtid == districtId)
+                    {
+                        divisionCode = districtDetails.Division;
+                    }
+                    else
+                    {
+                        var district = await dbcontext.District.AsNoTracking()
+                            .FirstOrDefaultAsync(d => d.Districtid == tehsil.Districtid);
+                        divisionCode = district?.Division ?? 0;
+                    }
                 }
             }
             else
@@ -216,6 +227,7 @@ namespace SahayataNidhi.Controllers.User
                     Workflow = workFlow,
                     Status = status,
                     Datatype = "new",
+                    Division = divisionCode,
                     CreatedAt = createdAt
                 };
                 dbcontext.CitizenApplications.Add(newFormDetails);
@@ -340,53 +352,35 @@ namespace SahayataNidhi.Controllers.User
                 }
 
                 string fullPath = await FetchAcknowledgementDetails(ReferenceNumber);
-                string? fullName = GetFormFieldValue(formDetailsObj, "ApplicantName");
-                string? serviceName = service.Servicename;
-                string? email = GetFormFieldValue(formDetailsObj, "Email")
-                              ?? GetFormFieldValue(formDetailsObj, "email")
-                              ?? GetFormFieldValue(formDetailsObj, "EmailAddress");
-                if (!string.IsNullOrWhiteSpace(email) && IsValidEmail(email))
-                {
-                    var emailTemplateObj = await dbcontext.Emailsettings.FirstOrDefaultAsync();
-                    if (emailTemplateObj != null)
-                    {
-                        var templateJson = JObject.Parse(emailTemplateObj.Templates!);
-                        string template = templateJson["Submission"]!.ToString();
-                        var placeholders = new Dictionary<string, string>
-                {
-                    { "ApplicantName", fullName ?? "" },
-                    { "ServiceName", serviceName! },
-                    { "ReferenceNumber", ReferenceNumber },
-                    { "OfficerRole", officerRole },
-                    { "OfficerArea", officerArea }
-                };
-                        foreach (var pair in placeholders)
-                            template = template.Replace($"{{{pair.Key}}}", pair.Value);
-                        string htmlMessage = template;
 
-                        var fileResult = await DisplayFile(fullPath.Split('=')[1]);
-                        if (fileResult is FileContentResult fileContent)
-                        {
-                            _taskQueue.QueueBackgroundWorkItem(async token =>
-                            {
-                                try
-                                {
-                                    await emailSender.SendEmailWithAttachments(
-                                        email!,
-                                        "Form Submission",
-                                        htmlMessage,
-                                        fileContent.FileContents,
-                                        ReferenceNumber.Replace("/", "_") + "_Acknowledgement.pdf"
-                                    );
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, $"Email failed for {ReferenceNumber}");
-                                }
-                            });
-                        }
-                    }
+                // Attachment is the acknowledgement PDF generated above.
+                byte[]? ackData = null;
+                string? ackName = null;
+                var ackResult = await DisplayFile(fullPath.Split('=')[1]);
+                if (ackResult is FileContentResult ackContent)
+                {
+                    ackData = ackContent.FileContents;
+                    ackName = ReferenceNumber.Replace("/", "_") + "_Acknowledgement.pdf";
                 }
+
+                // Dynamic notification: channel, recipients and templates come from
+                // Designer (services.notificationconfig["Submission"]).
+                JArray? appWorkflow = null;
+                try { appWorkflow = string.IsNullOrEmpty(workFlow) ? null : JArray.Parse(workFlow); } catch { }
+
+                await _notifier.DispatchAsync(new NotificationRequest
+                {
+                    ServiceId = serviceId,
+                    Action = "Submission",
+                    FormDetails = formDetailsObj,
+                    ApplicationWorkflow = appWorkflow,
+                    ReferenceNumber = ReferenceNumber,
+                    OfficerRole = officerRole,
+                    OfficerArea = officerArea,
+                    ActionTaken = "Submitted",
+                    AttachmentData = ackData,
+                    AttachmentName = ackName
+                });
 
                 helper.InsertHistory(ReferenceNumber, "Application Submission", "Citizen", "Submitted",
                                      locationLevel, locationValue);
@@ -552,6 +546,51 @@ namespace SahayataNidhi.Controllers.User
 
             dbcontext.SaveChanges();
 
+            // === 5a. Record location shift for denormalized shifted_count (Layer 2) ===
+            if (shiftedFrom != shiftedTo && currentOfficer != null)
+            {
+                try
+                {
+                    int? tehsilCode = null;
+                    int? districtCode = null;
+                    if (existingFormDetails["Location"] is JArray locArray)
+                    {
+                        foreach (var loc in locArray.OfType<JObject>())
+                        {
+                            string locName = loc["name"]?.ToString() ?? "";
+                            int locValue = loc["value"]?.ToObject<int>() ?? 0;
+                            if (locName == "Tehsil") tehsilCode = locValue;
+                            else if (locName == "District") districtCode = locValue;
+                        }
+                    }
+
+                    string designation = currentOfficer["designation"]?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(designation))
+                    {
+                        await dbcontext.Database.ExecuteSqlRawAsync(
+                            @"INSERT INTO application_shifts
+                                  (reference_number, service_id, designation, shifted_from, shifted_to, tehsil_code, district_code)
+                              VALUES ({0}, {1}, {2}, {3}, {4}, {5}, {6})
+                              ON CONFLICT (reference_number, service_id, designation, shifted_from)
+                              DO UPDATE SET shifted_to = EXCLUDED.shifted_to,
+                                            tehsil_code = EXCLUDED.tehsil_code,
+                                            district_code = EXCLUDED.district_code",
+                            referenceNumber,
+                            application.Serviceid,
+                            designation,
+                            shiftedFrom,
+                            shiftedTo,
+                            (object?)tehsilCode ?? DBNull.Value,
+                            (object?)districtCode ?? DBNull.Value);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Fail-open: shift tracking must never block a citizen edit.
+                    _logger.LogWarning(ex, "Failed to record application shift for {ReferenceNumber}", referenceNumber);
+                }
+            }
+
             helper.InsertHistory(referenceNumber, "Re submission of Application", "Citizen", "Re submitted", locationLevel!, locationValue);
 
             return Json(new
@@ -615,7 +654,7 @@ namespace SahayataNidhi.Controllers.User
                 var oldValues = new JObject();
                 foreach (var fieldName in finalFieldsToCorrect)
                 {
-                    var field = FindFieldRecursively(formFields, fieldName);
+                    var field = FormJsonHelper.FindFieldRecursively(formFields, fieldName);
 
                     oldValues[fieldName] =
                         field != null

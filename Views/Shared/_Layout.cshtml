@@ -11,7 +11,13 @@
 <body>
     <div id="root"></div>
     <script nonce="@Context.Items["CspNonce"]" src="~/config.js"></script>
-    <script nonce="@Context.Items["CspNonce"]" src="~/js/bundle.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/runtime.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/vendors.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/vendor-mui.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/vendor-charts.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/vendor-pdf.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/vendor-tensorflow.js"></script>
+    <script nonce="@Context.Items["CspNonce"]" src="~/js/main.js"></script>
     @RenderBody()
 </body>
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Container,
@@ -123,9 +124,11 @@ export default function OfficerChoice() {
         minHeight: "70vh",
       }}
     >
-      <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
-        Choose Your Role
-      </Typography>
+      <GovPageHeader
+        title="Choose Your Role"
+        hindiTitle="अपनी भूमिका चुनें"
+        crumbs={[{ label: "Registration", path: "" }]}
+      />
 
       <Typography variant="body1" align="center" sx={{ maxWidth: 480 }}>
         You are authenticated as <strong>{ssoObj.Username || "User"}</strong>.

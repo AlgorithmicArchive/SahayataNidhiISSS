@@ -20,7 +20,7 @@ import "./index.css";
 import * as pdfjsLib from "pdfjs-dist";
 
 // Set worker source to the file you copied to wwwroot/js/
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/js/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.js";
 
 // ============================================
 // CONSOLE SUPPRESSIONS

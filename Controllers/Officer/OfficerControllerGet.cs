@@ -22,6 +22,12 @@ using System.Dynamic;
 using Microsoft.Extensions.Caching.Memory;
 using NpgsqlTypes;
 using System.Security.Claims;
+using SahayataNidhi.Models;
+using System.ComponentModel.DataAnnotations.Schema;
+using iText.Kernel.Events;
+using iText.Kernel.Font;
+using iText.IO.Font.Constants;
+
 
 namespace SahayataNidhi.Controllers.Officer
 {
@@ -40,6 +46,137 @@ namespace SahayataNidhi.Controllers.Officer
         {
             public int TemporaryDisabilityExpiringSoonCount { get; set; }
             public int TotalPhysicallyChallengedApplications { get; set; }
+        }
+
+        // Requires: using Newtonsoft.Json.Linq;  (for JObject, used by service_specific_counts parsing below)
+        //
+        // DTOs matching the FIXED-shape jsonb columns in dashboard_statistics
+        // (main_counts, legacy_counts, corrigendum_counts, correction_counts,
+        // withheld_counts — same keys for every service/row). service_specific_counts
+        // is intentionally NOT modeled as a DTO here since its shape varies by
+        // service (see JObject.Parse usage further down).
+        // Keys must match exactly what refresh_dashboard_statistics_row() writes.
+
+        public class MainOrLegacyCountsDto
+        {
+            public int Total { get; set; }
+            public int Pending { get; set; }
+            public int Rejected { get; set; }
+            public int Returned { get; set; }
+            public int Forwarded { get; set; }
+            public int Sanctioned { get; set; }
+            public int Returnedtoedit { get; set; }
+            public int Forwardedsanctioned { get; set; }
+        }
+
+        public class CorrigendumCountsDto
+        {
+            public int Total { get; set; }
+            public int Pending { get; set; }
+            public int Rejected { get; set; }
+            public int Returned { get; set; }
+            public int Forwarded { get; set; }
+            public int Sanctioned { get; set; }
+            public int Forwardedsanctioned { get; set; }
+        }
+
+        public class CorrectionCountsDto
+        {
+            public int Total { get; set; }
+            public int Pending { get; set; }
+            public int Rejected { get; set; }
+            public int Returned { get; set; }
+            public int Verified { get; set; }
+            public int Forwarded { get; set; }
+            public int Forwardedverified { get; set; }
+        }
+
+        public class WithheldCountsDto
+        {
+            public int Total { get; set; }
+            public int Pending { get; set; }
+            public int Approved { get; set; }
+            public int Rejected { get; set; }
+            public int Returned { get; set; }
+            public int Forwarded { get; set; }
+            public int Forwardedapproved { get; set; }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // DTO for search_withheld_applications_for_officer result set.
+        // Column names must match the RETURNS TABLE signature exactly.
+        // ═══════════════════════════════════════════════════════════════════════
+        public class WithheldApplicationSearchDto
+        {
+            [Column("totalrecords")] public long Totalrecords { get; set; }
+            [Column("sno")] public long Sno { get; set; }
+            [Column("referencenumber")] public string? Referencenumber { get; set; }
+            [Column("applicantname")] public string? Applicantname { get; set; }
+            [Column("withheldtype")] public string? Withheldtype { get; set; }
+            [Column("withheldreason")] public string? Withheldreason { get; set; }
+            [Column("divisionname")] public string? Divisionname { get; set; }
+            [Column("districtname")] public string? Districtname { get; set; }
+            [Column("tehsilname")] public string? Tehsilname { get; set; }
+            [Column("iswithheld")] public bool? Iswithheld { get; set; }   // ★ NEW
+        }
+
+        // DTO for search_corrigendum_applications_for_officer result set.
+        // jsonb columns are mapped to string — Npgsql serialises them as JSON text,
+        // which is then deserialised again where needed (workflow, history, fields).
+        public class CorrigendumSearchDto
+        {
+            [Column("corrigendumid")] public string? Corrigendumid { get; set; }
+            [Column("referencenumber")] public string? Referencenumber { get; set; }
+            [Column("location")] public string? Location { get; set; }
+            [Column("corrigendumfields")] public string? Corrigendumfields { get; set; }
+            [Column("workflow")] public string? Workflow { get; set; }
+            [Column("currentplayer")] public int Currentplayer { get; set; }
+            [Column("type")] public string? Type { get; set; }
+            [Column("history")] public string? History { get; set; }
+            [Column("status")] public string? Status { get; set; }
+            [Column("createdat")] public DateTime Createdat { get; set; }
+            [Column("latest_wf_status")] public string? Latest_wf_status { get; set; }
+            [Column("latest_wf_designation")] public string? Latest_wf_designation { get; set; }
+            [Column("latest_wf_completed_at")] public string? Latest_wf_completed_at { get; set; }
+            [Column("location_flat")] public string? Location_flat { get; set; }
+            [Column("serviceid")] public int? Serviceid { get; set; }
+            [Column("datatype")] public string? Datatype { get; set; }
+            [Column("applicantname")] public string? Applicantname { get; set; }
+            [Column("divisionname")] public string? Divisionname { get; set; }
+            [Column("districtname")] public string? Districtname { get; set; }
+            [Column("tehsilname")] public string? Tehsilname { get; set; }
+            [Column("totalrecords")] public long Totalrecords { get; set; }
+        }
+
+        [HttpGet]
+        public IActionResult GetIfSameUdidNumber(string referenceNumber, string udidNumber)
+        {
+            var application = dbcontext.CitizenApplications
+                .FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
+
+            var formDetails = JToken.Parse(application!.Formdetails!);
+
+            var udidField = FormJsonHelper.FindFieldRecursively(formDetails, "UdidCardNumber");
+
+            // If the UDID field does not exist or has no value, allow it.
+            if (udidField == null || string.IsNullOrWhiteSpace((string?)udidField["value"]))
+            {
+                return Json(new { status = true });
+            }
+
+            var existingUdidNumber = (string?)udidField["value"];
+
+            // Allow if the UDID number matches the existing record.
+            if (udidNumber == existingUdidNumber)
+            {
+                return Json(new { status = true });
+            }
+
+            return Json(new
+            {
+                status = false,
+                message = "UDID Number doesn't match the existing one in the record."
+            });
         }
 
         [HttpGet]
@@ -159,186 +296,21 @@ namespace SahayataNidhi.Controllers.Officer
                     CanValidateAadhaar = (bool?)authority.canValidateAadhaar ?? false
                 };
 
-                // ✅ Use NpgsqlCommand directly — bypass EF Core SqlQueryRaw mapping issues
-                var connection = dbcontext.Database.GetDbConnection();
-                await connection.OpenAsync();
+                // --- Layer 1: Server-side cache (IMemoryCache) ---
+                var cacheKey = BuildDashboardCountKey(officer.AccessLevel!, officer.AccessCode, officer.Role!, Serviceid);
 
-                await using var command = connection.CreateCommand();
-                command.CommandText = "SELECT * FROM get_dashboard_counts(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @datatype)";
-                command.Parameters.Add(new NpgsqlParameter("@accesslevel", officer.AccessLevel));
-                command.Parameters.Add(new NpgsqlParameter("@accesscode", officer.AccessCode ?? (object)DBNull.Value));
-                command.Parameters.Add(new NpgsqlParameter("@serviceid", Serviceid));
-                command.Parameters.Add(new NpgsqlParameter("@takenby", officer.Role));
-                command.Parameters.Add(new NpgsqlParameter("@divisioncode", officer.AccessLevel == "Division" ? officer.AccessCode : DBNull.Value));
-                command.Parameters.Add(new NpgsqlParameter("@datatype", DBNull.Value));
-
-                await using var reader = await command.ExecuteReaderAsync();
-                var counts = new DashboardCounts();
-
-                if (await reader.ReadAsync())
+                // Use Lazy<Task<...>> for single-flight: concurrent requests for same key
+                // await the same Task instead of spawning parallel DB calls.
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var result = await _memoryCache.GetOrCreateAsync(cacheKey, async entry =>
                 {
-                    counts.PendingCount = reader.GetInt32(0);
-                    counts.ForwardedCount = reader.GetInt32(1);
-                    counts.ReturnedCount = reader.GetInt32(2);
-                    counts.ReturnToEditCount = reader.GetInt32(3);
-                    counts.SanctionedCount = reader.GetInt32(4);
-                    counts.RejectCount = reader.GetInt32(5);
-                    counts.DisbursedCount = reader.GetInt32(6);
-                    counts.TotalApplications = reader.GetInt32(7);
-                    counts.ForwardedSanctionedCount = reader.GetInt32(8);
-                    counts.ForwardedSanctionedCorrigendumCount = reader.GetInt32(9);
-                    counts.ForwardedVerifiedCorrectionCount = reader.GetInt32(10);
-                    counts.CorrigendumPendingCount = reader.GetInt32(11);
-                    counts.CorrigendumForwardedCount = reader.GetInt32(12);
-                    counts.CorrigendumReturnedCount = reader.GetInt32(13);
-                    counts.CorrigendumSanctionedCount = reader.GetInt32(14);
-                    counts.CorrigendumRejectedCount = reader.GetInt32(15);
-                    counts.CorrigendumCount = reader.GetInt32(16);
-                    counts.CorrectionPendingCount = reader.GetInt32(17);
-                    counts.CorrectionForwardedCount = reader.GetInt32(18);
-                    counts.CorrectionReturnedCount = reader.GetInt32(19);
-                    counts.CorrectionSanctionedCount = reader.GetInt32(20);
-                    counts.CorrectionRejectedCount = reader.GetInt32(21);
-                    counts.CorrectionCount = reader.GetInt32(22);
-                    counts.AmendmentPendingCount = reader.GetInt32(23);
-                    counts.AmendmentForwardedCount = reader.GetInt32(24);
-                    counts.AmendmentReturnedCount = reader.GetInt32(25);
-                    counts.AmendmentSanctionedCount = reader.GetInt32(26);
-                    counts.AmendmentRejectedCount = reader.GetInt32(27);
-                    counts.AmendmentCount = reader.GetInt32(28);
-                    counts.TotalWithheldCount = reader.GetInt32(29);
-                    counts.TemporaryWithheldCount = reader.GetInt32(30);
-                    counts.PermanentWithheldCount = reader.GetInt32(31);
-                    counts.WithheldPendingCount = reader.GetInt32(32);
-                    counts.WithheldForwardedCount = reader.GetInt32(33);
-                    counts.WithheldApprovedCount = reader.GetInt32(34);
-                    counts.ShiftedCount = reader.GetInt64(35);
-                    counts.TemporaryDisabilityExpiringSoonCount = reader.GetInt64(36);
-                    counts.TotalPhysicallyChallengedApplications = reader.GetInt64(37);
-                    counts.LegacyTotal = reader.GetInt32(38);
-                    counts.LegacyPending = reader.GetInt32(39);
-                    counts.LegacyForwarded = reader.GetInt32(40);
-                    counts.LegacySanctioned = reader.GetInt32(41);
-                    counts.LegacyRejected = reader.GetInt32(42);
-                }
+                    entry.AbsoluteExpirationRelativeToNow = DashboardCountCacheTtl;
+                    entry.SlidingExpiration = null; // no sliding — strict 60s TTL
+                    return await ExecuteGetDashboardCounts(officer, Serviceid, officerAuthorities);
+                });
 
-                await reader.CloseAsync();
-
-
-                // Build main application counts
-                var countList = new List<object>
-                {
-                    new { label = "Total Applications", count = counts.TotalApplications, bgColor = "#6A1B9A", textColor = "#FFFFFF", tableTitle = "Total Applications", forwardedSanctionedCount = counts.ForwardedSanctionedCount },
-                    new { label = "Pending", count = counts.PendingCount, bgColor = "#FF9800", textColor = "#FFFFFF", tableTitle = "Pending Applications" },
-                    new { label = "Forwarded", count = counts.ForwardedCount, bgColor = "#2196F3", textColor = "#FFFFFF", tableTitle = "Forwarded Applications" },
-                    new { label = "Returned", count = counts.ReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Applications" },
-                    new { label = "Sanctioned", count = counts.SanctionedCount, bgColor = "#4CAF50", textColor = "#FFFFFF", tableTitle = "Sanctioned Applications" },
-                    new { label = "Rejected", count = counts.RejectCount, bgColor = "#F44336", textColor = "#FFFFFF", tableTitle = "Rejected Applications" }
-                };
-
-                // Build corrigendum list
-                var corrigendumList = new List<object>();
-                if (counts.CorrigendumCount > 0 || officerAuthorities.CanCorrigendum)
-                {
-                    corrigendumList.Add(new { label = "Total Corrigendum", count = counts.CorrigendumCount, bgColor = "#5B21B6", textColor = "#FFFFFF", tableTitle = "Total Corrigendum Applications", forwardedSanctionedCount = counts.ForwardedSanctionedCorrigendumCount });
-                    if (counts.CorrigendumPendingCount > 0) corrigendumList.Add(new { label = "Pending", count = counts.CorrigendumPendingCount, bgColor = "#F76F15", textColor = "#FFFFFF", tableTitle = "Pending Corrigendum" });
-                    if (counts.CorrigendumForwardedCount > 0) corrigendumList.Add(new { label = "Forwarded", count = counts.CorrigendumForwardedCount, bgColor = "#0ea5e9", textColor = "#FFFFFF", tableTitle = "Forwarded Corrigendum" });
-                    if (counts.CorrigendumReturnedCount > 0) corrigendumList.Add(new { label = "Returned", count = counts.CorrigendumReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Corrigendum" });
-                    if (counts.CorrigendumSanctionedCount > 0) corrigendumList.Add(new { label = "Sanctioned", count = counts.CorrigendumSanctionedCount, bgColor = "#10b981", textColor = "#FFFFFF", tableTitle = "Sanctioned Corrigendum" });
-                    if (counts.CorrigendumRejectedCount > 0) corrigendumList.Add(new { label = "Rejected", count = counts.CorrigendumRejectedCount, bgColor = "#ef4444", textColor = "#FFFFFF", tableTitle = "Rejected Corrigendum" });
-                }
-
-                // Build correction list
-                var correctionList = new List<object>();
-                if (counts.CorrectionCount > 0)
-                {
-                    correctionList.Add(new { label = "Total Correction", count = counts.CorrectionCount, bgColor = "#0D9488", textColor = "#FFFFFF", tableTitle = "Total Correction Applications", forwardedSanctionedCount = counts.ForwardedVerifiedCorrectionCount });
-                    if (counts.CorrectionPendingCount > 0) correctionList.Add(new { label = "Pending", count = counts.CorrectionPendingCount, bgColor = "#F76F15", textColor = "#FFFFFF", tableTitle = "Pending Correction" });
-                    if (counts.CorrectionForwardedCount > 0) correctionList.Add(new { label = "Forwarded", count = counts.CorrectionForwardedCount, bgColor = "#0ea5e9", textColor = "#FFFFFF", tableTitle = "Forwarded Correction" });
-                    if (counts.CorrectionReturnedCount > 0) correctionList.Add(new { label = "Returned", count = counts.CorrectionReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Correction" });
-                    if (counts.CorrectionSanctionedCount > 0) correctionList.Add(new { label = "Verified", count = counts.CorrectionSanctionedCount, bgColor = "#10b981", textColor = "#FFFFFF", tableTitle = "Verified Correction" });
-                    if (counts.CorrectionRejectedCount > 0) correctionList.Add(new { label = "Rejected", count = counts.CorrectionRejectedCount, bgColor = "#ef4444", textColor = "#FFFFFF", tableTitle = "Rejected Correction" });
-                }
-
-                // Build amendment list
-                var amendmentList = new List<object>();
-                if (counts.AmendmentCount > 0)
-                {
-                    amendmentList.Add(new { label = "Total Amendment", count = counts.AmendmentCount, bgColor = "#15803D", textColor = "#FFFFFF", tableTitle = "Total Amendment Applications" });
-                    if (counts.AmendmentPendingCount > 0) amendmentList.Add(new { label = "Pending", count = counts.AmendmentPendingCount, bgColor = "#F76F15", textColor = "#FFFFFF", tableTitle = "Pending Amendment" });
-                    if (counts.AmendmentForwardedCount > 0) amendmentList.Add(new { label = "Forwarded", count = counts.AmendmentForwardedCount, bgColor = "#0ea5e9", textColor = "#FFFFFF", tableTitle = "Forwarded Amendment" });
-                    if (counts.AmendmentReturnedCount > 0) amendmentList.Add(new { label = "Returned", count = counts.AmendmentReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Amendment" });
-                    if (counts.AmendmentSanctionedCount > 0) amendmentList.Add(new { label = "Sanctioned", count = counts.AmendmentSanctionedCount, bgColor = "#10b981", textColor = "#FFFFFF", tableTitle = "Sanctioned Amendment" });
-                    if (counts.AmendmentRejectedCount > 0) amendmentList.Add(new { label = "Rejected", count = counts.AmendmentRejectedCount, bgColor = "#ef4444", textColor = "#FFFFFF", tableTitle = "Rejected Amendment" });
-                }
-
-                // Citizen pending
-                var citizenPendingList = new List<object>();
-                if (!officerAuthorities.CanReturnToCitizen)
-                {
-                    citizenPendingList.Add(new
-                    {
-                        label = "Pending With Citizen",
-                        count = counts.ReturnToEditCount,
-                        bgColor = "#CE93D8",
-                        textColor = "#4A148C",
-                        tooltipText = "Application is pending at Citizen level for correction.",
-                        tableTitle = "Pending With Citizen Applications"
-                    });
-                }
-
-                // Shifted
-                if (counts.ShiftedCount > 0)
-                {
-                    countList.Add(new { label = "Shifted To Another Location", count = counts.ShiftedCount, tableTitle = "Shifted Applications", bgColor = "#ec4899", textColor = "#FFFFFF" });
-                }
-
-                // Withheld
-                var withheldCountList = new List<object>
-        {
-            new { label = "Total Withheld Applications", count = counts.TotalWithheldCount, tooltipText = "Total Withheld Applications", tableTitle = "Total Withheld Applications", bgColor = "#FFCC00", textColor = "#000000" },
-            new { label = "Temporary Withheld", count = counts.TemporaryWithheldCount, tooltipText = "Temporary Withheld Applications", tableTitle = "Temporary Withheld Applications", bgColor = "#F76F15", textColor = "#FFFFFF" },
-            new { label = "Permanent Withheld", count = counts.PermanentWithheldCount, tooltipText = "Permanent Withheld Applications", tableTitle = "Permanent Withheld Applications", bgColor = "#b91c1c", textColor = "#FFFFFF" },
-            new { label = "Withheld Pending", count = counts.WithheldPendingCount, tooltipText = "Withheld Applications with Pending Status", tableTitle = "Withheld Pending Applications", bgColor = "#FFCC00", textColor = "#000000" },
-            new { label = "Withheld Forwarded", count = counts.WithheldForwardedCount, tooltipText = "Withheld Applications with Forwarded Status", tableTitle = "Withheld Forwarded Applications", bgColor = "#FFCC00", textColor = "#000000" },
-            new { label = "Withheld Approved", count = counts.WithheldApprovedCount, tooltipText = "Withheld Applications with Approved Status", tableTitle = "Withheld Approved Applications", bgColor = "#FFCC00", textColor = "#000000" }
-        };
-
-                // Temp disability (serviceid == 1 only)
-                var temporaryCountList = Serviceid == 1 ? new List<object>
-        {
-            new { label = "PCP Applications", count = counts.TotalPhysicallyChallengedApplications, tooltipText = "Physically Challenged Applicants", tableTitle = "Total PCP Applications", bgColor = "#3b82f6", textColor = "#FFFFFF" },
-            new { label = "PCP-UDID Expires in 3 Months", count = counts.TemporaryDisabilityExpiringSoonCount, tooltipText = "Physically Challenged Applicants with Temporary Disability, UDID Card Expiring Soon", tableTitle = "Expiring Eligibility Applications", bgColor = "#14b8a6", textColor = "#FFFFFF" }
-        } : new List<object>();
-
-                // Legacy counts
-                var legacyCountList = new List<object>
-        {
-            new { label = "Total Applications", count = counts.LegacyTotal, bgColor = "#6A1B9A", textColor = "#FFFFFF", tableTitle = "Total Legacy Applications" },
-            new { label = "Pending", count = counts.LegacyPending, bgColor = "#FF9800", textColor = "#FFFFFF", tableTitle = "Pending Legacy Applications" },
-            new { label = "Forwarded", count = counts.LegacyForwarded, bgColor = "#2196F3", textColor = "#FFFFFF", tableTitle = "Forwarded Legacy Applications" },
-            new { label = "Sanctioned", count = counts.LegacySanctioned, bgColor = "#4CAF50", textColor = "#FFFFFF", tableTitle = "Sanctioned Legacy Applications" },
-            new { label = "Rejected", count = counts.LegacyRejected, bgColor = "#F44336", textColor = "#FFFFFF", tableTitle = "Rejected Legacy Applications" }
-        };
-
-                // Build result
-                var result = new ExpandoObject();
-                var dict = (IDictionary<string, object>)result!;
-
-                dict["countList"] = countList;
-                dict["corrigendumList"] = corrigendumList;
-                dict["correctionList"] = correctionList;
-                dict["amendmentList"] = amendmentList;
-                dict["withheldCountList"] = withheldCountList;
-                dict["citizenPendingList"] = citizenPendingList;
-                dict["legacyCountList"] = legacyCountList;
-                dict["canSanction"] = officerAuthorities.CanSanction;
-                dict["canHavePool"] = officerAuthorities.CanHavePool;
-                dict["canCorrigendum"] = officerAuthorities.CanCorrigendum;
-                dict["officerAuthorities"] = officerAuthorities;
-
-                if (Serviceid == 1)
-                    dict["temporaryCountList"] = temporaryCountList;
+                _logger.LogInformation("GetApplicationsCount | Serviceid: {Serviceid} | Access: {Level}/{Code} | Role: {Role} | Elapsed: {ElapsedMs} ms | CacheHit: {Hit}",
+                    Serviceid, officer.AccessLevel, officer.AccessCode, officer.Role, sw.ElapsedMilliseconds, sw.ElapsedMilliseconds < 50);
 
                 return Json(result);
             }
@@ -358,6 +330,224 @@ namespace SahayataNidhi.Controllers.Officer
                     error = $"Failed to load dashboard counts: {ex.Message}"
                 });
             }
+        }
+
+        /// <summary>
+        /// Executes the DB function and builds the JSON result payload.
+        /// Extracted so it can be used by the cache factory.
+        /// </summary>
+        private async Task<object> ExecuteGetDashboardCounts(OfficerDetailsModal officer, int Serviceid, dynamic officerAuthorities)
+        {
+            // ✅ Use NpgsqlCommand directly — bypass EF Core SqlQueryRaw mapping issues
+            var connection = dbcontext.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM get_dashboard_counts(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @datatype)";
+            command.Parameters.Add(new NpgsqlParameter("@accesslevel", officer.AccessLevel));
+            command.Parameters.Add(new NpgsqlParameter("@accesscode", officer.AccessCode ?? (object)DBNull.Value));
+            command.Parameters.Add(new NpgsqlParameter("@serviceid", Serviceid));
+            command.Parameters.Add(new NpgsqlParameter("@takenby", officer.Role));
+            command.Parameters.Add(new NpgsqlParameter("@divisioncode", officer.AccessLevel == "Division" ? officer.AccessCode : DBNull.Value));
+            command.Parameters.Add(new NpgsqlParameter("@datatype", DBNull.Value));
+
+            await using var reader = await command.ExecuteReaderAsync();
+            var counts = new DashboardCounts();
+
+            if (await reader.ReadAsync())
+            {
+                counts.PendingCount = reader.GetInt32(0);
+                counts.ForwardedCount = reader.GetInt32(1);
+                counts.ReturnedCount = reader.GetInt32(2);
+                counts.ReturnToEditCount = reader.GetInt32(3);
+                counts.SanctionedCount = reader.GetInt32(4);
+                counts.RejectCount = reader.GetInt32(5);
+                counts.DisbursedCount = reader.GetInt32(6);
+                counts.TotalApplications = reader.GetInt32(7);
+                counts.ForwardedSanctionedCount = reader.GetInt32(8);
+                counts.ForwardedSanctionedCorrigendumCount = reader.GetInt32(9);
+                counts.ForwardedVerifiedCorrectionCount = reader.GetInt32(10);
+                counts.CorrigendumPendingCount = reader.GetInt32(11);
+                counts.CorrigendumForwardedCount = reader.GetInt32(12);
+                counts.CorrigendumReturnedCount = reader.GetInt32(13);
+                counts.CorrigendumSanctionedCount = reader.GetInt32(14);
+                counts.CorrigendumRejectedCount = reader.GetInt32(15);
+                counts.CorrigendumCount = reader.GetInt32(16);
+                counts.CorrectionPendingCount = reader.GetInt32(17);
+                counts.CorrectionForwardedCount = reader.GetInt32(18);
+                counts.CorrectionReturnedCount = reader.GetInt32(19);
+                counts.CorrectionSanctionedCount = reader.GetInt32(20);
+                counts.CorrectionRejectedCount = reader.GetInt32(21);
+                counts.CorrectionCount = reader.GetInt32(22);
+                counts.AmendmentPendingCount = reader.GetInt32(23);
+                counts.AmendmentForwardedCount = reader.GetInt32(24);
+                counts.AmendmentReturnedCount = reader.GetInt32(25);
+                counts.AmendmentSanctionedCount = reader.GetInt32(26);
+                counts.AmendmentRejectedCount = reader.GetInt32(27);
+                counts.AmendmentCount = reader.GetInt32(28);
+                counts.TotalWithheldCount = reader.GetInt32(29);
+                counts.TemporaryWithheldCount = reader.GetInt32(30);
+                counts.PermanentWithheldCount = reader.GetInt32(31);
+                counts.WithheldPendingCount = reader.GetInt32(32);
+                counts.WithheldForwardedCount = reader.GetInt32(33);
+                counts.WithheldApprovedCount = reader.GetInt32(34);
+                counts.ShiftedCount = reader.GetInt64(35);
+                counts.TemporaryDisabilityExpiringSoonCount = reader.GetInt64(36);
+                counts.TotalPhysicallyChallengedApplications = reader.GetInt64(37);
+                counts.LegacyTotal = reader.GetInt32(38);
+                counts.LegacyPending = reader.GetInt32(39);
+                counts.LegacyForwarded = reader.GetInt32(40);
+                counts.LegacySanctioned = reader.GetInt32(41);
+                counts.LegacyRejected = reader.GetInt32(42);
+            }
+
+            await reader.CloseAsync();
+
+
+            var countList = new List<object>
+            {
+                new { label = "Total Applications", count = counts.TotalApplications, bgColor = "#6A1B9A", textColor = "#FFFFFF", tableTitle = "Total Applications", forwardedSanctionedCount = counts.ForwardedSanctionedCount },
+                new { label = "Pending",            count = counts.PendingCount,      bgColor = "#FF9800", textColor = "#FFFFFF", tableTitle = "Pending Applications" }
+            };
+
+            if (officerAuthorities.CanForwardToPlayer)
+            {
+                countList.Add(new { label = "Forwarded", count = counts.ForwardedCount, bgColor = "#2196F3", textColor = "#FFFFFF", tableTitle = "Forwarded Applications" });
+            }
+
+            if (officerAuthorities.CanReturnToPlayer)
+            {
+                countList.Add(new { label = "Returned", count = counts.ReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Applications" });
+            }
+
+            if (officerAuthorities.CanReturnToCitizen)
+            {
+                countList.Add(new
+                {
+                    label = "Pending With Citizen",
+                    count = counts.ReturnToEditCount,
+                    bgColor = "#CE93D8",
+                    textColor = "#4A148C",
+                    tooltipText = "Application is pending at Citizen level for correction.",
+                    tableTitle = "Pending With Citizen Applications"
+                });
+            }
+
+            if (officerAuthorities.CanSanction)
+            {
+                countList.Add(new { label = "Sanctioned", count = counts.SanctionedCount, bgColor = "#4CAF50", textColor = "#FFFFFF", tableTitle = "Sanctioned Applications" });
+            }
+
+            countList.Add(new { label = "Rejected", count = counts.RejectCount, bgColor = "#F44336", textColor = "#FFFFFF", tableTitle = "Rejected Applications" });
+
+            // Citizen pending (unchanged) — for officers who can't return to citizen
+            var citizenPendingList = new List<object>();
+            if (!officerAuthorities.CanReturnToCitizen)
+            {
+                citizenPendingList.Add(new
+                {
+                    label = "Pending With Citizen",
+                    count = counts.ReturnToEditCount,
+                    bgColor = "#CE93D8",
+                    textColor = "#4A148C",
+                    tooltipText = "Applications returned to citizens, awaiting resubmission.",
+                    tableTitle = "Pending With Citizen Applications"
+                });
+            }
+
+
+            // Build corrigendum list
+            var corrigendumList = new List<object>();
+            if (counts.CorrigendumCount > 0 || officerAuthorities.CanCorrigendum)
+            {
+                corrigendumList.Add(new { label = "Total Corrigendum", count = counts.CorrigendumCount, bgColor = "#5B21B6", textColor = "#FFFFFF", tableTitle = "Total Corrigendum Applications", forwardedSanctionedCount = counts.ForwardedSanctionedCorrigendumCount });
+                if (counts.CorrigendumPendingCount > 0) corrigendumList.Add(new { label = "Pending", count = counts.CorrigendumPendingCount, bgColor = "#F76F15", textColor = "#FFFFFF", tableTitle = "Pending Corrigendum" });
+                if (counts.CorrigendumForwardedCount > 0) corrigendumList.Add(new { label = "Forwarded", count = counts.CorrigendumForwardedCount, bgColor = "#0ea5e9", textColor = "#FFFFFF", tableTitle = "Forwarded Corrigendum" });
+                if (counts.CorrigendumReturnedCount > 0) corrigendumList.Add(new { label = "Returned", count = counts.CorrigendumReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Corrigendum" });
+                if (counts.CorrigendumSanctionedCount > 0) corrigendumList.Add(new { label = "Sanctioned", count = counts.CorrigendumSanctionedCount, bgColor = "#10b981", textColor = "#FFFFFF", tableTitle = "Sanctioned Corrigendum" });
+                if (counts.CorrigendumRejectedCount > 0) corrigendumList.Add(new { label = "Rejected", count = counts.CorrigendumRejectedCount, bgColor = "#ef4444", textColor = "#FFFFFF", tableTitle = "Rejected Corrigendum" });
+            }
+
+            // Build correction list
+            var correctionList = new List<object>();
+            if (counts.CorrectionCount > 0)
+            {
+                correctionList.Add(new { label = "Total Correction", count = counts.CorrectionCount, bgColor = "#0D9488", textColor = "#FFFFFF", tableTitle = "Total Correction Applications", forwardedSanctionedCount = counts.ForwardedVerifiedCorrectionCount });
+                if (counts.CorrectionPendingCount > 0) correctionList.Add(new { label = "Pending", count = counts.CorrectionPendingCount, bgColor = "#F76F15", textColor = "#FFFFFF", tableTitle = "Pending Correction" });
+                if (counts.CorrectionForwardedCount > 0) correctionList.Add(new { label = "Forwarded", count = counts.CorrectionForwardedCount, bgColor = "#0ea5e9", textColor = "#FFFFFF", tableTitle = "Forwarded Correction" });
+                if (counts.CorrectionReturnedCount > 0) correctionList.Add(new { label = "Returned", count = counts.CorrectionReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Correction" });
+                if (counts.CorrectionSanctionedCount > 0) correctionList.Add(new { label = "Verified", count = counts.CorrectionSanctionedCount, bgColor = "#10b981", textColor = "#FFFFFF", tableTitle = "Verified Correction" });
+                if (counts.CorrectionRejectedCount > 0) correctionList.Add(new { label = "Rejected", count = counts.CorrectionRejectedCount, bgColor = "#ef4444", textColor = "#FFFFFF", tableTitle = "Rejected Correction" });
+            }
+
+            // Build amendment list
+            var amendmentList = new List<object>();
+            if (counts.AmendmentCount > 0)
+            {
+                amendmentList.Add(new { label = "Total Amendment", count = counts.AmendmentCount, bgColor = "#15803D", textColor = "#FFFFFF", tableTitle = "Total Amendment Applications" });
+                if (counts.AmendmentPendingCount > 0) amendmentList.Add(new { label = "Pending", count = counts.AmendmentPendingCount, bgColor = "#F76F15", textColor = "#FFFFFF", tableTitle = "Pending Amendment" });
+                if (counts.AmendmentForwardedCount > 0) amendmentList.Add(new { label = "Forwarded", count = counts.AmendmentForwardedCount, bgColor = "#0ea5e9", textColor = "#FFFFFF", tableTitle = "Forwarded Amendment" });
+                if (counts.AmendmentReturnedCount > 0) amendmentList.Add(new { label = "Returned", count = counts.AmendmentReturnedCount, bgColor = "#f97316", textColor = "#FFFFFF", tableTitle = "Returned Amendment" });
+                if (counts.AmendmentSanctionedCount > 0) amendmentList.Add(new { label = "Sanctioned", count = counts.AmendmentSanctionedCount, bgColor = "#10b981", textColor = "#FFFFFF", tableTitle = "Sanctioned Amendment" });
+                if (counts.AmendmentRejectedCount > 0) amendmentList.Add(new { label = "Rejected", count = counts.AmendmentRejectedCount, bgColor = "#ef4444", textColor = "#FFFFFF", tableTitle = "Rejected Amendment" });
+            }
+
+
+
+            // Shifted
+            if (counts.ShiftedCount > 0)
+            {
+                countList.Add(new { label = "Shifted To Another Location", count = counts.ShiftedCount, tableTitle = "Shifted Applications", bgColor = "#ec4899", textColor = "#FFFFFF" });
+            }
+
+            // Withheld
+            var withheldCountList = new List<object>
+        {
+            new { label = "Total Withheld Applications", count = counts.TotalWithheldCount, tooltipText = "Total Withheld Applications", tableTitle = "Total Withheld Applications", bgColor = "#FFCC00", textColor = "#000000" },
+            // new { label = "Temporary Withheld", count = counts.TemporaryWithheldCount, tooltipText = "Temporary Withheld Applications", tableTitle = "Temporary Withheld Applications", bgColor = "#F76F15", textColor = "#FFFFFF" },
+            // new { label = "Permanent Withheld", count = counts.PermanentWithheldCount, tooltipText = "Permanent Withheld Applications", tableTitle = "Permanent Withheld Applications", bgColor = "#b91c1c", textColor = "#FFFFFF" },
+            new { label = "Withheld Pending", count = counts.WithheldPendingCount, tooltipText = "Withheld Applications with Pending Status", tableTitle = "Withheld Pending Applications", bgColor = "#FFCC00", textColor = "#000000" },
+            new { label = "Withheld Forwarded", count = counts.WithheldForwardedCount, tooltipText = "Withheld Applications with Forwarded Status", tableTitle = "Withheld Forwarded Applications", bgColor = "#FFCC00", textColor = "#000000" },
+            new { label = "Withheld Approved", count = counts.WithheldApprovedCount, tooltipText = "Withheld Applications with Approved Status", tableTitle = "Withheld Approved Applications", bgColor = "#FFCC00", textColor = "#000000" }
+        };
+
+            // Temp disability (serviceid == 1 only)
+            var temporaryCountList = Serviceid == 1 ? new List<object>
+        {
+            new { label = "PCP Applications", count = counts.TotalPhysicallyChallengedApplications, tooltipText = "Physically Challenged Applicants", tableTitle = "Total PCP Applications", bgColor = "#3b82f6", textColor = "#FFFFFF" },
+            new { label = "PCP-UDID Expires in 3 Months", count = counts.TemporaryDisabilityExpiringSoonCount, tooltipText = "Physically Challenged Applicants with Temporary Disability, UDID Card Expiring Soon", tableTitle = "Expiring Eligibility Applications", bgColor = "#14b8a6", textColor = "#FFFFFF" }
+        } : new List<object>();
+
+            // Legacy counts
+            var legacyCountList = new List<object>
+        {
+            new { label = "Total Applications", count = counts.LegacyTotal, bgColor = "#6A1B9A", textColor = "#FFFFFF", tableTitle = "Total Legacy Applications" },
+            new { label = "Pending", count = counts.LegacyPending, bgColor = "#FF9800", textColor = "#FFFFFF", tableTitle = "Pending Legacy Applications" },
+            new { label = "Forwarded", count = counts.LegacyForwarded, bgColor = "#2196F3", textColor = "#FFFFFF", tableTitle = "Forwarded Legacy Applications" },
+            new { label = "Sanctioned", count = counts.LegacySanctioned, bgColor = "#4CAF50", textColor = "#FFFFFF", tableTitle = "Sanctioned Legacy Applications" },
+            new { label = "Rejected", count = counts.LegacyRejected, bgColor = "#F44336", textColor = "#FFFFFF", tableTitle = "Rejected Legacy Applications" }
+        };
+
+            // Build result
+            var result = new ExpandoObject();
+            var dict = (IDictionary<string, object>)result!;
+
+            dict["countList"] = countList;
+            dict["corrigendumList"] = corrigendumList;
+            dict["correctionList"] = correctionList;
+            dict["amendmentList"] = amendmentList;
+            dict["withheldCountList"] = withheldCountList;
+            dict["citizenPendingList"] = citizenPendingList;
+            dict["legacyCountList"] = legacyCountList;
+            dict["canSanction"] = officerAuthorities.CanSanction;
+            dict["canHavePool"] = officerAuthorities.CanHavePool;
+            dict["canCorrigendum"] = officerAuthorities.CanCorrigendum;
+            dict["officerAuthorities"] = officerAuthorities;
+
+            if (Serviceid == 1)
+                dict["temporaryCountList"] = temporaryCountList;
+
+            return result;
         }
 
 
@@ -398,6 +588,107 @@ namespace SahayataNidhi.Controllers.Officer
             return null;
         }
 
+        /// <summary>
+        /// Result describing which location levels a service's form actually uses.
+        /// Services differ in the child level beneath "District" (Tehsil, Block,
+        /// Muncipality, ...) and some have no child level at all.
+        /// </summary>
+        private class ServiceLocationFields
+        {
+            public bool HasDistrict { get; set; }
+            public bool HasChildLocation { get; set; }
+            public string ChildLocationHeader { get; set; } = "Tehsil Name";
+        }
+
+        /// <summary>
+        /// Parses a service's Formelement JSON to determine its location hierarchy.
+        /// Looks at the "Location" section (or any section) for select fields named
+        /// District and its direct child (a select whose valueDependentOn is "District",
+        /// or the location select that is not the District field). The child's label is
+        /// used to build the dynamic column header (e.g. "Tehsil Name", "Block Name").
+        /// </summary>
+        private ServiceLocationFields ResolveServiceLocationFields(string? formElementJson)
+        {
+            var result = new ServiceLocationFields();
+
+            if (string.IsNullOrWhiteSpace(formElementJson))
+                return result;
+
+            try
+            {
+                var sections = JArray.Parse(formElementJson);
+
+                // Only examine the Location section — address sections (Present/Permanent
+                // Address) also contain Tehsil/Block fields that reflect the *applicant's*
+                // address, not the officer's operational area level.
+                var locationSection = sections.FirstOrDefault(s =>
+                    (s["section"]?.ToString() ?? "").Equals("Location", StringComparison.OrdinalIgnoreCase));
+
+                var fields = locationSection?["fields"] as JArray;
+                if (fields == null)
+                    return result;
+
+                foreach (var field in fields)
+                {
+                    var type = field?["type"]?.ToString();
+                    if (type != "select")
+                        continue;
+
+                    var name = field?["name"]?.ToString() ?? "";
+                    var label = field?["label"]?.ToString() ?? "";
+                    var valueDependentOn = field?["valueDependentOn"]?.ToString() ?? "";
+                    var dependentOn = field?["dependentOn"]?.ToString() ?? "";
+
+                    bool isDistrict = name.Equals("District", StringComparison.OrdinalIgnoreCase)
+                                      || name.IndexOf("District", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    bool dependsOnDistrict = valueDependentOn.Equals("District", StringComparison.OrdinalIgnoreCase)
+                                             || dependentOn.Equals("District", StringComparison.OrdinalIgnoreCase);
+
+                    bool isChildLocation = !isDistrict && dependsOnDistrict;
+
+                    if (isDistrict)
+                        result.HasDistrict = true;
+
+                    if (isChildLocation)
+                    {
+                        result.HasChildLocation = true;
+                        result.ChildLocationHeader = BuildChildLocationHeader(name, label);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resolve service location fields from form element.");
+            }
+
+            return result;
+        }
+
+        private static string BuildChildLocationHeader(string name, string label)
+        {
+            // Prefer the field's own label (e.g. "Tehsil Social Welfare Office (TSWO)")
+            // trimmed of office-like suffixes, otherwise derive from the field name.
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                // Use the base location word for a clean column header.
+                foreach (var token in new[] { "Tehsil", "Block", "Muncipality", "Municipality", "Halqa", "Ward", "Village" })
+                {
+                    if (label.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return token + " Name";
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                foreach (var token in new[] { "Tehsil", "Block", "Muncipality", "Municipality", "Halqa", "Ward", "Village" })
+                {
+                    if (name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return token + " Name";
+                }
+            }
+            return "Tehsil Name";
+        }
+
         [HttpGet]
         public async Task<IActionResult> DownloadSanctionLetter(string fileName)
         {
@@ -422,15 +713,13 @@ namespace SahayataNidhi.Controllers.Officer
         }
 
         [HttpGet]
-        public IActionResult GetApplications(int Serviceid, string type, int pageIndex = 0, int pageSize = 10,
-       string? dataType = null, string? searchQuery = null)
+        public IActionResult GetApplications(int Serviceid, string type, int pageIndex = 0, int pageSize = 10, string? dataType = null, string? searchQuery = null)
         {
             var officerDetails = GetOfficerDetails();
 
             // ========== VALIDATE WORKFLOW ==========
             var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == Serviceid);
-            if (service == null)
-                return NotFound();
+            if (service == null) return NotFound();
 
             var workflow = JsonConvert.DeserializeObject<List<dynamic>>(service.Officereditablefield!);
             if (workflow == null || workflow.Count == 0)
@@ -441,13 +730,13 @@ namespace SahayataNidhi.Controllers.Officer
                 return Json(new { countList = new List<dynamic>(), canSanction = false });
 
             // =====================================================================
-            //                       GET TOTAL RECORDS (with optional datatype filter)
+            //                       GET TOTAL RECORDS  (main list only)
             // =====================================================================
             int totalRecords = 0;
+            bool poolMode = type == "pending" || type == "pushedtopool" || type == "pool";
 
             try
             {
-                // Parameters for get_status_count – note the added @p_data_type
                 var statusCountParameters = new[]
                 {
             new NpgsqlParameter("@p_access_level", officerDetails.AccessLevel),
@@ -455,70 +744,52 @@ namespace SahayataNidhi.Controllers.Officer
             new NpgsqlParameter("@p_service_id", Serviceid),
             new NpgsqlParameter("@p_taken_by", officerDetails.Role),
             new NpgsqlParameter("@p_division_code",
-                officerDetails.AccessLevel == "Division" ? officerDetails.AccessCode ?? (object)DBNull.Value : (object)DBNull.Value),
-            new NpgsqlParameter("@p_data_type", !string.IsNullOrEmpty(dataType) ? (object)dataType : DBNull.Value)
+                officerDetails.AccessLevel == "Division"
+                    ? officerDetails.AccessCode ?? (object)DBNull.Value
+                    : (object)DBNull.Value),
+            new NpgsqlParameter("@p_data_type",
+                string.Equals(dataType, "legacy", StringComparison.OrdinalIgnoreCase)
+                    ? (object)dataType! : DBNull.Value)
         };
 
                 var statusCountResult = dbcontext.Database
-                    .SqlQueryRaw<StatusCounts>(
-                        "SELECT * FROM get_status_count(@p_access_level, @p_access_code, @p_service_id, @p_taken_by, @p_division_code, @p_data_type)",
-                        statusCountParameters
-                    )
+                    .SqlQueryRaw<DashboardCounts>(
+                        "SELECT * FROM get_dashboard_counts(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @datatype)",
+                        statusCountParameters)
                     .FirstOrDefault();
-
-                _logger.LogInformation($"-------- Status Count Result: {JsonConvert.SerializeObject(statusCountResult)} -------");
 
                 if (statusCountResult != null)
                 {
-                    // Map the status type to the corresponding count field
                     switch (type)
                     {
-                        case "total":
-                            totalRecords = statusCountResult.TotalApplications;
+                        case "total": totalRecords = statusCountResult.TotalApplications; break;
+                        case "pending": totalRecords = statusCountResult.PendingCount; break;
+                        case "forwarded": totalRecords = statusCountResult.ForwardedCount; break;
+                        case "returned": totalRecords = statusCountResult.ReturnedCount; break;
+                        case "returntoedit": totalRecords = statusCountResult.ReturnToEditCount; break;
+                        case "sanctioned": totalRecords = statusCountResult.SanctionedCount; break;
+                        case "rejected": totalRecords = statusCountResult.RejectCount; break;
+                        case "disbursed": totalRecords = statusCountResult.DisbursedCount; break;
+                        case "pushedtopool":
+                        case "pool":
+                            // Pool total comes from pool fetch below
                             break;
-                        case "pending":
-                            totalRecords = statusCountResult.PendingCount;
-                            break;
-                        case "forwarded":
-                            totalRecords = statusCountResult.ForwardedCount;
-                            break;
-                        case "returned":
-                            totalRecords = statusCountResult.ReturnedCount;
-                            break;
-                        case "returntoedit":
-                            totalRecords = statusCountResult.ReturnToEditCount;
-                            break;
-                        case "sanctioned":
-                            totalRecords = statusCountResult.SanctionedCount;
-                            break;
-                        case "rejected":
-                            totalRecords = statusCountResult.RejectCount;
-                            break;
-                        case "disbursed":
-                            totalRecords = statusCountResult.DisbursedCount;
-                            break;
-                        default:
-                            totalRecords = 0;
-                            break;
+                        default: totalRecords = 0; break;
                     }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error getting status count for type {type}: {ex.Message}");
-                // Continue without total records count
             }
 
-            _logger.LogInformation($"--------- Initial Status Count for type '{type}': {totalRecords} ---------");
-
             // =====================================================================
-            //                       FETCH LIST USING DTO
+            //                       FETCH MAIN LIST
             // =====================================================================
             List<OfficerApplicationDto> response;
 
             if (type == "shifted")
             {
-                // SHIFTED APPLICATIONS (no search for shifted)
                 var shiftedParameters = new[]
                 {
             new NpgsqlParameter("@role", officerDetails.Role),
@@ -526,15 +797,11 @@ namespace SahayataNidhi.Controllers.Officer
             new NpgsqlParameter("@accesscode", officerDetails.AccessCode ?? (object)DBNull.Value),
             new NpgsqlParameter("@serviceid", Serviceid)
         };
-
                 response = dbcontext.Database
                     .SqlQueryRaw<OfficerApplicationDto>(
                         "SELECT * FROM get_shifted_applications(@role, @accesslevel, @accesscode, @serviceid)",
-                        shiftedParameters
-                    )
+                        shiftedParameters)
                     .ToList();
-
-                // For shifted applications, use the actual count
                 totalRecords = response.Count;
             }
             else if (!string.IsNullOrEmpty(searchQuery))
@@ -549,447 +816,537 @@ namespace SahayataNidhi.Controllers.Officer
             new NpgsqlParameter("@page_index", pageIndex),
             new NpgsqlParameter("@page_size", pageSize),
             new NpgsqlParameter("@division_code",
-                officerDetails.AccessLevel == "Division" ? officerDetails.AccessCode ?? (object)DBNull.Value : (object)DBNull.Value),
+                officerDetails.AccessLevel == "Division"
+                    ? officerDetails.AccessCode ?? (object)DBNull.Value
+                    : (object)DBNull.Value),
             new NpgsqlParameter("@search_query", searchQuery)
         };
-
                 response = dbcontext.Database
                     .SqlQueryRaw<OfficerApplicationDto>(
                         "SELECT * FROM search_applications_for_officer(@role, @accesslevel, @accesscode, @applicationstatus, @serviceid, @page_index, @page_size, @division_code, @search_query)",
-                        searchParameters
-                    )
+                        searchParameters)
                     .ToList();
-
-                // For search results, use the actual count
                 totalRecords = response.Count;
             }
             else
             {
-                // NORMAL APPLICATIONS - Use existing function
                 var parameters = new[]
                 {
-                    new NpgsqlParameter("@role", officerDetails.Role),
-                    new NpgsqlParameter("@accesslevel", officerDetails.AccessLevel),
-                    new NpgsqlParameter("@accesscode", officerDetails.AccessCode ?? (object)DBNull.Value),
-                    new NpgsqlParameter("@applicationstatus", (object?)type ?? DBNull.Value),
-                    new NpgsqlParameter("@serviceid", Serviceid),
-                    new NpgsqlParameter("@pageindex", pageIndex),
-                    new NpgsqlParameter("@pagesize", pageSize),
-                    new NpgsqlParameter("@ispaginated", true),
-                    new NpgsqlParameter("@datatype", dataType == "legacy" ? (object)dataType : DBNull.Value),
-                    new NpgsqlParameter("@division_code",
-                        officerDetails.AccessLevel == "Division" ? officerDetails.AccessCode ?? (object)DBNull.Value : (object)DBNull.Value)
-                };
-
+            new NpgsqlParameter("@role", officerDetails.Role),
+            new NpgsqlParameter("@accesslevel", officerDetails.AccessLevel),
+            new NpgsqlParameter("@accesscode", officerDetails.AccessCode ?? (object)DBNull.Value),
+            new NpgsqlParameter("@applicationstatus", (object?)type ?? DBNull.Value),
+            new NpgsqlParameter("@serviceid", Serviceid),
+            new NpgsqlParameter("@pageindex", pageIndex),
+            new NpgsqlParameter("@pagesize", pageSize),
+            new NpgsqlParameter("@ispaginated", true),
+            new NpgsqlParameter("@datatype", dataType == "legacy" ? dataType : DBNull.Value),
+            new NpgsqlParameter("@division_code",
+                officerDetails.AccessLevel == "Division"
+                    ? officerDetails.AccessCode ?? (object)DBNull.Value
+                    : (object)DBNull.Value)
+        };
                 response = dbcontext.Database
                     .SqlQueryRaw<OfficerApplicationDto>(
                         "SELECT * FROM get_applications_for_officer(@role, @accesslevel, @accesscode, @applicationstatus, @serviceid, @pageindex, @pagesize, @ispaginated, @datatype, @division_code)",
-                        parameters
-                    )
+                        parameters)
                     .ToList();
 
-                // ✅ CRITICAL FIX: Get total count from the first record (if any)
-                // The function returns totalcount in every row, so we can get it from the first record
                 if (response.Any() && response.First().TotalCount > 0)
-                {
-                    // Override the status count with the actual total from the function
-                    // This is more accurate as it accounts for all filters
                     totalRecords = (int)response.First().TotalCount;
-                    _logger.LogInformation($"--------- Total Records from function: {totalRecords} ---------");
-                }
                 else
-                {
-                    // Fallback to count from response if TotalCount is not available
                     totalRecords = response.Count;
-                    _logger.LogWarning($"--------- TotalCount not available, using response count: {totalRecords} ---------");
-                }
             }
 
             // =====================================================================
             //                       COLUMN SETUP
             // =====================================================================
-            var columns = new List<dynamic>
-            {
-                new { accessorKey = "sno", header = "S.No" },
-                new { accessorKey = "referenceNumber", header = "Reference Number" },
-                new { accessorKey = "applicantName", header = "Applicant Name" },
-                new { accessorKey = "serviceName", header = "Service Name" },
-                new { accessorKey = "currentlyWith", header = "Currently With" },
-                new { accessorKey = "status", header = "Application Status" },
-                new { accessorKey = "submissionDate", header = "Citizen Submission Date" },
-                new { accessorKey = "actionTakenOn", header = "Received On" }
-            };
+            var serviceLocation = ResolveServiceLocationFields(service.Formelement);
+            bool serviceHasDistrict = serviceLocation.HasDistrict;
+            bool serviceHasChildLocation = serviceLocation.HasChildLocation;
+            string childLocationHeader = serviceLocation.ChildLocationHeader;
 
-            // Add location columns based on access level
+            bool serviceHasRationCard = !string.IsNullOrWhiteSpace(service.Formelement)
+                && service.Formelement.Contains("RationCardNumber", StringComparison.OrdinalIgnoreCase);
+
+            // ── Detect which Present Address fields exist in this service's form ──
+            // We only add a column when the field name literally appears in the
+            // service form element JSON, so services without a Present Address
+            // section don't get cluttered with empty columns.
+            //
+            // NOTE: we search with surrounding quotes ("PresentAddress") so that
+            // `PresentAddressType` is not falsely matched by a search for
+            // `PresentAddress`.
+            var presentAddressColumns = new List<(string AccessorKey, string Header, string FieldName)>();
+            bool serviceHasPresentAddress = !string.IsNullOrWhiteSpace(service.Formelement)
+                && service.Formelement.Contains("Present Address Details", StringComparison.OrdinalIgnoreCase);
+
+            if (serviceHasPresentAddress)
+            {
+                var presentCandidates = new (string Field, string Header)[]
+                {
+            ("PresentAddress",         "Present Address"),
+            ("PresentAddressType",     "Present Address Type"),
+            ("PresentDistrict",        "Present District"),
+            ("PresentTehsil",          "Present Tehsil"),
+            ("PresentBlock",           "Present Block"),
+            ("PresentHalqaPanchayat",  "Present Halqa Panchayat"),
+            ("PresentMuncipality",     "Present Municipality"),
+            ("PresentWardNo",          "Present Ward No"),
+            ("PresentVillage",         "Present Village"),
+            ("PresentPincode",         "Present Pincode"),
+                };
+
+                foreach (var (field, header) in presentCandidates)
+                {
+                    if (service.Formelement!.Contains($"\"{field}\"", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var accessor = char.ToLowerInvariant(field[0]) + field.Substring(1);
+                        presentAddressColumns.Add((accessor, header, field));
+                    }
+                }
+            }
+
+            var columns = new List<dynamic>
+    {
+        new { accessorKey = "sno",             header = "S.No" },
+        new { accessorKey = "referenceNumber", header = "Reference Number" },
+        new { accessorKey = "applicantName",   header = "Applicant Name" },
+        new { accessorKey = "mobileNumber",    header = "Mobile Number" }
+    };
+
+            if (serviceHasRationCard)
+                columns.Add(new { accessorKey = "rationCardNumber", header = "Ration Card Number" });
+
+            // Present Address columns — appended right after rationCardNumber so
+            // they sit between the identity block and the workflow block. Kept
+            // before the workflow columns so they read naturally in the grid.
+            foreach (var col in presentAddressColumns)
+            {
+                columns.Add(new { accessorKey = col.AccessorKey, header = col.Header });
+            }
+
+            columns.Add(new { accessorKey = "serviceName", header = "Service Name" });
+            columns.Add(new { accessorKey = "currentlyWith", header = "Currently With" });
+            columns.Add(new { accessorKey = "status", header = "Application Status" });
+            columns.Add(new { accessorKey = "officerRemarks", header = "Officer Remarks" });
+            columns.Add(new { accessorKey = "submissionDate", header = "Citizen Submission Date" });
+            columns.Add(new { accessorKey = "actionTakenOn", header = "Received On" });
+
             if (officerDetails.AccessLevel == "State")
             {
                 columns.Insert(1, new { accessorKey = "divisionName", header = "Division Name" });
-                columns.Insert(2, new { accessorKey = "districtName", header = "District Name" });
+                if (serviceHasDistrict)
+                    columns.Insert(2, new { accessorKey = "districtName", header = "District Name" });
             }
             else if (officerDetails.AccessLevel == "Division")
             {
-                columns.Insert(1, new { accessorKey = "districtName", header = "District Name" });
-                columns.Insert(2, new { accessorKey = "tehsilName", header = "Tehsil Name" });
+                if (serviceHasDistrict)
+                    columns.Insert(1, new { accessorKey = "districtName", header = "District Name" });
+                if (serviceHasChildLocation)
+                    columns.Insert(2, new { accessorKey = "tehsilName", header = childLocationHeader });
             }
             else if (officerDetails.AccessLevel == "District")
             {
-                columns.Insert(1, new { accessorKey = "tehsilName", header = "Tehsil Name" });
+                if (serviceHasChildLocation)
+                    columns.Insert(1, new { accessorKey = "tehsilName", header = childLocationHeader });
             }
 
             // =====================================================================
-            //                       POOL LOGIC
+            //                       POOL — read once, no pagination
             // =====================================================================
             var poolList = dbcontext.Pool.FirstOrDefault(p =>
                 p.Serviceid == Serviceid &&
                 p.Accesslevel == officerDetails.AccessLevel &&
-                p.Accesscode == officerDetails.AccessCode
-            );
+                p.Accesscode == officerDetails.AccessCode &&
+                p.Listtype == "Pool");
 
             var pool = poolList != null && !string.IsNullOrWhiteSpace(poolList.List)
-                ? JsonConvert.DeserializeObject<List<string>>(poolList.List)
+                ? JsonConvert.DeserializeObject<List<string>>(poolList.List) ?? new List<string>()
                 : new List<string>();
 
-            List<dynamic> data = [];
-            List<dynamic> poolData = [];
+            _logger.LogInformation("Pool lookup: found={found}, count={count}",
+                poolList != null, pool.Count);
+
+            // ★ Pinned pool fetch — bypass pageIndex/pageSize entirely.
+            List<OfficerApplicationDto> poolResponse = new();
+            if (poolMode && pool.Count > 0)
+            {
+                var poolParams = new[]
+                {
+            new NpgsqlParameter("@role",          officerDetails.Role),
+            new NpgsqlParameter("@accesslevel",   officerDetails.AccessLevel),
+            new NpgsqlParameter("@accesscode",    officerDetails.AccessCode ?? (object)DBNull.Value),
+            new NpgsqlParameter("@serviceid",     Serviceid),
+            new NpgsqlParameter("@pageindex",     (object)0),
+            new NpgsqlParameter("@pagesize",      (object)Math.Max(pool.Count, 1)),
+            new NpgsqlParameter("@datatype",      dataType == "legacy" ? dataType : (object)DBNull.Value),
+            new NpgsqlParameter("@division_code",
+                officerDetails.AccessLevel == "Division"
+                    ? officerDetails.AccessCode ?? (object)DBNull.Value
+                    : (object)DBNull.Value),
+            new NpgsqlParameter("@refs",          pool.ToArray())
+        };
+
+                poolResponse = dbcontext.Database
+                    .SqlQueryRaw<OfficerApplicationDto>(
+                        "SELECT * FROM get_pool_applications_for_officer(@role, @accesslevel, @accesscode, @serviceid, @pageindex, @pagesize, @datatype, @division_code, @refs)",
+                        poolParams)
+                    .ToList();
+
+                _logger.LogInformation("Pool fetched (pinned): count={c}", poolResponse.Count);
+            }
 
             // =====================================================================
             //                       BUILD RESULT OBJECTS
             // =====================================================================
-            int snoCounter = (pageIndex * pageSize) + 1;
+            List<dynamic> data = new();
+            List<dynamic> poolData = new();
 
+            dynamic BuildRow(OfficerApplicationDto details, int sno, string activeType)
+            {
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails ?? "{}");
+                var officers = JsonConvert.DeserializeObject<JArray>(details.WorkFlow ?? "[]");
+                var currentPlayer = details.CurrentPlayer ?? 0;
+
+                string officerDesignation = "Unknown";
+                string officerAccessLevel = "Unknown";
+                string officerStatus = "Unknown";
+                string officerArea = "Unknown";
+
+                if (officers != null && officers.Count > 0)
+                {
+                    var currentOfficerObj = currentPlayer >= 0 && currentPlayer < officers.Count
+                        ? officers[currentPlayer] : officers[0];
+
+                    if (currentOfficerObj != null)
+                    {
+                        officerDesignation = currentOfficerObj["designation"]?.ToString() ?? "Unknown";
+                        officerAccessLevel = currentOfficerObj["accessLevel"]?.ToString() ?? "Unknown";
+                        officerStatus = currentOfficerObj["status"]?.ToString() ?? "Unknown";
+                    }
+                    officerArea = GetOfficerArea(officerAccessLevel, formDetails);
+                }
+
+                var actionHistories = dbcontext.Actionhistory
+                    .Where(h => h.Referencenumber == details.ReferenceNumber)
+                    .ToList();
+
+                var latestHistory = actionHistories
+                    .Select(h => new { History = h, ParsedDate = SafeParseDate(h.Actiontakendate) })
+                    .Where(x => x.ParsedDate.HasValue)
+                    .OrderByDescending(x => x.ParsedDate!.Value)
+                    .Select(x => x.History)
+                    .FirstOrDefault();
+
+                DateTime parsedDate = latestHistory != null && SafeParseDate(latestHistory.Actiontakendate).HasValue
+                    ? SafeParseDate(latestHistory.Actiontakendate)!.Value
+                    : DateTime.MinValue;
+
+                string serviceName = dbcontext.Services
+                    .FirstOrDefault(s => s.Serviceid == details.ServiceId)?.Servicename ?? "Unknown";
+
+                string rationCardNumber = string.Empty;
+                if (serviceHasRationCard)
+                {
+                    try
+                    {
+                        var rcStr = GetFieldValue("RationCardNumber", formDetails)?.ToString();
+                        if (!string.IsNullOrWhiteSpace(rcStr)) rationCardNumber = rcStr!;
+                    }
+                    catch { /* field missing on this row */ }
+                }
+
+                string officerRemarks = latestHistory?.Remarks ?? string.Empty;
+
+                var customActions = new List<dynamic>();
+                JToken? currentOfficer = officers?.FirstOrDefault(o =>
+                    o != null && o["designation"]?.ToString() == officerDetails.Role);
+
+                bool canPull = currentOfficer?["canPull"] != null && (bool)currentOfficer["canPull"]!;
+                bool hasBeenViewed = currentOfficer?["openedOnce"] != null && (bool)currentOfficer["openedOnce"]!;
+                string myWorkflowStatus = currentOfficer?["status"]?.ToString()?.Trim().ToLower() ?? "";
+
+                if ((activeType == "forwarded" || activeType == "returned" || activeType == "returntoedit") && canPull)
+                {
+                    customActions.Add(new
+                    {
+                        type = "Pull",
+                        tooltip = "Pull Application Back",
+                        color = "#F0C38E",
+                        actionFunction = "pullApplication"
+                    });
+                }
+
+                if (activeType == "returntoedit" && !canPull)
+                {
+                    customActions.Add(new
+                    {
+                        type = "View",
+                        label = "View",
+                        tooltip = "View",
+                        color = "#F0C38E",
+                        actionFunction = "handleViewApplication"
+                    });
+                }
+
+                if (officerStatus != "returntoedit" && officerStatus != "sanctioned")
+                {
+                    if (myWorkflowStatus == "pending")
+                    {
+                        customActions.Add(new
+                        {
+                            type = "View",
+                            label = hasBeenViewed ? "Take Action" : "View",
+                            tooltip = hasBeenViewed ? "Take Action on this application" : "View Application",
+                            color = hasBeenViewed ? "#10B981" : "#F0C38E",
+                            actionFunction = activeType == "pending" ? "handleOpenApplication" : "handleViewApplication"
+                        });
+                    }
+                    else
+                    {
+                        customActions.Add(new
+                        {
+                            type = "View",
+                            label = "View",
+                            tooltip = "View Application Details",
+                            color = "#F0C38E",
+                            actionFunction = "handleViewApplication"
+                        });
+                    }
+                }
+                else if (officerStatus == "sanctioned")
+                {
+                    customActions.Add(new
+                    {
+                        type = "View",
+                        label = "View",
+                        tooltip = "View",
+                        color = "#F0C38E",
+                        actionFunction = "handleViewApplication"
+                    });
+
+                    if (details.DataType != "legacy")
+                    {
+                        customActions.Add(new
+                        {
+                            tooltip = "Download SL",
+                            color = "#F0C38E",
+                            actionFunction = "DownloadSanctionLetter"
+                        });
+
+                        var corrigendums = dbcontext.Corrigendum
+                            .Where(co => co.Referencenumber == details.ReferenceNumber).ToList();
+
+                        foreach (var item in corrigendums)
+                        {
+                            string value = GetSanctionedCorrigendum(
+                                JsonConvert.DeserializeObject<dynamic>(item.Workflow ?? "{}"),
+                                item.Corrigendumid);
+
+                            if (value != null)
+                            {
+                                customActions.Add(new
+                                {
+                                    type = "DownloadCorrigendum",
+                                    tooltip = "View CRG " + value.TrimEnd('/').Split('/').Last(),
+                                    corrigendumId = value,
+                                    color = "#F0C38E",
+                                    actionFunction = "handleViewPdf"
+                                });
+                            }
+                        }
+                    }
+                }
+
+                var excludedStatuses = new[] { "Rejected", "Sanctioned", "Initiated" };
+                bool IsError = excludedStatuses.Contains(details.Status ?? "");
+                if (!IsError) customActions.Clear();
+
+                string Status = IsError
+                    ? (officerStatus == "returntoedit"
+                        ? "Pending With Citizen"
+                        : (!string.IsNullOrEmpty(officerStatus)
+                            ? char.ToUpper(officerStatus[0]) + officerStatus.Substring(1)
+                            : "Unknown"))
+                    : details.Status ?? "Unknown";
+
+                dynamic obj = new ExpandoObject();
+                var app = (IDictionary<string, object>)obj;
+
+                if (officerDetails.AccessLevel == "State")
+                {
+                    app["divisionName"] = details.DivisionName ?? "N/A";
+                    app["districtName"] = details.DistrictName ?? "N/A";
+                }
+                else if (officerDetails.AccessLevel == "Division")
+                {
+                    app["districtName"] = details.DistrictName ?? "N/A";
+                    app["tehsilName"] = details.TehsilName ?? "N/A";
+                }
+                else if (officerDetails.AccessLevel == "District")
+                {
+                    app["tehsilName"] = details.TehsilName ?? "N/A";
+                }
+
+                app["sno"] = sno;
+                app["referenceNumber"] = details.ReferenceNumber!;
+                app["applicantName"] = GetFieldValue("ApplicantName", formDetails);
+                app["mobileNumber"] = GetFieldValue("MobileNumber", formDetails);
+                app["rationCardNumber"] = rationCardNumber;
+
+                // ── Present Address fields ─────────────────────────────────────
+                // Read from the nested formDetails via the same recursive
+                // GetFieldValue used for everything else. Fields that don't
+                // apply to a particular row (e.g. PresentMuncipality on a Rural
+                // address) simply yield "" so the column renders blank.
+                foreach (var col in presentAddressColumns)
+                {
+                    object? presentVal = null;
+                    try { presentVal = GetFieldValue(col.FieldName, formDetails); }
+                    catch { /* field not present on this row */ }
+                    app[col.AccessorKey] = presentVal?.ToString() ?? "";
+                }
+                // ───────────────────────────────────────────────────────────────
+
+                app["officerRemarks"] = officerRemarks;
+                app["submissionDate"] = details.Created_at ?? "N/A";
+                app["actionTakenOn"] = parsedDate == DateTime.MinValue
+                                            ? string.Empty
+                                            : parsedDate.ToString("dd MMM yyyy hh:mm:ss tt");
+                app["serviceName"] = serviceName;
+                app["currentlyWith"] = officerStatus == "returntoedit"
+                                            ? "Citizen"
+                                            : $"{officerDesignation} ({officerArea})";
+                app["status"] = Status!;
+                app["serviceId"] = details.ServiceId;
+                app["customActions"] = customActions;
+
+                return obj;
+            }
+
+            // ── Pool rows first — always S.No 1..N ────────────────────────────────
+            int poolSnoCounter = 1;
+            foreach (var details in poolResponse)
+            {
+                try
+                {
+                    poolData.Add(BuildRow(details, poolSnoCounter++, type!));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error processing pool application {details.ReferenceNumber}: {ex.Message}");
+                }
+            }
+
+            // ── Main list — S.No continues after the pinned pool block ────────────
+            int snoCounter = (pageIndex * pageSize) + 1;
             foreach (var details in response)
             {
                 try
                 {
-                    var formDetails = JsonConvert.DeserializeObject<dynamic>(details.FormDetails ?? "{}");
-                    var officers = JsonConvert.DeserializeObject<JArray>(details.WorkFlow ?? "[]");
-                    var currentPlayer = details.CurrentPlayer ?? 0;
-
-                    string officerDesignation = "Unknown";
-                    string offierAccessLevel = "Unknown";
-                    string officerStatus = "Unknown";
-                    string officerArea = "Unknown";
-
-                    if (officers != null && officers.Count > 0)
-                    {
-                        var currentOfficerObj = currentPlayer >= 0 && currentPlayer < officers.Count
-                            ? officers[currentPlayer]
-                            : officers[0];
-
-                        if (currentOfficerObj != null)
-                        {
-                            officerDesignation = currentOfficerObj["designation"]?.ToString() ?? "Unknown";
-                            offierAccessLevel = currentOfficerObj["accessLevel"]?.ToString() ?? "Unknown";
-                            officerStatus = currentOfficerObj["status"]?.ToString() ?? "Unknown";
-                        }
-
-                        officerArea = GetOfficerArea(offierAccessLevel, formDetails);
-                    }
-
-                    _logger.LogInformation($"------------ Officer Designation: {officerDesignation}  Officer Area: {officerArea} ------------------");
-
-                    var actionHistories = dbcontext.Actionhistory
-                        .Where(h => h.Referencenumber == details.ReferenceNumber)
-                        .ToList();
-
-                    var latestHistory = actionHistories
-                        .Select(h => new { History = h, ParsedDate = SafeParseDate(h.Actiontakendate) })
-                        .Where(x => x.ParsedDate.HasValue)
-                        .OrderByDescending(x => x.ParsedDate!.Value)
-                        .Select(x => x.History)
-                        .FirstOrDefault();
-
-                    DateTime parsedDate = latestHistory != null && SafeParseDate(latestHistory.Actiontakendate).HasValue
-                        ? SafeParseDate(latestHistory.Actiontakendate)!.Value
-                        : DateTime.MinValue;
-
-                    string serviceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == details.ServiceId)?.Servicename ?? "Unknown";
-
-                    // =====================================================================
-                    //                       CUSTOM ACTIONS LOGIC
-                    // =====================================================================
-                    var customActions = new List<dynamic>();
-
-                    JToken? currentOfficer = null;
-                    if (officers != null)
-                    {
-                        currentOfficer = officers.FirstOrDefault(o =>
-                            o != null &&
-                            o["designation"]?.ToString() == officerDetails.Role);
-                    }
-
-                    bool canPull = currentOfficer?["canPull"] != null && (bool)currentOfficer["canPull"]!;
-
-                    if ((type == "forwarded" || type == "returned" || type == "returntoedit") && canPull)
-                    {
-                        customActions.Add(new
-                        {
-                            type = "Pull",
-                            tooltip = "Pull",
-                            color = "#F0C38E",
-                            actionFunction = "pullApplication"
-                        });
-                    }
-
-                    if (type == "returntoedit" && !canPull)
-                    {
-                        customActions.Add(new
-                        {
-                            type = "View",
-                            tooltip = "View",
-                            color = "#F0C38E",
-                            actionFunction = "handleViewApplication"
-                        });
-                    }
-
-                    if (officerStatus != "returntoedit" && officerStatus != "sanctioned")
-                    {
-                        customActions.Add(new
-                        {
-                            type = "View",
-                            tooltip = "View",
-                            color = "#F0C38E",
-                            actionFunction = type == "pending" ? "handleOpenApplication" : "handleViewApplication"
-                        });
-                    }
-                    else if (officerStatus == "sanctioned")
-                    {
-                        customActions.Add(new
-                        {
-                            type = "View",
-                            tooltip = "View",
-                            color = "#F0C38E",
-                            actionFunction = "handleViewApplication"
-                        });
-
-                        if (details.DataType != "legacy")
-                        {
-                            customActions.Add(new { tooltip = "Download SL", color = "#F0C38E", actionFunction = "DownloadSanctionLetter" });
-
-                            var corrigendums = dbcontext.Corrigendum.Where(co => co.Referencenumber == details.ReferenceNumber).ToList();
-                            foreach (var item in corrigendums)
-                            {
-                                string value = GetSanctionedCorrigendum(JsonConvert.DeserializeObject<dynamic>(item.Workflow ?? "{}"), item.Corrigendumid);
-                                if (value != null)
-                                {
-                                    customActions.Add(new
-                                    {
-                                        type = "DownloadCorrigendum",
-                                        tooltip = "View CRG " + value.TrimEnd('/').Split('/').Last(),
-                                        corrigendumId = value,
-                                        color = "#F0C38E",
-                                        actionFunction = "handleViewPdf"
-                                    });
-                                }
-                            }
-                        }
-                    }
-
-                    var excludedStatuses = new[] { "Rejected", "Sanctioned", "Initiated" };
-                    bool IsError = excludedStatuses.Contains(details.Status ?? "");
-                    if (!IsError)
-                    {
-                        customActions.Clear();
-                    }
-
-                    string Status = IsError
-                        ? officerStatus == "returntoedit"
-                            ? "Pending With Citizen"
-                            : (!string.IsNullOrEmpty(officerStatus)
-                                ? char.ToUpper(officerStatus[0]) + officerStatus.Substring(1)
-                                : "Unknown")
-                        : details.Status ?? "Unknown";
-
-                    dynamic obj = new ExpandoObject();
-                    var app = (IDictionary<string, object>)obj;
-
-                    // -------------------------
-                    // LOCATION FIELD FIX APPLY
-                    // -------------------------
-                    if (officerDetails.AccessLevel == "State")
-                    {
-                        app["divisionName"] = details.DivisionName ?? "N/A";
-                        app["districtName"] = details.DistrictName ?? "N/A";
-                    }
-                    else if (officerDetails.AccessLevel == "Division")
-                    {
-                        app["districtName"] = details.DistrictName ?? "N/A";
-                        app["tehsilName"] = details.TehsilName ?? "N/A";
-                    }
-                    else if (officerDetails.AccessLevel == "District")
-                    {
-                        app["tehsilName"] = details.TehsilName ?? "N/A";
-                    }
-
-                    app["sno"] = snoCounter++;
-                    app["referenceNumber"] = details.ReferenceNumber!;
-                    app["applicantName"] = GetFieldValue("ApplicantName", formDetails);
-                    app["submissionDate"] = details.Created_at ?? "N/A";
-                    app["actionTakenOn"] = parsedDate == DateTime.MinValue ? string.Empty : parsedDate.ToString("dd MMM yyyy hh:mm:ss tt");
-                    app["serviceName"] = serviceName;
-                    app["currentlyWith"] = officerStatus == "returntoedit" ? "Citizen" : $"{officerDesignation} ({officerArea})";
-                    app["status"] = Status!;
-                    app["serviceId"] = details.ServiceId;
-                    app["customActions"] = customActions;
-
-                    if (type == "pending" && pool!.Contains(details.ReferenceNumber!))
-                        poolData.Add(obj);
-                    else
-                        data.Add(obj);
+                    if (pool.Contains(details.ReferenceNumber!)) continue;
+                    data.Add(BuildRow(details, snoCounter++, type!));
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, $"Error processing application {details.ReferenceNumber}: {ex.Message}");
-                    continue;
                 }
             }
 
             // =====================================================================
-            //                       RESET SERIAL NUMBERS
+            //                       SHAPE / RE-NUMBER
             // =====================================================================
-            // Reset serial numbers based on access level
-            if (officerDetails.AccessLevel == "State")
+            // Anonymous types have a fixed property set, so we must use
+            // ExpandoObject here to carry the dynamic Present Address columns
+            // through. We preserve the original field order and splice the
+            // Present Address columns in right after "rationCardNumber" (i.e.
+            // where Change 2 appended them to the columns list).
+            List<dynamic> Shape(List<dynamic> src, int startIndex)
             {
-                data = data.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.divisionName,
-                    d.districtName,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
+                var result = new List<dynamic>();
+                int counter = startIndex;
 
-                poolData = poolData.Select((d, i) => new
+                foreach (var row in src)
                 {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.divisionName,
-                    d.districtName,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
-            }
-            else if (officerDetails.AccessLevel == "Division")
-            {
-                data = data.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.districtName,
-                    d.tehsilName,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
+                    var shaped = (IDictionary<string, object>)new ExpandoObject()!;
+                    var orig = (IDictionary<string, object>)row;
 
-                poolData = poolData.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.districtName,
-                    d.tehsilName,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
-            }
-            else if (officerDetails.AccessLevel == "District")
-            {
-                data = data.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.tehsilName,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
+                    void Copy(string key)
+                    {
+                        if (orig.TryGetValue(key, out var v) && v != null)
+                            shaped[key] = v;
+                        else
+                            shaped[key] = string.Empty;
+                    }
 
-                poolData = poolData.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.tehsilName,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
-            }
-            else
-            {
-                data = data.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
+                    shaped["sno"] = counter++;
 
-                poolData = poolData.Select((d, i) => new
-                {
-                    sno = (pageIndex * pageSize) + i + 1,
-                    d.referenceNumber,
-                    d.applicantName,
-                    d.submissionDate,
-                    d.actionTakenOn,
-                    d.serviceName,
-                    d.currentlyWith,
-                    d.status,
-                    d.serviceId,
-                    d.customActions
-                }).ToList<dynamic>();
+                    // Access-level–specific fields first, matching column order.
+                    if (officerDetails.AccessLevel == "State")
+                    {
+                        Copy("referenceNumber");
+                        Copy("divisionName");
+                        Copy("districtName");
+                    }
+                    else if (officerDetails.AccessLevel == "Division")
+                    {
+                        Copy("referenceNumber");
+                        Copy("districtName");
+                        Copy("tehsilName");
+                    }
+                    else if (officerDetails.AccessLevel == "District")
+                    {
+                        Copy("referenceNumber");
+                        Copy("tehsilName");
+                    }
+                    else
+                    {
+                        Copy("referenceNumber");
+                    }
+
+                    Copy("applicantName");
+                    Copy("mobileNumber");
+                    Copy("rationCardNumber");
+
+                    // Present Address columns — same order as in `columns`.
+                    foreach (var col in presentAddressColumns)
+                        Copy(col.AccessorKey);
+
+                    Copy("submissionDate");
+                    Copy("actionTakenOn");
+                    Copy("serviceName");
+                    Copy("currentlyWith");
+                    Copy("status");
+                    Copy("officerRemarks");
+                    Copy("serviceId");
+                    Copy("customActions");
+
+                    result.Add((dynamic)shaped);
+                }
+
+                return result;
             }
 
-            _logger.LogInformation($"--------- Final Return - Data Count: {data.Count}, Pool Count: {poolData.Count}, Total Records: {totalRecords} ---------");
+            // ★ Pool restarts at 1 (pinned). Main continues AFTER the pool block.
+            poolData = Shape(poolData, 1);
+            data = Shape(data, poolData.Count + (pageIndex * pageSize) + 1);
+
+            _logger.LogInformation(
+                "--------- Final Return — Data: {dc}, Pool: {pc}, MainTotal: {tr} ---------",
+                data.Count, poolData.Count, totalRecords);
 
             return Json(new
             {
                 data,
                 poolData,
                 columns,
-                totalRecords,
+                totalRecords,                     // main list only → page navigator uses this
+                poolTotalRecords = poolData.Count,// pinned pool count
                 canSanction = (bool)authorities.canSanction
             });
         }
+
 
         [HttpGet]
         public async Task<IActionResult> GenerateUserDetailsPdf(string applicationId)
@@ -997,157 +1354,255 @@ namespace SahayataNidhi.Controllers.Officer
             var officer = GetOfficerDetails();
             string? username = officer.Username;
             if (string.IsNullOrEmpty(applicationId))
-            {
                 return BadRequest("Application ID is required.");
-            }
 
-            // Retrieve application details
+            // ── Retrieve application details ──────────────────────────────────
             var application = await dbcontext.CitizenApplications
                 .Where(ca => ca.Referencenumber == applicationId)
                 .FirstOrDefaultAsync();
 
             if (application == null)
-            {
                 return NotFound("Application not found.");
-            }
 
             using (var memoryStream = new MemoryStream())
             {
-                // Initialize PDF writer and document
                 var writer = new PdfWriter(memoryStream);
                 var pdf = new PdfDocument(writer);
                 var document = new Document(pdf, PageSize.A4);
-                document.SetMargins(30, 30, 30, 30);
+                document.SetMargins(40, 40, 70, 40);   // extra bottom margin for footer
 
-                string serviceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == application.Serviceid)!.Servicename!;
+                // ── Palette ───────────────────────────────────────────────────
+                var navy = new DeviceRgb(11, 42, 91);      // primary
+                var navyLight = new DeviceRgb(30, 71, 143);     // hover/accents
+                var gold = new DeviceRgb(201, 151, 0);     // govt gold
+                var goldSoft = new DeviceRgb(255, 250, 235);
+                var bgSoft = new DeviceRgb(245, 248, 252);
+                var bgCard = new DeviceRgb(250, 252, 255);
+                var border = new DeviceRgb(209, 217, 230);
+                var textDark = new DeviceRgb(26, 32, 44);
+                var textMuted = new DeviceRgb(107, 114, 128);
 
-                // Parse Formdetails JSON
+                // ── Page footer on every generated page ───────────────────────
+                pdf.AddEventHandler(PdfDocumentEvent.END_PAGE,
+                    new PageFooterHandler(navy, gold, textMuted, applicationId));
+
+                string serviceName = dbcontext.Services
+                    .FirstOrDefault(s => s.Serviceid == application.Serviceid)!.Servicename!;
+
                 var formDetails = JObject.Parse(application.Formdetails!);
 
-                // Create a header table for title, metadata, and applicant image
-                var headerTable = new Table(UnitValue.CreatePercentArray(new float[] { 60, 40 }));
-                headerTable.SetWidth(UnitValue.CreatePercentValue(100));
-                headerTable.SetMarginBottom(20);
+                // ═══════════════════════════════════════════════════════════════
+                // 1. OFFICIAL HEADER BANNER
+                // ═══════════════════════════════════════════════════════════════
+                var titleBanner = new Table(UnitValue.CreatePercentArray(new float[] { 1 }))
+                    .SetWidth(UnitValue.CreatePercentValue(100))
+                    .SetMarginBottom(0);
 
-                // Title cell
-                var titleCell = new Cell(1, 1)
-                    .Add(new Paragraph("Citizen Application Details")
-                        .SetFontSize(18)
+                var bannerCell = new Cell()
+                    .SetBackgroundColor(navy)
+                    .SetBorder(Border.NO_BORDER)
+                    .SetPaddingTop(14)
+                    .SetPaddingBottom(14)
+                    .SetPaddingLeft(20)
+                    .SetPaddingRight(20)
+                    .Add(new Paragraph("GOVERNMENT OF JAMMU & KASHMIR")
+                        .SetFontSize(16)
                         .SetBold()
-                        .SetTextAlignment(TextAlignment.LEFT)
-                        .SetFontColor(new DeviceRgb(25, 118, 210))
-                        .SetMarginBottom(5))
-                    .Add(new Paragraph(serviceName)
-                        .SetFontSize(14)
-                        .SetTextAlignment(TextAlignment.LEFT)
-                        .SetFontColor(new DeviceRgb(51, 51, 51))
-                        .SetMarginBottom(10))
-                    .SetBorder(Border.NO_BORDER)
-                    .SetVerticalAlignment(VerticalAlignment.TOP)
-                    .SetPadding(10)
-                    .SetBackgroundColor(new DeviceRgb(240, 248, 255)); // Light blue background
-                headerTable.AddCell(titleCell);
+                        .SetFontColor(ColorConstants.WHITE)
+                        .SetTextAlignment(TextAlignment.CENTER)
+                        .SetMarginBottom(2))
+                    .Add(new Paragraph("DEPARTMENT OF SOCIAL WELFARE")
+                        .SetFontSize(11)
+                        .SetBold()
+                        .SetFontColor(new DeviceRgb(210, 225, 255))
+                        .SetTextAlignment(TextAlignment.CENTER));
 
-                // Metadata and image cell
-                var metadataCell = new Cell(1, 1)
-                    .SetBorder(Border.NO_BORDER)
-                    .SetVerticalAlignment(VerticalAlignment.TOP)
-                    .SetTextAlignment(TextAlignment.RIGHT)
-                    .SetPadding(10)
-                    .SetBackgroundColor(new DeviceRgb(240, 248, 255));
+                titleBanner.AddCell(bannerCell);
+                document.Add(titleBanner);
 
-                // Add metadata (Login ID, IP Address, Generated At)
-                metadataCell.Add(new Paragraph($"Login ID: {username}")
-                    .SetFontSize(10)
-                    .SetFontColor(new DeviceRgb(51, 51, 51))
-                    .SetTextAlignment(TextAlignment.RIGHT));
-                metadataCell.Add(new Paragraph($"IP Address: {HttpContext.Connection.RemoteIpAddress}")
-                    .SetFontSize(10)
-                    .SetFontColor(new DeviceRgb(51, 51, 51))
-                    .SetTextAlignment(TextAlignment.RIGHT));
-                metadataCell.Add(new Paragraph($"Generated At: {DateTime.Now.ToString("dd MMM yyyy hh:mm:ss", CultureInfo.InvariantCulture)}")
-                    .SetFontSize(10)
-                    .SetFontColor(new DeviceRgb(51, 51, 51))
-                    .SetTextAlignment(TextAlignment.RIGHT)
+                // Gold accent strip under the banner
+                var accentBar = new Table(UnitValue.CreatePercentArray(new float[] { 1 }))
+                    .SetWidth(UnitValue.CreatePercentValue(100))
+                    .SetMarginBottom(20);
+                accentBar.AddCell(new Cell()
+                    .SetBackgroundColor(gold)
+                    .SetBorder(Border.NO_BORDER)
+                    .SetHeight(4)
+                    .Add(new Paragraph("")));
+                document.Add(accentBar);
+
+                // ═══════════════════════════════════════════════════════════════
+                // 2. APPLICATION SUMMARY CARD
+                // ═══════════════════════════════════════════════════════════════
+                var summaryTable = new Table(UnitValue.CreatePercentArray(new float[] { 65, 35 }))
+                    .SetWidth(UnitValue.CreatePercentValue(100))
+                    .SetMarginBottom(20);
+
+                // ── Left: title + metadata ────────────────────────────────
+                var leftSummary = new Cell()
+                    .SetBorder(new SolidBorder(border, 0.8f))
+                    .SetBackgroundColor(bgCard)
+                    .SetPadding(16)
+                    .SetVerticalAlignment(VerticalAlignment.MIDDLE);
+
+                leftSummary.Add(new Paragraph("CITIZEN APPLICATION DETAILS")
+                    .SetFontSize(14)
+                    .SetBold()
+                    .SetFontColor(navy)
                     .SetMarginBottom(10));
 
-                // Applicant image
+                // Service name
+                leftSummary.Add(new Paragraph()
+                    .Add(new Text("Service: ").SetFontColor(textMuted).SetFontSize(10))
+                    .Add(new Text(serviceName).SetFontColor(textDark).SetFontSize(10).SetBold())
+                    .SetMarginBottom(4));
+
+                // Reference number
+                leftSummary.Add(new Paragraph()
+                    .Add(new Text("Reference Number: ").SetFontColor(textMuted).SetFontSize(10))
+                    .Add(new Text(applicationId).SetFontColor(gold).SetFontSize(11).SetBold())
+                    .SetMarginBottom(4));
+
+                // Generated at
+                leftSummary.Add(new Paragraph()
+                    .Add(new Text("Generated On: ").SetFontColor(textMuted).SetFontSize(10))
+                    .Add(new Text(DateTime.Now.ToString("dd MMM yyyy, HH:mm", CultureInfo.InvariantCulture))
+                        .SetFontColor(textDark).SetFontSize(10))
+                    .SetMarginBottom(4));
+
+                // Generated by
+                leftSummary.Add(new Paragraph()
+                    .Add(new Text("Generated By: ").SetFontColor(textMuted).SetFontSize(10))
+                    .Add(new Text(username ?? "—").SetFontColor(textDark).SetFontSize(10)));
+
+                // IP address
+                leftSummary.Add(new Paragraph()
+                    .Add(new Text("IP Address: ").SetFontColor(textMuted).SetFontSize(10))
+                    .Add(new Text(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "—")
+                        .SetFontColor(textDark).SetFontSize(10)));
+
+                summaryTable.AddCell(leftSummary);
+
+                // ── Right: applicant photograph ───────────────────────────
+                var rightSummary = new Cell()
+                    .SetBorder(new SolidBorder(border, 0.8f))
+                    .SetBackgroundColor(bgCard)
+                    .SetPadding(16)
+                    .SetVerticalAlignment(VerticalAlignment.MIDDLE)
+                    .SetTextAlignment(TextAlignment.CENTER);
+
+                rightSummary.Add(new Paragraph("APPLICANT PHOTOGRAPH")
+                    .SetFontSize(9)
+                    .SetBold()
+                    .SetFontColor(textMuted)
+                    .SetTextAlignment(TextAlignment.CENTER)
+                    .SetMarginBottom(8));
+
                 var imagePath = GetFormFieldValue(formDetails, "ApplicantImage");
                 if (!string.IsNullOrEmpty(imagePath))
                 {
-                    var ImageDetails = dbcontext.Userdocuments.FirstOrDefault(u => u.Filename == imagePath);
-                    if (ImageDetails != null)
+                    var imageDetails = dbcontext.Userdocuments.FirstOrDefault(u => u.Filename == imagePath);
+                    if (imageDetails != null)
                     {
                         try
                         {
-                            var imageData = ImageDataFactory.Create(ImageDetails.Filedata);
+                            var imageData = ImageDataFactory.Create(imageDetails.Filedata);
                             var image = new Image(imageData)
-                                .ScaleToFit(60, 60)
-                                .SetBorder(new SolidBorder(new DeviceRgb(25, 118, 210), 2))
-                                .SetBorderRadius(new BorderRadius(8))
-                                .SetMargins(5, 0, 5, 0)
-                                .SetHorizontalAlignment(HorizontalAlignment.RIGHT);
-                            metadataCell.Add(image);
+                                .ScaleToFit(110, 110)
+                                .SetBorder(new SolidBorder(navy, 1.5f))
+                                .SetBorderRadius(new BorderRadius(6))
+                                .SetHorizontalAlignment(HorizontalAlignment.CENTER);
+                            rightSummary.Add(image);
                         }
                         catch (Exception ex)
                         {
-                            metadataCell.Add(new Paragraph($"Image error: {ex.Message}")
-                                .SetFontSize(8)
-                                .SetFontColor(ColorConstants.RED)
-                                .SetTextAlignment(TextAlignment.RIGHT));
+                            rightSummary.Add(new Paragraph($"Image error: {ex.Message}")
+                                .SetFontSize(8).SetFontColor(ColorConstants.RED));
                         }
                     }
                     else
                     {
-                        metadataCell.Add(new Paragraph("Image not found")
-                            .SetFontSize(8)
-                            .SetFontColor(ColorConstants.RED)
-                            .SetTextAlignment(TextAlignment.RIGHT));
+                        rightSummary.Add(new Paragraph("Image not found")
+                            .SetFontSize(9).SetFontColor(ColorConstants.RED));
                     }
                 }
                 else
                 {
-                    metadataCell.Add(new Paragraph("No image")
-                        .SetFontSize(8)
-                        .SetFontColor(ColorConstants.GRAY)
-                        .SetTextAlignment(TextAlignment.RIGHT));
+                    rightSummary.Add(new Paragraph("No photograph on file")
+                        .SetFontSize(9).SetFontColor(textMuted).SetItalic());
                 }
-                headerTable.AddCell(metadataCell);
 
-                document.Add(headerTable);
+                summaryTable.AddCell(rightSummary);
+                document.Add(summaryTable);
 
-                // Add a decorative divider
-                document.Add(new Paragraph("")
-                    .SetBorderBottom(new SolidBorder(new DeviceRgb(25, 118, 210), 2))
-                    .SetMarginBottom(20));
-
-                // Create a table for application details
-                var detailsTable = new Table(UnitValue.CreatePercentArray(new float[] { 40, 60 }));
-                detailsTable.SetWidth(UnitValue.CreatePercentValue(100));
-                detailsTable.SetMarginBottom(20);
-
-                // Add section headers and details
+                // ═══════════════════════════════════════════════════════════════
+                // 3. APPLICATION DETAILS — SECTION-WISE TABLES
+                // ═══════════════════════════════════════════════════════════════
                 foreach (var section in formDetails)
                 {
-                    if (section.Key == "Documents" || section.Key == "ApplicantImage") continue;
+                    if (section.Key == "Documents" || section.Key == "ApplicantImage")
+                        continue;
 
-                    // Add section header spanning both columns
-                    var sectionHeader = new Cell(1, 2)
-                        .Add(new Paragraph(FormatSectionKey(section.Key))
-                            .SetFontSize(14)
+                    // Skip empty sections
+                    if (section.Value is not JArray sectionArray || sectionArray.Count == 0)
+                        continue;
+
+                    // Section header bar
+                    var sectionBar = new Table(UnitValue.CreatePercentArray(new float[] { 1 }))
+                        .SetWidth(UnitValue.CreatePercentValue(100))
+                        .SetMarginTop(14)
+                        .SetMarginBottom(0);
+
+                    sectionBar.AddCell(new Cell()
+                        .SetBackgroundColor(navy)
+                        .SetBorder(Border.NO_BORDER)
+                        .SetPaddingTop(8)
+                        .SetPaddingBottom(8)
+                        .SetPaddingLeft(14)
+                        .Add(new Paragraph(FormatSectionKey(section.Key).ToUpperInvariant())
+                            .SetFontSize(11)
                             .SetBold()
-                            .SetFontColor(new DeviceRgb(242, 140, 56))
-                            .SetMarginTop(15)
-                            .SetMarginBottom(10)
-                            .SetPadding(8))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), 1))
-                        .SetBackgroundColor(new DeviceRgb(245, 245, 245))
-                        .SetBorderRadius(new BorderRadius(6));
-                    detailsTable.AddCell(sectionHeader);
+                            .SetFontColor(ColorConstants.WHITE)));
 
-                    if (section.Value is JArray sectionArray)
+                    document.Add(sectionBar);
+
+                    // Fields table for this section
+                    var fieldsTable = new Table(UnitValue.CreatePercentArray(new float[] { 40, 60 }))
+                        .SetWidth(UnitValue.CreatePercentValue(100))
+                        .SetMarginBottom(6);
+
+                    bool alternate = false;
+
+                    void AddFieldRow(string label, string value, int depth = 0)
                     {
-                        foreach (var item in sectionArray)
+                        var rowBg = alternate ? bgCard : ColorConstants.WHITE;
+                        alternate = !alternate;
+
+                        var labelCell = new Cell()
+                            .Add(new Paragraph(FormatFieldLabel(label))
+                                .SetFontSize(10)
+                                .SetBold()
+                                .SetFontColor(navy))
+                            .SetBorder(new SolidBorder(border, 0.5f))
+                            .SetBackgroundColor(rowBg)
+                            .SetPadding(8)
+                            .SetPaddingLeft(14 + depth * 12);
+
+                        var valueCell = new Cell()
+                            .Add(new Paragraph(value ?? "—")
+                                .SetFontSize(10)
+                                .SetFontColor(textDark))
+                            .SetBorder(new SolidBorder(border, 0.5f))
+                            .SetBackgroundColor(rowBg)
+                            .SetPadding(8);
+
+                        fieldsTable.AddCell(labelCell);
+                        fieldsTable.AddCell(valueCell);
+                    }
+
+                    void ProcessFields(JArray arr, int depth = 0)
+                    {
+                        foreach (var item in arr)
                         {
                             var label = item["label"]?.ToString();
                             var name = item["name"]?.ToString();
@@ -1155,415 +1610,325 @@ namespace SahayataNidhi.Controllers.Officer
 
                             if (!string.IsNullOrEmpty(label) && !string.IsNullOrEmpty(value))
                             {
-                                string displayValue = ConvertValueForDisplay(name!, value);
-
-                                var labelCell = new Cell()
-                                    .Add(new Paragraph(FormatFieldLabel(label))
-                                        .SetFontSize(11)
-                                        .SetBold()
-                                        .SetFontColor(new DeviceRgb(51, 51, 51)))
-                                    .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                                    .SetPadding(10)
-                                    .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                                    .SetBorderRadius(new BorderRadius(4));
-                                detailsTable.AddCell(labelCell);
-
-                                var valueCell = new Cell()
-                                    .Add(new Paragraph(displayValue)
-                                        .SetFontSize(11)
-                                        .SetFontColor(new DeviceRgb(0, 0, 0)))
-                                    .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                                    .SetPadding(10)
-                                    .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                                    .SetBorderRadius(new BorderRadius(4));
-                                detailsTable.AddCell(valueCell);
-
-                                if (item["additionalFields"] is JArray additionalFields)
+                                // Special case: Aadhaar
+                                if (string.Equals(name, "AadhaarNumber", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    foreach (var additionalField in additionalFields)
-                                    {
-                                        var addLabel = additionalField["label"]?.ToString();
-                                        var addValue = additionalField["value"]?.ToString();
-                                        if (!string.IsNullOrEmpty(addLabel) && !string.IsNullOrEmpty(addValue))
-                                        {
-                                            string addDisplayValue = ConvertValueForDisplay(addLabel, addValue);
-
-                                            var addLabelCell = new Cell()
-                                                .Add(new Paragraph(FormatFieldLabel(addLabel))
-                                                    .SetFontSize(10)
-                                                    .SetBold()
-                                                    .SetFontColor(new DeviceRgb(51, 51, 51)))
-                                                .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                                                .SetPadding(8)
-                                                .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                                                .SetBorderRadius(new BorderRadius(4))
-                                                .SetPaddingLeft(20);
-                                            detailsTable.AddCell(addLabelCell);
-
-                                            var addValueCell = new Cell()
-                                                .Add(new Paragraph(addDisplayValue)
-                                                    .SetFontSize(10)
-                                                    .SetFontColor(new DeviceRgb(0, 0, 0)))
-                                                .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                                                .SetPadding(8)
-                                                .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                                                .SetBorderRadius(new BorderRadius(4));
-                                            detailsTable.AddCell(addValueCell);
-
-                                            if (additionalField["additionalFields"] is JArray nestedFields)
-                                            {
-                                                foreach (var nestedField in nestedFields)
-                                                {
-                                                    var nestedLabel = nestedField["label"]?.ToString();
-                                                    var nestedValue = nestedField["value"]?.ToString();
-                                                    if (!string.IsNullOrEmpty(nestedLabel) && !string.IsNullOrEmpty(nestedValue))
-                                                    {
-                                                        string nestedDisplayValue = ConvertValueForDisplay(nestedLabel, nestedValue);
-
-                                                        var nestedLabelCell = new Cell()
-                                                            .Add(new Paragraph(FormatFieldLabel(nestedLabel))
-                                                                .SetFontSize(10)
-                                                                .SetBold()
-                                                                .SetFontColor(new DeviceRgb(51, 51, 51)))
-                                                            .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                                                            .SetPadding(8)
-                                                            .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                                                            .SetBorderRadius(new BorderRadius(4))
-                                                            .SetPaddingLeft(30);
-                                                        detailsTable.AddCell(nestedLabelCell);
-
-                                                        var nestedValueCell = new Cell()
-                                                            .Add(new Paragraph(nestedDisplayValue)
-                                                                .SetFontSize(10)
-                                                                .SetFontColor(new DeviceRgb(0, 0, 0)))
-                                                            .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                                                            .SetPadding(8)
-                                                            .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                                                            .SetBorderRadius(new BorderRadius(4));
-                                                        detailsTable.AddCell(nestedValueCell);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    AddFieldRow(label, string.IsNullOrEmpty(value) ? "Not Verified" : "Verified", depth);
+                                }
+                                else
+                                {
+                                    AddFieldRow(label, ConvertValueForDisplay(name!, value), depth);
                                 }
                             }
+
+                            if (item["additionalFields"] is JArray additionalFields && additionalFields.Count > 0)
+                                ProcessFields(additionalFields, depth + 1);
                         }
                     }
+
+                    ProcessFields(sectionArray);
+
+                    document.Add(fieldsTable);
                 }
 
-                document.Add(detailsTable);
-
-                // Add Attached Documents section
+                // ═══════════════════════════════════════════════════════════════
+                // 4. ATTACHED DOCUMENTS
+                //    Label overlaid on the first document's own page (not on a
+                //    separate page before it).
+                // ═══════════════════════════════════════════════════════════════
                 var documents = formDetails["Documents"] as JArray;
                 bool hasDocuments = documents != null && documents.Any();
+
                 if (hasDocuments)
                 {
-                    document.Add(new Paragraph("Attached Documents")
-                        .SetFontSize(14)
-                        .SetBold()
-                        .SetFontColor(new DeviceRgb(242, 140, 56))
-                        .SetBackgroundColor(new DeviceRgb(245, 245, 245))
-                        .SetPadding(8)
-                        .SetMarginTop(20)
-                        .SetMarginBottom(10)
-                        .SetBorderRadius(new BorderRadius(6)));
+                    bool isFirstDocument = true;
 
                     foreach (var doc in documents!)
                     {
                         var filePath = doc["File"]?.ToString();
-                        var enclosure = doc["label"]?.ToString();
-                        var FileDetails = dbcontext.Userdocuments.FirstOrDefault(u => u.Filename == filePath);
-                        if (FileDetails != null)
-                        {
-                            if (FileDetails.Filedata != null)
-                            {
-                                try
-                                {
-                                    // Start a new page for each document
-                                    using var inputStream = new MemoryStream(FileDetails.Filedata);
-                                    using var reader = new PdfReader(inputStream);
-                                    using var tempMs = new MemoryStream();
-                                    var srcPdf = new PdfDocument(reader, new PdfWriter(tempMs));
-                                    var firstPage = srcPdf.GetPage(1);
+                        var enclosure = doc["label"]?.ToString() ?? "Document";
 
-                                    var canvas = new PdfCanvas(firstPage.NewContentStreamBefore(), firstPage.GetResources(), srcPdf);
-                                    var canvasDoc = new Document(srcPdf);
-                                    canvasDoc.ShowTextAligned(
-                                        new Paragraph($"Document: {enclosure}")
-                                            .SetFontSize(14)
-                                            .SetBold()
-                                            .SetFontColor(new DeviceRgb(242, 140, 56))
-                                            .SetBackgroundColor(new DeviceRgb(245, 245, 245))
-                                            .SetPadding(5),
-                                        x: 36, y: firstPage.GetPageSize().GetTop() - 50,
-                                        TextAlignment.LEFT
-                                    );
-                                    canvasDoc.Close();
+                        var fileDetails = dbcontext.Userdocuments
+                            .FirstOrDefault(u => u.Filename == filePath);
 
-                                    srcPdf = new PdfDocument(new PdfReader(new MemoryStream(tempMs.ToArray())));
-                                    int documentPageCount = srcPdf.GetNumberOfPages();
-                                    srcPdf.CopyPagesTo(1, documentPageCount, pdf);
-                                    srcPdf.Close();
-                                    document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-                                }
-                                catch (Exception ex)
-                                {
-                                    document.Add(new Paragraph($"Error loading {enclosure}: {ex.Message}")
-                                        .SetFontSize(12)
-                                        .SetFontColor(ColorConstants.RED)
-                                        .SetMarginBottom(5));
-                                }
-                            }
-                            else
-                            {
-                                document.Add(new Paragraph($"Document {enclosure}: File not found")
-                                    .SetFontSize(12)
-                                    .SetFontColor(ColorConstants.RED)
-                                    .SetMarginBottom(5));
-                            }
-                        }
-                    }
-                }
+                        if (fileDetails?.Filedata == null)
+                            continue;
 
-                // Add Sanction Letter if application status is Sanctioned
-                if (application.Status == "Sanctioned")
-                {
-                    var sanctionLetterPath = applicationId.Replace("/", "_") + "_SanctionLetter.pdf";
-                    var FileDetails = dbcontext.Userdocuments.FirstOrDefault(u => u.Filename == sanctionLetterPath);
-                    if (FileDetails != null)
-                    {
                         try
                         {
-                            using var inputStream = new MemoryStream(FileDetails.Filedata);
+                            using var inputStream = new MemoryStream(fileDetails.Filedata);
                             using var reader = new PdfReader(inputStream);
                             using var tempMs = new MemoryStream();
                             var srcPdf = new PdfDocument(reader, new PdfWriter(tempMs));
                             var firstPage = srcPdf.GetPage(1);
+                            var pageTop = firstPage.GetPageSize().GetTop();
 
-                            var canvas = new PdfCanvas(firstPage.NewContentStreamBefore(), firstPage.GetResources(), srcPdf);
+                            // Overlay section header (first doc only) + enclosure label
+                            var canvas = new PdfCanvas(firstPage.NewContentStreamBefore(),
+                                                       firstPage.GetResources(), srcPdf);
                             var canvasDoc = new Document(srcPdf);
+
+                            float labelY = pageTop - 25;
+
+                            if (isFirstDocument)
+                            {
+                                canvasDoc.ShowTextAligned(
+                                    new Paragraph("ATTACHED DOCUMENTS")
+                                        .SetFontSize(13)
+                                        .SetBold()
+                                        .SetFontColor(navy)
+                                        .SetBackgroundColor(new DeviceRgb(240, 247, 255))
+                                        .SetPadding(6),
+                                    x: 36, y: labelY, TextAlignment.LEFT);
+
+                                labelY -= 28;
+                                isFirstDocument = false;
+                            }
+
                             canvasDoc.ShowTextAligned(
-                                new Paragraph("Sanction Letter")
-                                    .SetFontSize(14)
+                                new Paragraph($"Document: {enclosure}")
+                                    .SetFontSize(10)
                                     .SetBold()
-                                    .SetFontColor(new DeviceRgb(242, 140, 56))
-                                    .SetBackgroundColor(new DeviceRgb(245, 245, 245))
-                                    .SetPadding(5),
-                                x: 36, y: firstPage.GetPageSize().GetTop() - 50,
-                                TextAlignment.LEFT
-                            );
+                                    .SetFontColor(gold)
+                                    .SetBackgroundColor(goldSoft)
+                                    .SetPadding(4),
+                                x: 36, y: labelY, TextAlignment.LEFT);
+
                             canvasDoc.Close();
 
-                            srcPdf = new PdfDocument(new PdfReader(new MemoryStream(tempMs.ToArray())));
-                            int documentPageCount = srcPdf.GetNumberOfPages();
-                            srcPdf.CopyPagesTo(1, documentPageCount, pdf);
-                            srcPdf.Close();
+                            // Copy all pages of this document into the main PDF
+                            var finalSrc = new PdfDocument(new PdfReader(new MemoryStream(tempMs.ToArray())));
+                            finalSrc.CopyPagesTo(1, finalSrc.GetNumberOfPages(), pdf);
+                            finalSrc.Close();
+
+                            document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
+                        }
+                        catch (Exception ex)
+                        {
+                            document.Add(new Paragraph($"Error loading \"{enclosure}\": {ex.Message}")
+                                .SetFontSize(11)
+                                .SetFontColor(ColorConstants.RED)
+                                .SetMarginBottom(6));
+                        }
+                    }
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // 5. SANCTION LETTER (if sanctioned)
+                // ═══════════════════════════════════════════════════════════════
+                if (application.Status == "Sanctioned")
+                {
+                    var sanctionLetterPath = applicationId.Replace("/", "_") + "_SanctionLetter.pdf";
+                    var fileDetails = dbcontext.Userdocuments
+                        .FirstOrDefault(u => u.Filename == sanctionLetterPath);
+
+                    if (fileDetails != null)
+                    {
+                        try
+                        {
+                            using var inputStream = new MemoryStream(fileDetails.Filedata);
+                            using var reader = new PdfReader(inputStream);
+                            using var tempMs = new MemoryStream();
+                            var srcPdf = new PdfDocument(reader, new PdfWriter(tempMs));
+                            var firstPage = srcPdf.GetPage(1);
+                            var pageTop = firstPage.GetPageSize().GetTop();
+
+                            var canvas = new PdfCanvas(firstPage.NewContentStreamBefore(),
+                                                       firstPage.GetResources(), srcPdf);
+                            var canvasDoc = new Document(srcPdf);
+
+                            canvasDoc.ShowTextAligned(
+                                new Paragraph("SANCTION LETTER")
+                                    .SetFontSize(13)
+                                    .SetBold()
+                                    .SetFontColor(navy)
+                                    .SetBackgroundColor(new DeviceRgb(240, 247, 255))
+                                    .SetPadding(6),
+                                x: 36, y: pageTop - 25, TextAlignment.LEFT);
+
+                            canvasDoc.Close();
+
+                            var finalSrc = new PdfDocument(new PdfReader(new MemoryStream(tempMs.ToArray())));
+                            finalSrc.CopyPagesTo(1, finalSrc.GetNumberOfPages(), pdf);
+                            finalSrc.Close();
+
                             document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
 
-                            var corrigendum = dbcontext.Corrigendum.Where(c => c.Referencenumber == applicationId).ToList();
-                            if (corrigendum.Count > 0)
+                            // Corrigendum sanction letters
+                            var corrigendum = dbcontext.Corrigendum
+                                .Where(c => c.Referencenumber == applicationId).ToList();
+
+                            foreach (var cor in corrigendum)
                             {
-                                foreach (var cor in corrigendum)
-                                {
-                                    var corFileDetails = dbcontext.Userdocuments.FirstOrDefault(u =>
-                                        u.Filename == cor.Corrigendumid.Replace("/", "_") + "_CorrigendumSanctionLetter.pdf");
+                                var corFileDetails = dbcontext.Userdocuments.FirstOrDefault(u =>
+                                    u.Filename == cor.Corrigendumid.Replace("/", "_") + "_CorrigendumSanctionLetter.pdf");
 
-                                    if (corFileDetails != null)
-                                    {
-                                        using var corInputStream = new MemoryStream(corFileDetails.Filedata);
-                                        using var corReader = new PdfReader(corInputStream);
-                                        using var corTempMs = new MemoryStream();
-                                        var corSrcPdf = new PdfDocument(corReader, new PdfWriter(corTempMs));
-                                        var corFirstPage = corSrcPdf.GetPage(1);
+                                if (corFileDetails?.Filedata == null) continue;
 
-                                        var corCanvas = new PdfCanvas(corFirstPage.NewContentStreamBefore(), corFirstPage.GetResources(), corSrcPdf);
-                                        var corCanvasDoc = new Document(corSrcPdf);
-                                        corCanvasDoc.ShowTextAligned(
-                                            new Paragraph("Sanction Letter")
-                                                .SetFontSize(14)
-                                                .SetBold()
-                                                .SetFontColor(new DeviceRgb(242, 140, 56))
-                                                .SetBackgroundColor(new DeviceRgb(245, 245, 245))
-                                                .SetPadding(5),
-                                            x: 36, y: corFirstPage.GetPageSize().GetTop() - 50,
-                                            TextAlignment.LEFT
-                                        );
-                                        corCanvasDoc.Close();
+                                using var corInputStream = new MemoryStream(corFileDetails.Filedata);
+                                using var corReader = new PdfReader(corInputStream);
+                                using var corTempMs = new MemoryStream();
+                                var corSrcPdf = new PdfDocument(corReader, new PdfWriter(corTempMs));
+                                var corFirstPage = corSrcPdf.GetPage(1);
+                                var corPageTop = corFirstPage.GetPageSize().GetTop();
 
-                                        using var finalCorReader = new PdfReader(new MemoryStream(corTempMs.ToArray()));
-                                        using var finalCorPdf = new PdfDocument(finalCorReader);
-                                        int corDocumentPageCount = finalCorPdf.GetNumberOfPages();
-                                        finalCorPdf.CopyPagesTo(1, corDocumentPageCount, pdf);
-                                        finalCorPdf.Close();
+                                var corCanvas = new PdfCanvas(corFirstPage.NewContentStreamBefore(),
+                                                              corFirstPage.GetResources(), corSrcPdf);
+                                var corCanvasDoc = new Document(corSrcPdf);
 
-                                        document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-                                    }
-                                    else
-                                    {
-                                        document.Add(new Paragraph($"Corrigendum Letter for ID {cor.Corrigendumid}: File not found")
-                                            .SetFontSize(12)
-                                            .SetFontColor(ColorConstants.RED)
-                                            .SetMarginBottom(5));
-                                    }
-                                }
+                                corCanvasDoc.ShowTextAligned(
+                                    new Paragraph("CORRIGENDUM SANCTION LETTER")
+                                        .SetFontSize(13)
+                                        .SetBold()
+                                        .SetFontColor(navy)
+                                        .SetBackgroundColor(new DeviceRgb(240, 247, 255))
+                                        .SetPadding(6),
+                                    x: 36, y: corPageTop - 25, TextAlignment.LEFT);
+
+                                corCanvasDoc.Close();
+
+                                using var finalCorReader = new PdfReader(new MemoryStream(corTempMs.ToArray()));
+                                using var finalCorPdf = new PdfDocument(finalCorReader);
+                                finalCorPdf.CopyPagesTo(1, finalCorPdf.GetNumberOfPages(), pdf);
+                                finalCorPdf.Close();
+
+                                document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
                             }
                         }
                         catch (Exception ex)
                         {
                             document.Add(new Paragraph($"Error loading Sanction Letter: {ex.Message}")
-                                .SetFontSize(12)
-                                .SetFontColor(ColorConstants.RED)
-                                .SetMarginBottom(5));
+                                .SetFontSize(11).SetFontColor(ColorConstants.RED));
                         }
                     }
-                    else
-                    {
-                        document.Add(new Paragraph("Sanction Letter: File not found")
-                            .SetFontSize(12)
-                            .SetFontColor(ColorConstants.RED)
-                            .SetMarginBottom(5));
-                    }
                 }
 
-                // Add Application History on a new page only if there is content before it
-                if (pdf.GetNumberOfPages() > 1 || hasDocuments || detailsTable.GetNumberOfRows() > 0 || application.Status == "Sanctioned")
-                {
-                    document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
-                }
+                // ═══════════════════════════════════════════════════════════════
+                // 6. APPLICATION HISTORY — starts on a fresh page
+                // ═══════════════════════════════════════════════════════════════
+                document.Add(new AreaBreak(AreaBreakType.NEXT_PAGE));
 
-                // Add Application History
+                // Section header
+                var histBar = new Table(UnitValue.CreatePercentArray(new float[] { 1 }))
+                    .SetWidth(UnitValue.CreatePercentValue(100))
+                    .SetMarginBottom(10);
+                histBar.AddCell(new Cell()
+                    .SetBackgroundColor(navy)
+                    .SetBorder(Border.NO_BORDER)
+                    .SetPaddingTop(8).SetPaddingBottom(8).SetPaddingLeft(14)
+                    .Add(new Paragraph("APPLICATION HISTORY")
+                        .SetFontSize(12).SetBold().SetFontColor(ColorConstants.WHITE)));
+                document.Add(histBar);
+
                 var players = JsonConvert.DeserializeObject<dynamic>(application.Workflow!) as JArray;
                 int currentPlayerIndex = (int)application.Currentplayer!;
                 var currentPlayer = players!.FirstOrDefault(o => (int)o["playerId"]! == currentPlayerIndex);
-                var history = await dbcontext.Actionhistory.Where(ah => ah.Referencenumber == applicationId).ToListAsync();
+                var history = await dbcontext.Actionhistory
+                    .Where(ah => ah.Referencenumber == applicationId).ToListAsync();
 
-                var historyTable = new Table(UnitValue.CreatePercentArray(new float[] { 10, 25, 25, 25, 15 }));
-                historyTable.SetWidth(UnitValue.CreatePercentValue(100));
-                historyTable.SetMarginTop(20);
-                historyTable.SetMarginBottom(20);
+                var historyTable = new Table(UnitValue.CreatePercentArray(new float[] { 8, 22, 25, 30, 15 }))
+                    .SetWidth(UnitValue.CreatePercentValue(100))
+                    .SetMarginBottom(20);
 
-                document.Add(new Paragraph("Application History")
-                    .SetFontSize(14)
-                    .SetBold()
-                    .SetFontColor(new DeviceRgb(242, 140, 56))
-                    .SetBackgroundColor(new DeviceRgb(245, 245, 245))
-                    .SetPadding(8)
-                    .SetMarginTop(20)
-                    .SetMarginBottom(10)
-                    .SetTextAlignment(TextAlignment.LEFT)
-                    .SetBorderRadius(new BorderRadius(6)));
-
-                var headers = new[] { "S.No", "Action Taker", "Action Taken", "Remarks", "Action Taken On" };
+                var headers = new[] { "S.No", "Action Taker", "Action Taken", "Remarks", "Date" };
                 foreach (var header in headers)
                 {
                     historyTable.AddHeaderCell(new Cell()
                         .Add(new Paragraph(header)
-                            .SetFontSize(11)
-                            .SetBold()
-                            .SetFontColor(new DeviceRgb(255, 255, 255))
+                            .SetFontSize(10).SetBold()
+                            .SetFontColor(ColorConstants.WHITE)
                             .SetTextAlignment(TextAlignment.CENTER))
-                        .SetBackgroundColor(new DeviceRgb(25, 118, 210))
-                        .SetPadding(10)
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .SetBackgroundColor(navy)
+                        .SetPadding(8)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
                 }
 
                 int index = 1;
+                bool altRow = false;
+
                 foreach (var item in history)
                 {
+                    var rowBg = altRow ? bgCard : ColorConstants.WHITE;
+                    altRow = !altRow;
+
                     string officerArea = GetOfficerAreaForHistory(item.Locationlevel!, item.Locationvalue);
+
                     historyTable.AddCell(new Cell()
                         .Add(new Paragraph(index.ToString())
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0))
+                            .SetFontSize(10).SetFontColor(textDark)
                             .SetTextAlignment(TextAlignment.CENTER))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
-                        .Add(new Paragraph(item.Actiontaker != "Citizen" ? $"{item.Actiontaker} {officerArea}" : item.Actiontaker)
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0)))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .Add(new Paragraph(item.Actiontaker != "Citizen"
+                            ? $"{item.Actiontaker} {officerArea}"
+                            : item.Actiontaker)
+                            .SetFontSize(10).SetFontColor(textDark))
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
-                        .Add(new Paragraph(item.Actiontaken == "ReturnToCitizen" ? "Returned to citizen for correction" : item.Actiontaken)
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0)))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .Add(new Paragraph(item.Actiontaken == "ReturnToCitizen"
+                            ? "Returned to citizen for correction"
+                            : item.Actiontaken)
+                            .SetFontSize(10).SetFontColor(textDark))
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
                         .Add(new Paragraph(item.Remarks ?? "")
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0)))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                            .SetFontSize(10).SetFontColor(textDark))
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
                         .Add(new Paragraph(item.Actiontakendate.ToString())
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0))
+                            .SetFontSize(10).SetFontColor(textDark)
                             .SetTextAlignment(TextAlignment.CENTER))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     index++;
                 }
 
+                // Pending row for the current player
                 if ((string)currentPlayer!["status"]! == "pending")
                 {
                     string designation = (string)currentPlayer["designation"]!;
                     string accessLevel = (string)currentPlayer["accessLevel"]!;
                     string officerArea = GetOfficerArea(accessLevel, formDetails);
+
+                    var rowBg = altRow ? bgCard : ColorConstants.WHITE;
+
                     historyTable.AddCell(new Cell()
                         .Add(new Paragraph(index.ToString())
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0))
+                            .SetFontSize(10).SetFontColor(textDark)
                             .SetTextAlignment(TextAlignment.CENTER))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
-                        .Add(new Paragraph($"{currentPlayer["designation"]} {officerArea}")
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0)))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .Add(new Paragraph($"{designation} {officerArea}")
+                            .SetFontSize(10).SetFontColor(textDark))
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
-                        .Add(new Paragraph(currentPlayer["status"]!.ToString())
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0)))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .Add(new Paragraph("Pending")
+                            .SetFontSize(10).SetFontColor(gold).SetBold())
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
-                        .Add(new Paragraph("")
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0)))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .Add(new Paragraph(""))
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
+
                     historyTable.AddCell(new Cell()
-                        .Add(new Paragraph("")
-                            .SetFontSize(10)
-                            .SetFontColor(new DeviceRgb(0, 0, 0))
-                            .SetTextAlignment(TextAlignment.CENTER))
-                        .SetPadding(8)
-                        .SetBackgroundColor(new DeviceRgb(250, 250, 250))
-                        .SetBorder(new SolidBorder(new DeviceRgb(200, 200, 200), (float)0.5))
-                        .SetBorderRadius(new BorderRadius(4)));
+                        .Add(new Paragraph(""))
+                        .SetPadding(7).SetBackgroundColor(rowBg)
+                        .SetBorder(new SolidBorder(border, 0.5f)));
                 }
 
                 document.Add(historyTable);
@@ -1576,113 +1941,332 @@ namespace SahayataNidhi.Controllers.Officer
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════════════
+        // Page footer event handler — adds an official footer to every page
+        // generated by the Document. Copied pages from source PDFs are not
+        // affected (they retain their own layout).
+        // ═══════════════════════════════════════════════════════════════════════
+        private class PageFooterHandler : IEventHandler
+        {
+            private readonly DeviceRgb _navy;
+            private readonly DeviceRgb _gold;
+            private readonly DeviceRgb _muted;
+            private readonly string _refNumber;
+            private readonly PdfFont _font;
+
+            public PageFooterHandler(DeviceRgb navy, DeviceRgb gold, DeviceRgb muted, string refNumber)
+            {
+                _navy = navy;
+                _gold = gold;
+                _muted = muted;
+                _refNumber = refNumber;
+                _font = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+            }
+
+            public void HandleEvent(Event @event)
+            {
+                var docEvent = (PdfDocumentEvent)@event;
+                var pdfDoc = docEvent.GetDocument();
+                var page = docEvent.GetPage();
+                var pageSize = page.GetPageSize();
+                int pageNumber = pdfDoc.GetPageNumber(page);
+
+                var canvas = new PdfCanvas(page.NewContentStreamAfter(),
+                                           page.GetResources(), pdfDoc);
+
+                float left = 40;
+                float right = pageSize.GetWidth() - 40;
+                float lineY = 55;
+                float textY = 40;
+
+                // Gold divider above the footer
+                canvas.SaveState()
+                      .SetStrokeColor(_gold)
+                      .SetLineWidth(0.8f)
+                      .MoveTo(left, lineY)
+                      .LineTo(right, lineY)
+                      .Stroke()
+                      .RestoreState();
+
+                // Center: department line
+                string centerText = "Government of Jammu & Kashmir  •  Department of Social Welfare";
+                float centerW = _font.GetWidth(centerText, 8);
+                canvas.BeginText()
+                      .SetFontAndSize(_font, 8)
+                      .SetColor(_muted, true)
+                      .SetTextMatrix((pageSize.GetWidth() - centerW) / 2, textY)
+                      .ShowText(centerText)
+                      .EndText();
+
+                // Left: reference number
+                canvas.BeginText()
+                      .SetFontAndSize(_font, 8)
+                      .SetColor(_muted, true)
+                      .SetTextMatrix(left, textY)
+                      .ShowText($"Ref: {_refNumber}")
+                      .EndText();
+
+                // Right: page number
+                string pageText = $"Page {pageNumber}";
+                float pageW = _font.GetWidth(pageText, 8);
+                canvas.BeginText()
+                      .SetFontAndSize(_font, 8)
+                      .SetColor(_muted, true)
+                      .SetTextMatrix(right - pageW, textY)
+                      .ShowText(pageText)
+                      .EndText();
+
+                canvas.Release();
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // GET: /Officer/GetWithheldApplications
+        // ═══════════════════════════════════════════════════════════════════════
         [HttpGet]
-        public async Task<IActionResult> GetWithheldApplications(string serviceId, string type, int pageIndex = 0, int pageSize = 10)
+        public async Task<IActionResult> GetWithheldApplications(string serviceId, string type, int pageIndex = 0, int pageSize = 10, string? searchQuery = null)
         {
             var officer = GetOfficerDetails();
-            string officerRole = officer.Role!.ToString();
+            if (officer == null)
+                return Unauthorized(new { error = "Officer authentication failed." });
 
-            // Validate inputs
             if (string.IsNullOrEmpty(serviceId) || !int.TryParse(serviceId, out int parsedServiceId))
-            {
-                _logger.LogWarning("Invalid Serviceid provided: {Serviceid}", serviceId);
                 return BadRequest(new { error = "Invalid Serviceid" });
-            }
 
             if (string.IsNullOrEmpty(type))
-            {
-                _logger.LogWarning("Type parameter is missing or empty");
                 return BadRequest(new { error = "Type parameter is required" });
-            }
 
-            var withheldType = type.StartsWith("withheld_")
-                ? type.Split('_')[1]
-                : type;
+            string officerRole = officer.Role ?? "";
+            string accessLevel = officer.AccessLevel ?? "State";
+            int? accessCode = officer.AccessCode;
+            int? divisionCode = officer.AccessLevel == "Division" ? officer.AccessCode :
+                                (officer.AccessLevel == "District" || officer.AccessLevel == "Tehsil") ?
+                                dbcontext.District
+                                    .Where(d => d.Districtid == officer.AccessCode)
+                                    .Select(d => (int?)d.Division)
+                                    .FirstOrDefault() : null;
 
-            bool isStatusNotType = withheldType != "temporary" && withheldType != "permanent" && withheldType != "total";
+            // ★ Resolve service location fields (mirrors GetApplications)
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == parsedServiceId);
+            var serviceLocation = ResolveServiceLocationFields(service?.Formelement);
+            bool serviceHasDistrict = serviceLocation.HasDistrict;
+            bool serviceHasChildLocation = serviceLocation.HasChildLocation;
+            string childLocationHeader = serviceLocation.ChildLocationHeader;
 
-            // Validate officerRole when type implies status filtering
-            if (isStatusNotType && string.IsNullOrEmpty(officerRole))
-            {
-                _logger.LogWarning("OfficerRole is required for type: {Type}", type);
-                return BadRequest(new { error = "OfficerRole is required for status-based filtering" });
-            }
-
-            _logger.LogInformation($"Executing GetWithheldApplications: Serviceid={serviceId}, Type={type}, OfficerRole={officerRole}, PageIndex={pageIndex}, PageSize={pageSize}");
-
-            // Prepare columns for frontend
+            // ═══════════════════════════════════════════════════════════════════
+            // Columns — matches matrix:
+            //   State    → divisionName + districtName
+            //   Division → districtName + tehsilName
+            //   District → tehsilName
+            //   Tehsil   → (no area columns)
+            // ═══════════════════════════════════════════════════════════════════
             var columns = new List<dynamic>
-            {
-                new { accessorKey = "sno", header = "S.No" },
-                new { accessorKey = "referenceNumber", header = "Reference Number" },
-                new { accessorKey = "applicantName", header = "Applicant Name" },
-                new { accessorKey = "withheldType", header = "Withheld Type" },
-                new { accessorKey = "withheldReason", header = "Withheld Reason" }
-            };
+    {
+        new { accessorKey = "sno",             header = "S.No" },
+        new { accessorKey = "referenceNumber", header = "Reference Number" },
+        new { accessorKey = "applicantName",   header = "Applicant Name" },
+        new { accessorKey = "withheldType",    header = "Withheld Type" },
+        new { accessorKey = "withheldReason",  header = "Withheld Reason" }
+    };
 
-            List<dynamic> data = [];
+            if (officer.AccessLevel == "State")
+            {
+                columns.Insert(1, new { accessorKey = "divisionName", header = "Division Name" });
+                if (serviceHasDistrict)
+                    columns.Insert(2, new { accessorKey = "districtName", header = "District Name" });
+            }
+            else if (officer.AccessLevel == "Division")
+            {
+                if (serviceHasDistrict)
+                    columns.Insert(1, new { accessorKey = "districtName", header = "District Name" });
+                if (serviceHasChildLocation)
+                    columns.Insert(2, new { accessorKey = "tehsilName", header = childLocationHeader });
+            }
+            else if (officer.AccessLevel == "District")
+            {
+                if (serviceHasChildLocation)
+                    columns.Insert(1, new { accessorKey = "tehsilName", header = childLocationHeader });
+            }
+            // Tehsil → nothing inserted
+
+            columns.Add(new { accessorKey = "isWithheld", header = "Is Withheld" });
+
+            List<dynamic> data = new();
             int totalRecords = 0;
 
             try
             {
-                var parameters = new[]
+                // ═══════════════════════════════════════════════════════════════
+                // BRANCH 1: SEARCH
+                // ═══════════════════════════════════════════════════════════════
+                if (!string.IsNullOrEmpty(searchQuery))
                 {
-                    new NpgsqlParameter("@serviceid", parsedServiceId),
-                    new NpgsqlParameter("@type", type),
-                    new NpgsqlParameter("@officerrole", (object)officerRole! ?? DBNull.Value),
-                    new NpgsqlParameter("@pageindex", pageIndex),
-                    new NpgsqlParameter("@pagesize", pageSize)
-                };
-
-                var result = await dbcontext.Database
-                    .SqlQueryRaw<WithheldApplicationResult>(
-                        "SELECT * FROM get_withheld_applications(@serviceid, @type, @officerrole, @pageindex, @pagesize)",
-                        parameters
-                    )
-                    .ToListAsync();
-
-                totalRecords = result.Count > 0 ? result[0].TotalRecords ?? 0 : 0;
-
-                // Prepare data for frontend
-                data = result.Select(r => new
-                {
-                    sno = r.Sno,
-                    referenceNumber = r.Referencenumber,
-                    applicantName = r.ApplicantName ?? "N/A",
-                    withheldType = r.WithheldType,
-                    withheldReason = r.WithheldReason,
-                    customActions = new List<dynamic>
+                    var searchParameters = new[]
                     {
-                        new
-                        {
-                            type = "View",
-                            tooltip = "View",
-                            color = "#F0C38E",
-                            actionFunction = "handleViewWithheldApplication"
-                        }
-                    }
-                }).ToList<dynamic>();
+                new NpgsqlParameter("@p_service_id",    NpgsqlDbType.Integer) { Value = parsedServiceId },
+                new NpgsqlParameter("@p_type",          NpgsqlDbType.Varchar) { Value = type },
+                new NpgsqlParameter("@p_officer_role",  NpgsqlDbType.Varchar) { Value = (object?)officerRole ?? DBNull.Value },
+                new NpgsqlParameter("@p_access_level",  NpgsqlDbType.Varchar) { Value = (object?)accessLevel ?? DBNull.Value },
+                new NpgsqlParameter("@p_access_code",   NpgsqlDbType.Integer) { Value = (object?)accessCode   ?? DBNull.Value },
+                new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = (object?)divisionCode ?? DBNull.Value },
+                new NpgsqlParameter("@p_page_index",    NpgsqlDbType.Integer) { Value = pageIndex },
+                new NpgsqlParameter("@p_page_size",     NpgsqlDbType.Integer) { Value = pageSize },
+                new NpgsqlParameter("@p_search_query",  NpgsqlDbType.Varchar) { Value = searchQuery }
+            };
 
-                _logger.LogInformation("Retrieved {Count} records with TotalRecords={TotalRecords}", result.Count, totalRecords);
+                    var result = await dbcontext.Database
+                        .SqlQueryRaw<WithheldApplicationSearchDto>(
+                            "SELECT * FROM search_withheld_applications_for_officer(@p_service_id, @p_type, @p_officer_role, @p_access_level, @p_access_code, @p_division_code, @p_page_index, @p_page_size, @p_search_query)",
+                            searchParameters)
+                        .ToListAsync();
+
+                    totalRecords = result.Count > 0 ? (int)result[0].Totalrecords : 0;
+
+                    data = result.Select(r =>
+                    {
+                        dynamic obj = new ExpandoObject();
+                        var app = (IDictionary<string, object>)obj;
+
+                        app["sno"] = r.Sno;
+                        app["referenceNumber"] = r.Referencenumber!;
+
+                        // ★ Only add fields that match the current access level
+                        if (officer.AccessLevel == "State")
+                        {
+                            app["divisionName"] = r.Divisionname ?? "N/A";
+                            if (serviceHasDistrict)
+                                app["districtName"] = r.Districtname ?? "N/A";
+                        }
+                        else if (officer.AccessLevel == "Division")
+                        {
+                            if (serviceHasDistrict)
+                                app["districtName"] = r.Districtname ?? "N/A";
+                            if (serviceHasChildLocation)
+                                app["tehsilName"] = r.Tehsilname ?? "N/A";
+                        }
+                        else if (officer.AccessLevel == "District")
+                        {
+                            if (serviceHasChildLocation)
+                                app["tehsilName"] = r.Tehsilname ?? "N/A";
+                        }
+                        // Tehsil → no area fields added
+
+                        app["applicantName"] = r.Applicantname ?? "N/A";
+                        app["withheldType"] = r.Withheldtype!;
+                        app["withheldReason"] = r.Withheldreason!;
+                        app["isWithheld"] = r.Iswithheld.HasValue
+                                                  ? (r.Iswithheld.Value ? "YES" : "NO")
+                                                  : "N/A";
+                        app["customActions"] = new List<dynamic>
+                        {
+                    new
+                    {
+                        type           = "View",
+                        tooltip        = "View",
+                        color          = "#F0C38E",
+                        actionFunction = "handleViewWithheldApplication"
+                    }
+                        };
+
+                        return obj;
+                    }).ToList();
+                }
+                // ═══════════════════════════════════════════════════════════════
+                // BRANCH 2: No search
+                // ═══════════════════════════════════════════════════════════════
+                else
+                {
+                    var parameters = new[]
+                    {
+                new NpgsqlParameter("@p_service_id",    NpgsqlDbType.Integer) { Value = parsedServiceId },
+                new NpgsqlParameter("@p_type",          NpgsqlDbType.Varchar) { Value = type },
+                new NpgsqlParameter("@p_officer_role",  NpgsqlDbType.Varchar) { Value = (object?)officerRole ?? DBNull.Value },
+                new NpgsqlParameter("@p_access_level",  NpgsqlDbType.Varchar) { Value = (object?)accessLevel ?? DBNull.Value },
+                new NpgsqlParameter("@p_access_code",   NpgsqlDbType.Integer) { Value = (object?)accessCode   ?? DBNull.Value },
+                new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = (object?)divisionCode ?? DBNull.Value },
+                new NpgsqlParameter("@p_page_index",    NpgsqlDbType.Integer) { Value = pageIndex },
+                new NpgsqlParameter("@p_page_size",     NpgsqlDbType.Integer) { Value = pageSize }
+            };
+
+                    var result = await dbcontext.Database
+                        .SqlQueryRaw<WithheldApplicationResult>(
+                            "SELECT * FROM get_withheld_applications(@p_service_id, @p_type, @p_officer_role, @p_page_index, @p_page_size, @p_access_level, @p_access_code, @p_division_code)",
+                            parameters)
+                        .ToListAsync();
+
+                    totalRecords = result.Count > 0 ? (int)(result[0].TotalRecords ?? 0) : 0;
+
+                    data = result.Select(r =>
+                    {
+                        dynamic obj = new ExpandoObject();
+                        var app = (IDictionary<string, object>)obj;
+
+                        app["sno"] = r.Sno;
+                        app["referenceNumber"] = r.Referencenumber!;
+
+                        // ★ Same conditional shaping as search branch
+                        if (officer.AccessLevel == "State")
+                        {
+                            app["divisionName"] = r.Divisionname ?? "N/A";
+                            if (serviceHasDistrict)
+                                app["districtName"] = r.Districtname ?? "N/A";
+                        }
+                        else if (officer.AccessLevel == "Division")
+                        {
+                            if (serviceHasDistrict)
+                                app["districtName"] = r.Districtname ?? "N/A";
+                            if (serviceHasChildLocation)
+                                app["tehsilName"] = r.Tehsilname ?? "N/A";
+                        }
+                        else if (officer.AccessLevel == "District")
+                        {
+                            if (serviceHasChildLocation)
+                                app["tehsilName"] = r.Tehsilname ?? "N/A";
+                        }
+                        // Tehsil → no area fields
+
+                        app["applicantName"] = r.ApplicantName ?? "N/A";
+                        app["withheldType"] = r.WithheldType!;
+                        app["withheldReason"] = r.WithheldReason!;
+                        app["isWithheld"] = r.Iswithheld.HasValue
+                                                  ? (r.Iswithheld.Value ? "YES" : "NO")
+                                                  : "N/A";
+                        app["customActions"] = new List<dynamic>
+                        {
+                    new
+                    {
+                        type           = "View",
+                        tooltip        = "View",
+                        color          = "#F0C38E",
+                        actionFunction = "handleViewWithheldApplication"
+                    }
+                        };
+
+                        return obj;
+                    }).ToList();
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error executing GetWithheldApplications: Serviceid={Serviceid}, Type={Type}, OfficerRole={OfficerRole}", serviceId, type, officerRole);
+                _logger.LogError(ex, "Error executing GetWithheldApplications");
                 return StatusCode(500, new { error = "An error occurred while fetching withheld applications" });
             }
 
             return Json(new { columns, data, totalRecords });
         }
-
         // Define a model for the stored procedure result set
         public class WithheldApplicationResult
         {
+            public long? TotalRecords { get; set; }
             public long Sno { get; set; }
             public string? Referencenumber { get; set; }
             public string? ApplicantName { get; set; }
             public string? WithheldType { get; set; }
             public string? WithheldReason { get; set; }
-            public int? TotalRecords { get; set; }
+            public bool? Iswithheld { get; set; }
+            public string? Divisionname { get; set; }   // ★ NEW
+            public string? Districtname { get; set; }   // ★ NEW
+            public string? Tehsilname { get; set; }   // ★ NEW
         }
 
         [HttpGet]
@@ -1691,32 +2275,29 @@ namespace SahayataNidhi.Controllers.Officer
             try
             {
                 var officer = GetOfficerDetails();
+                if (officer == null) return Unauthorized("Officer details not found.");
+
                 int serviceId;
-                try
-                {
-                    serviceId = Convert.ToInt32(Serviceid);
-                }
-                catch
-                {
-                    return BadRequest("Invalid Serviceid");
-                }
+                try { serviceId = Convert.ToInt32(Serviceid); }
+                catch { return BadRequest("Invalid Serviceid"); }
 
                 string accessLevel = officer.AccessLevel!;
                 int? accessCode = officer.AccessCode;
                 string takenBy = officer.Role!;
+
                 int? divisionCode = null;
+                if (accessLevel == "Division" && accessCode.HasValue)
+                {
+                    var district = await dbcontext.District.FirstOrDefaultAsync(d => d.Districtid == accessCode.Value);
+                    divisionCode = district?.Division ?? accessCode.Value;
+                }
 
                 string resultType = type == "totalpcpapplication" ? "totalpcpapplication" : "expiringeligibility";
 
-                // Validate pagination
                 if (pageIndex < 0) pageIndex = 0;
                 if (pageSize < 1) pageSize = 10;
+                int pageNumber = pageIndex + 1;
 
-                int pageNumber = pageIndex + 1; // Convert 0-based to 1-based for PostgreSQL
-
-                // =====================================================================
-                // 1. Get Paginated Data
-                // =====================================================================
                 var parameters = new[]
                 {
             new NpgsqlParameter("@accesslevel", accessLevel),
@@ -1729,13 +2310,12 @@ namespace SahayataNidhi.Controllers.Officer
             new NpgsqlParameter("@pagesize", pageSize)
         };
 
+                // ★ Execute the function and get results
                 var applications = await dbcontext.CitizenApplications
                     .FromSqlRaw("SELECT * FROM get_disability_applications(@accesslevel, @accesscode, @serviceid, @takenby, @divisioncode, @resulttype, @pagenumber, @pagesize)", parameters)
                     .ToListAsync();
 
-                // =====================================================================
-                // 2. Get Total Count (without pagination)
-                // =====================================================================
+                // ★ Get total count
                 int totalRecords = 0;
                 try
                 {
@@ -1748,7 +2328,7 @@ namespace SahayataNidhi.Controllers.Officer
                 new NpgsqlParameter("@divisioncode", divisionCode ?? (object)DBNull.Value),
                 new NpgsqlParameter("@resulttype", resultType),
                 new NpgsqlParameter("@pagenumber", 1),
-                new NpgsqlParameter("@pagesize", 1000000) // Large number to get all records
+                new NpgsqlParameter("@pagesize", 1000000)
             };
 
                     var countQuery = await dbcontext.CitizenApplications
@@ -1756,17 +2336,13 @@ namespace SahayataNidhi.Controllers.Officer
                         .ToListAsync();
 
                     totalRecords = countQuery.Count;
-                    _logger.LogInformation($"Total records for {resultType}: {totalRecords}");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting total count for disability applications");
-                    totalRecords = applications.Count; // Fallback to current page count
+                    _logger.LogError(ex, "Error getting total count");
+                    totalRecords = applications.Count;
                 }
 
-                // =====================================================================
-                // 3. Process Results
-                // =====================================================================
                 var serviceName = await dbcontext.Services
                     .Where(s => s.Serviceid == serviceId)
                     .Select(s => s.Servicename)
@@ -1786,7 +2362,7 @@ namespace SahayataNidhi.Controllers.Officer
                     columns.Add(new { accessorKey = "applicationType", header = "UDID Card Type" });
                     columns.Add(new { accessorKey = "expiryDate", header = "UDID Card Expiry Date" });
                 }
-                else // expiringeligibility
+                else
                 {
                     columns.Add(new { accessorKey = "expiryDate", header = "UDID Card Expiry Date" });
                     columns.Add(new { accessorKey = "noOfMailSent", header = "No. Of Reminder Mails Sent to Citizen" });
@@ -1801,63 +2377,45 @@ namespace SahayataNidhi.Controllers.Officer
                         var formDetailsObj = JToken.Parse(application.Formdetails ?? "{}");
                         string applicantName = GetFieldValue("ApplicantName", formDetailsObj) ?? "Unknown Applicant";
 
-                        // Fetch expiring eligibility record
-                        var expiringApplication = dbcontext.ApplicationExpirations
-                            .FirstOrDefault(ae => ae.Referencenumber == application.Referencenumber);
-
                         dynamic applicationObject = new ExpandoObject();
                         applicationObject.sno = snoCounter++;
                         applicationObject.referenceNumber = application.Referencenumber;
                         applicationObject.applicantName = applicantName;
                         applicationObject.serviceName = serviceName;
 
+                        // ★ SIMPLIFIED: Read expiry_date directly from the Postgres result
+                        // No parsing needed - Postgres already did it
                         string expiryDisplay = "No Expiry Data";
-                        int mailSentCount = 0;
-                        bool hasValidExpiry = false;
 
-                        if (expiringApplication != null &&
-                            !string.IsNullOrWhiteSpace(expiringApplication.ExpirationDate.ToString()) &&
-                            DateTime.TryParse(expiringApplication.ExpirationDate.ToString(), out DateTime expirationDate))
+                        // The expiry_date is now available via FormdetailsFlat or a custom property
+                        // Since FromSqlRaw maps to CitizenApplications entity, we need to read it from FormdetailsFlat
+                        if (!string.IsNullOrWhiteSpace(application.FormdetailsFlat))
                         {
-                            int daysLeft = (expirationDate.Date - DateTime.Today).Days;
-                            expiryDisplay = expirationDate.ToString("dd MMM yyyy") + (daysLeft >= 0 ? $" ({daysLeft} days left)" : " (Expired)");
-                            mailSentCount = expiringApplication.MailSentCount;
-                            hasValidExpiry = true;
-                        }
-                        else
-                        {
-                            // Log for debugging
-                            _logger.LogWarning($"No valid expiry date for Referencenumber: {application.Referencenumber}. " +
-                                               $"ExpirationDate: '{expiringApplication?.ExpirationDate}'");
-
-                            // For expiringeligibility mode, only include applications with valid expiry
-                            if (type != "totalpcpapplication")
+                            try
                             {
-                                continue; // Skip applications without valid expiry data
+                                var flatObj = JToken.Parse(application.FormdetailsFlat);
+                                var rawDate = flatObj["IfTemporaryDisabilityUdidCardValidUpto"]?.ToString();
+
+                                if (!string.IsNullOrWhiteSpace(rawDate) && DateTime.TryParse(rawDate, out DateTime expDate))
+                                {
+                                    int daysLeft = (expDate.Date - DateTime.Today).Days;
+                                    expiryDisplay = expDate.ToString("dd MMM yyyy") + (daysLeft >= 0 ? $" ({daysLeft} days left)" : " (Expired)");
+                                }
                             }
-                            expiryDisplay = "No Expiry Data";
+                            catch { /* ignore */ }
                         }
 
-                        // Set expiry date
                         applicationObject.expiryDate = expiryDisplay;
 
                         if (type == "totalpcpapplication")
                         {
-                            var disabilityTypeField = FindFieldRecursively(formDetailsObj, "KindOfDisability");
-                            string disabilityType = disabilityTypeField?["value"]?.ToString() ?? "N/A";
-
-                            _logger.LogInformation($"Disability Type: {disabilityType} for {application.Referencenumber}");
-
-                            applicationObject.applicationType = disabilityType;
+                            var disabilityTypeField = FormJsonHelper.FindFieldRecursively(formDetailsObj, "KindOfDisability");
+                            applicationObject.applicationType = disabilityTypeField?["value"]?.ToString() ?? "N/A";
                         }
-                        else // expiringeligibility
+                        else
                         {
-                            if (!hasValidExpiry)
-                                continue; // Already skipped above, but double safety
-
-                            applicationObject.noOfMailSent = mailSentCount;
-
-                            var customActions = new List<dynamic>
+                            applicationObject.noOfMailSent = 0; // Default since we removed ApplicationExpirations table
+                            applicationObject.customActions = new List<dynamic>
                     {
                         new
                         {
@@ -1868,22 +2426,17 @@ namespace SahayataNidhi.Controllers.Officer
                             actionFunction = "sendExpirationEmail"
                         }
                     };
-                            applicationObject.customActions = customActions;
                         }
 
                         data.Add(applicationObject);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, $"Error processing application {application.Referencenumber}: {ex.Message}");
-                        // Skip this record but continue with others
+                        _logger.LogError(ex, $"Error processing {application.Referencenumber}: {ex.Message}");
                         continue;
                     }
                 }
 
-                // =====================================================================
-                // 4. Return Response with Proper Pagination Info
-                // =====================================================================
                 return Json(new
                 {
                     data,
@@ -1896,8 +2449,7 @@ namespace SahayataNidhi.Controllers.Officer
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error in GetTemporaryDisability for type {type}: {ex.Message}");
-
+                _logger.LogError(ex, $"Error in GetTemporaryDisability: {ex.Message}");
                 return Json(new
                 {
                     data = new List<dynamic>(),
@@ -1906,13 +2458,10 @@ namespace SahayataNidhi.Controllers.Officer
                     pageIndex = 0,
                     pageSize = 10,
                     totalPages = 0,
-                    error = $"Failed to load data: {ex.Message}"
+                    error = ex.Message
                 });
             }
         }
-
-
-
         public class AgeWiseReportDto
         {
             public string? Age_range { get; set; }
@@ -1941,7 +2490,45 @@ namespace SahayataNidhi.Controllers.Officer
         // DetailedApplicationsReportDto.cs
         public class DetailedApplicationsReportDto
         {
-            // Existing fields
+            // ── existing properties unchanged ───────────────────────────────
+            [Column("districtname")] public string? DistrictName { get; set; }
+            [Column("tswofficename")] public string? Tswofficename { get; set; }
+            [Column("application_status")] public string? ApplicationStatus { get; set; }
+            [Column("application_pending_with")] public string? ApplicationPendingWith { get; set; }
+            [Column("referencenumber")] public string? ReferenceNumber { get; set; }
+            [Column("applicant_name")] public string? ApplicantName { get; set; }
+            [Column("parentage")] public string? Parentage { get; set; }
+            [Column("date_of_birth")] public string? DateOfBirth { get; set; }   // ← NEW
+            [Column("mobile_number")] public string? MobileNumber { get; set; }
+            [Column("account_number")] public string? AccountNumber { get; set; }
+            [Column("ifsc_code")] public string? IfscCode { get; set; }
+            [Column("bank_name")] public string? BankName { get; set; }
+            [Column("branch_name")] public string? BranchName { get; set; }
+            [Column("present_address")] public string? PresentAddress { get; set; }
+            [Column("present_district")] public string? PresentDistrict { get; set; }
+            [Column("present_tehsil")] public string? PresentTehsil { get; set; }
+            [Column("permanent_address")] public string? PermanentAddress { get; set; }
+            [Column("permanent_district")] public string? PermanentDistrict { get; set; }
+            [Column("permanent_tehsil")] public string? PermanentTehsil { get; set; }
+            [Column("pension_type")] public string? PensionType { get; set; }
+            [Column("udid_card_number")] public string? UdidCardNumber { get; set; }
+            [Column("type_of_disability")] public string? TypeOfDisability { get; set; }
+            [Column("kind_of_disability")] public string? KindOfDisability { get; set; }
+            [Column("percentage_of_disability")] public string? PercentageOfDisability { get; set; }
+            [Column("disability_others")] public string? DisabilityOthers { get; set; }
+            [Column("temporary_disability_valid_upto")] public string? TemporaryDisabilityValidUpto { get; set; }
+            [Column("civil_condition")] public string? CivilCondition { get; set; }
+            [Column("last_action_taken")] public string? LastActionTaken { get; set; }
+            [Column("remarks")] public string? Remarks { get; set; }
+            [Column("ActionTakenOn")] public string? ActionTakenOn { get; set; }
+            [Column("totalcount")] public long Totalcount { get; set; }
+
+            // ── date columns ────────────────────────────────────────────────
+            [Column("submission_date")] public string? SubmissionDate { get; set; }
+            [Column("sanctioned_date")] public string? SanctionedDate { get; set; }
+        }
+        public class WithheldDetailedReportDto
+        {
             public string? Districtname { get; set; }
             public string? Tswofficename { get; set; }
             public string? Application_status { get; set; }
@@ -1949,34 +2536,15 @@ namespace SahayataNidhi.Controllers.Officer
             public string? Referencenumber { get; set; }
             public string? Applicant_name { get; set; }
             public string? Parentage { get; set; }
+            public string? Mobile_number { get; set; }
             public string? Account_number { get; set; }
             public string? Ifsc_code { get; set; }
             public string? Bank_name { get; set; }
             public string? Branch_name { get; set; }
-
-            // === NEW FIELDS ADDED ===
-
-            // Present Address Fields
-            public string? Present_address { get; set; }
-            public string? Present_district { get; set; }
-            public string? Present_tehsil { get; set; }
-
-            // Permanent Address Fields
-            public string? Permanent_address { get; set; }
-            public string? Permanent_district { get; set; }
-            public string? Permanent_tehsil { get; set; }
-
-            // Pension & Disability Fields
-            public string? Pension_type { get; set; }
-            public string? Type_of_disability { get; set; }
-            public string? Kind_of_disability { get; set; }
-            public string? Percentage_of_disability { get; set; }
-            public string? Disability_others { get; set; }
-            public string? Temporary_disability_valid_upto { get; set; }
-            public string? Civil_condition { get; set; }
-            public string? Udid_card_number { get; set; }
-
-            // Total count (kept at the end)
+            public string? ActionTakenOn { get; set; }   // maps to the quoted "ActionTakenOn" column
+            public string? Iswithheld { get; set; }
+            public string? Withheldtype { get; set; }
+            public string? Withheldreason { get; set; }
             public long Totalcount { get; set; }
         }
 
@@ -1995,513 +2563,349 @@ namespace SahayataNidhi.Controllers.Officer
             });
         }
 
-        // [HttpGet]
-        // public IActionResult GetApplicationsForReports(int AccessCode, int Serviceid, string? StatusType = null, string ReportType = "TehsilWise", string? DataType = null, DateTime? StartDate = null, DateTime? EndDate = null, int pageIndex = 0, int pageSize = 10)
-        // {
-        //     try
-        //     {
-        //         var officer = GetOfficerDetails();
-        //         if (officer == null)
-        //             return BadRequest(new { error = "Officer details not found" });
-
-        //         // Log officer details for debugging (remove in production)
-        //         _logger.LogInformation($"Officer Details - Role: {officer.Role}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
-
-        //         List<dynamic> data;
-        //         List<dynamic> columns;
-        //         int totalRecords;
-
-        //         switch (ReportType)
-        //         {
-        //             case "AgeWise":
-        //                 try
-        //                 {
-        //                     object startDateParam = StartDate.HasValue ? (object)StartDate.Value : DBNull.Value;
-        //                     object endDateParam = EndDate.HasValue ? (object)EndDate.Value : DBNull.Value;
-
-        //                     var ageParameters = new[]
-        //                     {
-        //                         new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-        //                         new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : officer.AccessLevel == "Division" ? "Division" : "District" },
-        //                         new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
-        //                         new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
-        //                         new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value },
-        //                         new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = startDateParam },
-        //                         new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = endDateParam }
-        //                     };
-
-        //                     _logger.LogInformation($"AgeWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}, Status: {StatusType ?? "NULL"}, DataType: {DataType ?? "NULL"}, StartDate: {StartDate?.ToString("yyyy-MM-dd") ?? "NULL"}, EndDate: {EndDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
-
-        //                     var ageData = dbcontext.Database
-        //                         .SqlQueryRaw<AgeWiseReportDto>(
-        //                             "SELECT * FROM get_age_counts_filtered(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-        //                             ageParameters)
-        //                         .ToList();
-
-        //                     _logger.LogInformation($"AgeWise report returned {JsonConvert.SerializeObject(ageData)} records");
-
-        //                     totalRecords = ageData.Count;
-        //                     data = ageData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-        //                     columns = new List<dynamic>
-        //                     {
-        //                         new { accessorKey = "age_range", header = "Age Range" },  // Changed header
-        //                         new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-        //                     };
-        //                 }
-        //                 catch (Exception ex)
-        //                 {
-        //                     _logger.LogError(ex, "AgeWise report failed");
-        //                     return StatusCode(500, new { error = "AgeWise report failed", details = ex.Message });
-        //                 }
-        //                 break;
-
-        //             // Inside the switch case for "PensionTypeWise"
-        //             case "PensionTypeWise":
-        //                 try
-        //                 {
-        //                     object startDateParam = StartDate.HasValue ? (object)StartDate.Value : DBNull.Value;
-        //                     object endDateParam = EndDate.HasValue ? (object)EndDate.Value : DBNull.Value;
-
-        //                     // Default to "sanctioned" if StatusType is not provided
-        //                     string statusParam = string.IsNullOrEmpty(StatusType) ? "sanctioned" : StatusType;
-
-        //                     var pensionParameters = new[]
-        //                     {
-        //                         new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-        //                         new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-        //                         new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
-        //                         new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = statusParam },
-        //                         new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value },
-        //                         new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = startDateParam },
-        //                         new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = endDateParam }
-        //                     };
-
-        //                     _logger.LogInformation($"PensionTypeWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}, Status: {statusParam}");
-
-        //                     // ✅ Aliased columns to match DTO property names
-        //                     var pensionData = dbcontext.Database
-        //                         .SqlQueryRaw<PensionTypeWiseReportDto>(
-        //                             "SELECT age_range AS \"Age\", pensiontype AS \"PensionType\", countofapplicants AS \"CountOfApplicants\" " +
-        //                             "FROM get_age_and_pension_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-        //                             pensionParameters)
-        //                         .ToList();
-
-        //                     totalRecords = pensionData.Count;
-        //                     data = pensionData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-
-        //                     columns = new List<dynamic>
-        //                     {
-        //                         new { accessorKey = "age", header = "Age Range" },      // header updated for clarity
-        //                         new { accessorKey = "pensionType", header = "Pension Type" },
-        //                         new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
-        //                     };
-        //                 }
-        //                 catch (Exception ex)
-        //                 {
-        //                     _logger.LogError(ex, "PensionTypeWise report failed");
-        //                     return StatusCode(500, new { error = "PensionTypeWise report failed", details = ex.Message });
-        //                 }
-        //                 break;
-
-        //             case "GenderWise":
-        //                 try
-        //                 {
-        //                     var genderParameters = new[]
-        //                     {
-        //                 new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-        //                 new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-        //                 new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
-        //                 new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
-        //                 new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = DataType ?? (object)DBNull.Value }
-        //             };
-
-        //                     _logger.LogInformation($"GenderWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
-
-        //                     var genderData = dbcontext.Database
-        //                         .SqlQueryRaw<GenderWiseReportDto>(
-        //                             "SELECT * FROM get_gender_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype)",
-        //                             genderParameters)
-        //                         .ToList();
-
-        //                     totalRecords = genderData.Count;
-        //                     data = genderData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-        //                     columns = new List<dynamic>
-        //             {
-        //                 new { accessorKey = "gender", header = "Gender" },
-        //                 new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
-        //             };
-        //                 }
-        //                 catch (Exception ex)
-        //                 {
-        //                     _logger.LogError(ex, "GenderWise report failed");
-        //                     return StatusCode(500, new { error = "GenderWise report failed", details = ex.Message });
-        //                 }
-        //                 break;
-
-        //             case "DetailedApplications":
-        //                 try
-        //                 {
-        //                     // For DetailedApplications, we IGNORE the incoming AccessCode and use officer's own
-        //                     // This is the key fix - we don't use the AccessCode parameter from the URL
-
-        //                     var detailedParameters = new[]
-        //                     {
-        //                 new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer.Role ?? (object)DBNull.Value },
-        //                 new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = officer.AccessLevel ?? (object)DBNull.Value },
-        //                 new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code, NOT the passed AccessCode
-        //                 new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(StatusType) ? DBNull.Value : StatusType },
-        //                 new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = Serviceid },
-        //                 new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
-        //                 new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
-        //                 new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
-        //                 new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(DataType) ? DBNull.Value : DataType },
-        //                 new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = DBNull.Value }
-        //             };
-
-        //                     // Log the actual values being passed to the function
-        //                     _logger.LogInformation($"DetailedApplications report - " +
-        //                         $"Role: {officer.Role}, " +
-        //                         $"AccessLevel: {officer.AccessLevel}, " +
-        //                         $"AccessCode: {officer.AccessCode} (using officer's own, ignoring URL AccessCode: {AccessCode}), " +
-        //                         $"Serviceid: {Serviceid}, " +
-        //                         $"Status: {StatusType ?? "NULL"}, " +
-        //                         $"PageIndex: {pageIndex}, " +
-        //                         $"PageSize: {pageSize}");
-
-        //                     var detailedData = dbcontext.Database
-        //                         .SqlQueryRaw<DetailedApplicationsReportDto>(
-        //                             "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
-        //                             detailedParameters)
-        //                         .ToList();
-
-        //                     totalRecords = detailedData.FirstOrDefault()?.totalcount ?? 0;
-        //                     data = detailedData.Cast<dynamic>().ToList();
-
-        //                     _logger.LogInformation($"DetailedApplications report returned {detailedData.Count} records, totalcount: {totalRecords}");
-
-        //                     columns = new List<dynamic>
-        //             {
-        //                 new { accessorKey = "districtname", header = "District" },
-        //                 new { accessorKey = "tswofficename", header = "TSWO Office" },
-        //                 new { accessorKey = "application_status", header = "Application Status" },
-        //                 new { accessorKey = "application_pending_with", header = "Application Pending With" },
-        //                 new { accessorKey = "referencenumber", header = "Reference Number" },
-        //                 new { accessorKey = "applicant_name", header = "Applicant Name" },
-        //                 new { accessorKey = "parentage", header = "Parentage" },
-        //                 new { accessorKey = "account_number", header = "Account Number" },
-        //                 new { accessorKey = "ifsc_code", header = "IFSC Code" },
-        //                 new { accessorKey = "bank_name", header = "Bank Name" },
-        //                 new { accessorKey = "branch_name", header = "Branch Name" }
-        //             };
-        //                 }
-        //                 catch (Exception ex)
-        //                 {
-        //                     _logger.LogError(ex, "Detailed Applications report failed");
-        //                     return StatusCode(500, new { error = "Detailed Applications report failed", details = ex.Message });
-        //                 }
-        //                 break;
-
-        //             case "TehsilWise":
-        //             default:
-        //                 try
-        //                 {
-        //                     var tehsilParameters = new[]
-        //                     {
-        //                 new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode }, // Use officer's access code
-        //                 new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-        //                 new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" }
-        //             };
-
-        //                     _logger.LogInformation($"TehsilWise report - Serviceid: {Serviceid}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
-
-        //                     var tehsilData = dbcontext.Database
-        //                         .SqlQueryRaw<SummaryReports>(
-        //                             "SELECT * FROM get_applications_for_report(@accesscode, @serviceid, @accesslevel)",
-        //                             tehsilParameters)
-        //                         .ToList();
-
-        //                     totalRecords = tehsilData.Count;
-        //                     data = tehsilData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-        //                     columns = new List<dynamic>
-        //             {
-        //                 new { accessorKey = "tehsilName", header = "Tehsil Name" },
-        //                 new { accessorKey = "totalApplicationsSubmitted", header = "Total Applications Received" },
-        //                 new { accessorKey = "totalApplicationsPending", header = "Total Applications Pending" },
-        //                 new { accessorKey = "totalApplicationsReturnToEdit", header = "Pending With Citizens" },
-        //                 new { accessorKey = "totalApplicationsSanctioned", header = "Total Sanctioned" },
-        //                 new { accessorKey = "totalApplicationsRejected", header = "Total Rejected" }
-        //             };
-        //                 }
-        //                 catch (Exception ex)
-        //                 {
-        //                     _logger.LogError(ex, "TehsilWise report failed");
-        //                     return StatusCode(500, new { error = "TehsilWise report failed", details = ex.Message });
-        //                 }
-        //                 break;
-        //         }
-
-        //         return Json(new
-        //         {
-        //             data,
-        //             columns,
-        //             totalRecords,
-        //             pageIndex,
-        //             pageSize,
-        //             totalPages = (int)Math.Ceiling(totalRecords / (double)pageSize)
-        //         });
-        //     }
-        //     catch (Exception ex)
-        //     {
-        //         _logger.LogError(ex, $"Error executing report for AccessCode: {AccessCode}, Serviceid: {Serviceid}, ReportType: {ReportType}");
-        //         return StatusCode(500, new
-        //         {
-        //             error = "An error occurred while fetching the report",
-        //             details = ex.Message,
-        //             reportType = ReportType,
-        //             serviceId = Serviceid,
-        //             accessCode = AccessCode
-        //         });
-        //     }
-        // }
-
         [HttpGet]
-        public IActionResult GetReportTypes()
-        {
-            try
-            {
-                var reportTypes = new List<dynamic>
-                {
-                    new { value = "TehsilWise", label = "Tehsil Wise Applications Report" },
-                    new { value = "AgeWise", label = "Age Wise Report" },
-                    new { value = "PensionTypeWise", label = "Pension Type Wise Report" },
-                    new { value = "GenderWise", label = "Gender Wise Report" },
-                    new { value = "DetailedApplications", label = "Detailed Applications Report" }
-                };
-
-                return Ok(new { status = true, reportTypes });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching report types");
-                return StatusCode(500, new { status = false, message = ex.Message });
-            }
-        }
-
-        [HttpGet]
-        public async Task<IActionResult> GetApplicationsForReport(
-       int accessCode,
-       int serviceId,
-       string accessLevel,
-       string? dataType = null,
-       string reportType = "TehsilWise",
-       string? statusType = null,
-       string? ageRanges = null,
-       int pageIndex = 0,  // Add pagination parameter
-       int pageSize = 10)   // Add pagination parameter
+        public IActionResult GetApplicationsForReport(int AccessCode, int Serviceid, string? StatusType = null, string ReportType = "TehsilWise", string? DataType = null, DateTime? FromDate = null, DateTime? ToDate = null, DateTime? SanctionFromDate = null, DateTime? SanctionToDate = null, int pageIndex = 0, int pageSize = 10, string? accessLevel = null)
         {
             try
             {
                 var officer = GetOfficerDetails();
-                _logger.LogInformation($"GetApplicationsForReport - AccessCode: {accessCode}, ServiceId: {serviceId}, AccessLevel: {accessLevel}, DataType: {dataType}, ReportType: {reportType}, StatusType: {statusType}, PageIndex: {pageIndex}, PageSize: {pageSize}");
+                if (officer == null)
+                    return BadRequest(new { error = "Officer details not found" });
+
+                _logger.LogInformation(
+                    $"Officer Details - Role: {officer.Role}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
+                _logger.LogInformation(
+                    $"Report filters - FromDate: {FromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, ToDate: {ToDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"SanctionFrom: {SanctionFromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, SanctionTo: {SanctionToDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
+
+                // Normalize nullable params once so every branch can bind them cleanly.
+                object fromDateParam = FromDate.HasValue ? (object)FromDate.Value.Date : DBNull.Value;
+                object toDateParam = ToDate.HasValue ? (object)ToDate.Value.Date : DBNull.Value;
+                object dataTypeParam = string.IsNullOrEmpty(DataType) ? DBNull.Value : (object)DataType;
+                object sanctionFromParam = SanctionFromDate.HasValue ? (object)SanctionFromDate.Value.Date : DBNull.Value;
+                object sanctionToParam = SanctionToDate.HasValue ? (object)SanctionToDate.Value.Date : DBNull.Value;
 
                 List<dynamic> data;
                 List<dynamic> columns;
-                int totalRecords = 0;
+                int totalRecords;
 
-                switch (reportType)
+                switch (ReportType)
                 {
-                    case "TehsilWise":
-                        var tehsilParameters = new[]
-                        {
-                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
-                };
-
-                        var tehsilResults = dbcontext.Database
-                            .SqlQueryRaw<TehsilWiseReportDto>(
-                                "SELECT * FROM get_applications_for_report(@p_access_code, @p_service_id, @p_access_level, @p_data_type)",
-                                tehsilParameters)
-                            .ToList();
-
-                        data = tehsilResults.Cast<dynamic>().ToList();
-                        totalRecords = data.Count;
-                        columns = new List<dynamic>
-                {
-                    new { accessorKey = "tehsilname", header = "Tehsil Name" },
-                    new { accessorKey = "totalapplicationssubmitted", header = "Total Applications Submitted" },
-                    new { accessorKey = "totalapplicationspending", header = "Total Applications Pending" },
-                    new { accessorKey = "totalapplicationsreturntoedit", header = "Total Applications Return to Edit" },
-                    new { accessorKey = "totalapplicationsrejected", header = "Total Applications Rejected" },
-                    new { accessorKey = "totalapplicationssanctioned", header = "Total Applications Sanctioned" }
-                };
-                        break;
-
                     case "AgeWise":
-                        string ageRangesJson = ageRanges!;
-
-                        if (string.IsNullOrEmpty(ageRangesJson))
+                        try
                         {
-                            ageRangesJson = @"[
-                        {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
-                        {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
-                        {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
-                    ]";
+                            var ageParameters = new[]
+                            {
+                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : officer.AccessLevel == "Division" ? "Division" : "District" },
+                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
+                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
+                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
+                        new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
+                        new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = toDateParam }
+                    };
+
+                            var ageData = dbcontext.Database
+                                .SqlQueryRaw<AgeWiseReportDto>(
+                                    "SELECT * FROM get_age_counts_filtered(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
+                                    ageParameters)
+                                .ToList();
+
+                            totalRecords = ageData.Count;
+                            data = ageData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+                            columns = new List<dynamic>
+                    {
+                        new { accessorKey = "age_range", header = "Age Range" },
+                        new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                    };
                         }
-
-                        var ageParameters = new[]
+                        catch (Exception ex)
                         {
-                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
-                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                    new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
-                };
-
-                        var ageResults = dbcontext.Database
-                            .SqlQueryRaw<AgeWiseReportDto>(
-                                "SELECT * FROM get_age_counts_with_dynamic_ranges(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type, @p_age_ranges)",
-                                ageParameters)
-                            .ToList();
-
-                        data = ageResults.Cast<dynamic>().ToList();
-                        totalRecords = data.Count;
-                        columns = new List<dynamic>
-                {
-                    new { accessorKey = "age_range", header = "Age Range" },
-                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                };
+                            _logger.LogError(ex, "AgeWise report failed");
+                            return StatusCode(500, new { error = "AgeWise report failed", details = ex.Message });
+                        }
                         break;
 
                     case "PensionTypeWise":
-                        ageRangesJson = ageRanges!;
-
-                        if (string.IsNullOrEmpty(ageRangesJson))
+                        try
                         {
-                            ageRangesJson = @"[
-                        {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
-                        {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
-                        {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
-                    ]";
+                            string statusParam = string.IsNullOrEmpty(StatusType) ? "sanctioned" : StatusType;
+
+                            var pensionParameters = new[]
+                            {
+                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
+                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
+                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = statusParam },
+                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
+                        new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
+                        new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = toDateParam }
+                    };
+
+                            var pensionData = dbcontext.Database
+                                .SqlQueryRaw<PensionTypeWiseReportDto>(
+                                    "SELECT * FROM get_age_and_pension_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
+                                    pensionParameters)
+                                .ToList();
+
+                            totalRecords = pensionData.Count;
+                            data = pensionData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+                            columns = new List<dynamic>
+                    {
+                        new { accessorKey = "age_range", header = "Age Range" },
+                        new { accessorKey = "pensionType", header = "Pension Type" },
+                        new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
+                    };
                         }
-
-                        var pensionParameters = new[]
+                        catch (Exception ex)
                         {
-                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
-                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                    new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
-                };
-
-                        var pensionResults = dbcontext.Database
-                            .SqlQueryRaw<PensionTypeWiseReportDto>(
-                                "SELECT * FROM get_age_and_pension_counts(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type, @p_age_ranges)",
-                                pensionParameters)
-                            .ToList();
-
-                        data = pensionResults.Cast<dynamic>().ToList();
-                        totalRecords = data.Count;
-                        columns = new List<dynamic>
-                {
-                    new { accessorKey = "age_range", header = "Age Range" },
-                    new { accessorKey = "pensiontype", header = "Pension Type" },
-                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                };
+                            _logger.LogError(ex, "PensionTypeWise report failed");
+                            return StatusCode(500, new { error = "PensionTypeWise report failed", details = ex.Message });
+                        }
                         break;
 
                     case "GenderWise":
-                        var genderParameters = new[]
+                        try
                         {
-                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
-                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
-                };
+                            var genderParameters = new[]
+                            {
+                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
+                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer)  { Value = officer.AccessCode },
+                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
+                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
+                        new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
+                        new NpgsqlParameter("@enddate",   NpgsqlDbType.Timestamp) { Value = toDateParam }
+                    };
 
-                        var genderResults = dbcontext.Database
-                            .SqlQueryRaw<GenderWiseReportDto>(
-                                "SELECT * FROM get_gender_counts(@p_service_id, @p_access_level, @p_access_code, @p_application_status, @p_data_type)",
-                                genderParameters)
-                            .ToList();
+                            var genderData = dbcontext.Database
+                                .SqlQueryRaw<GenderWiseReportDto>(
+                                    "SELECT * FROM get_gender_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
+                                    genderParameters)
+                                .ToList();
 
-                        data = genderResults.Cast<dynamic>().ToList();
-                        totalRecords = data.Count;
-                        columns = new List<dynamic>
-                {
-                    new { accessorKey = "gender", header = "Gender" },
-                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                };
+                            totalRecords = genderData.Count;
+                            data = genderData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+                            columns = new List<dynamic>
+                    {
+                        new { accessorKey = "gender",            header = "Gender" },
+                        new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                    };
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "GenderWise report failed");
+                            return StatusCode(500, new { error = "GenderWise report failed", details = ex.Message });
+                        }
                         break;
 
                     case "DetailedApplications":
-                        var detailedParameters = new[]
+                        try
                         {
-                            new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
-                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
-                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                            new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
-                            new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
-                            new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
-                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value }
-                        };
+                            string? effectiveAccessLevel = string.IsNullOrEmpty(accessLevel)
+                                ? officer.AccessLevel
+                                : accessLevel;
 
-                        var detailedResults = dbcontext.Database
-                            .SqlQueryRaw<DetailedApplicationsReportDto>(
-                                "SELECT * FROM get_applications_for_officer_report(@p_role, @p_access_level, @p_access_code, @p_application_status, @p_service_id, @p_page_index, @p_page_size, @p_is_paginated, @p_data_type, @p_division_code)",
-                                detailedParameters)
-                            .ToList();
+                            int? effectiveAccessCode =
+                                (effectiveAccessLevel == "Tehsil" && officer.AccessLevel == "Tehsil")
+                                    ? officer.AccessCode
+                                    : AccessCode;
 
-                        // Get the total count from the first record
-                        totalRecords = (int)(detailedResults.FirstOrDefault()?.Totalcount ?? 0);
-                        data = detailedResults.Cast<dynamic>().ToList();
+                            var detailedParameters = new[]
+                            {
+                                new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer.Role ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = effectiveAccessLevel },
+                                new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = effectiveAccessCode },
+                                new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(StatusType) ? DBNull.Value : StatusType },
+                                new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = Serviceid },
+                                new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
+                                new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
+                                new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
+                                new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = dataTypeParam },
+                                new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = DBNull.Value },
+                                new NpgsqlParameter("@p_startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
+                                new NpgsqlParameter("@p_enddate",   NpgsqlDbType.Timestamp) { Value = toDateParam },
+                                new NpgsqlParameter("@p_sanction_startdate", NpgsqlDbType.Timestamp) { Value = sanctionFromParam },  // ← new
+                                new NpgsqlParameter("@p_sanction_enddate",   NpgsqlDbType.Timestamp) { Value = sanctionToParam }     // ← new
+                            };
 
-                        // === UPDATED COLUMNS LIST (Add all new fields) ===
-                        columns = new List<dynamic>
-    {
-        new { accessorKey = "districtname", header = "District" },
-        new { accessorKey = "tswofficename", header = "TSWO Office" },
-        new { accessorKey = "application_status", header = "Application Status" },
-        new { accessorKey = "application_pending_with", header = "Application Pending With" },
-        new { accessorKey = "referencenumber", header = "Reference Number" },
-        new { accessorKey = "applicant_name", header = "Applicant Name" },
-        new { accessorKey = "parentage", header = "Parentage" },
-        new { accessorKey = "account_number", header = "Account Number" },
-        new { accessorKey = "ifsc_code", header = "IFSC Code" },
-        new { accessorKey = "bank_name", header = "Bank Name" },
-        new { accessorKey = "branch_name", header = "Branch Name" },
+                            var detailedData = dbcontext.Database
+                                .SqlQueryRaw<DetailedApplicationsReportDto>(
+                                    "SELECT * FROM get_applications_for_officer_report(" +
+                                    "@p_role, @p_access_level, @p_access_code, @p_application_status, " +
+                                    "@p_service_id, @p_page_index, @p_page_size, @p_is_paginated, " +
+                                    "@p_data_type, @p_division_code, @p_startdate, @p_enddate, " +
+                                    "@p_sanction_startdate, @p_sanction_enddate)",
+                                    detailedParameters)
+                                .ToList();
 
-        // ==================== NEW COLUMNS ====================
-        new { accessorKey = "present_address", header = "Present Address" },
-        new { accessorKey = "present_district", header = "Present District" },
-        new { accessorKey = "present_tehsil", header = "Present Tehsil" },
-
-        new { accessorKey = "permanent_address", header = "Permanent Address" },
-        new { accessorKey = "permanent_district", header = "Permanent District" },
-        new { accessorKey = "permanent_tehsil", header = "Permanent Tehsil" },
-
-        new { accessorKey = "pension_type", header = "Pension Type" },
-        new { accessorKey = "udid_card_number", header = "UDID Card Number" },
-        new { accessorKey = "type_of_disability", header = "Type of Disability" },
-        new { accessorKey = "kind_of_disability", header = "Kind of Disability" },
-        new { accessorKey = "percentage_of_disability", header = "Percentage of Disability" },
-        new { accessorKey = "disability_others", header = "Disability (If Others)" },
-        new { accessorKey = "temporary_disability_valid_upto", header = "Temporary Disability Valid Upto" },
-        new { accessorKey = "civil_condition", header = "Civil Condition" }
-    };
+                            totalRecords = (int)(detailedData.FirstOrDefault()?.Totalcount ?? 0);
+                            data = detailedData.Cast<dynamic>().ToList();
+                            columns = new List<dynamic>
+                            {
+                                new { accessorKey = "districtName",                     header = "District" },
+                                new { accessorKey = "tswofficename",                    header = "TSWO Office" },
+                                new { accessorKey = "applicationStatus",                header = "Application Status" },
+                                new { accessorKey = "applicationPendingWith",           header = "Application Pending With" },
+                                new { accessorKey = "referenceNumber",                  header = "Reference Number" },
+                                new { accessorKey = "applicantName",                    header = "Applicant Name" },
+                                new { accessorKey = "submissionDate",                   header = "Submission Date" },
+                                new { accessorKey = "parentage",                        header = "Parentage" },
+                                new { accessorKey = "dateOfBirth",                      header = "Date of Birth" },   // ← NEW
+                                new { accessorKey = "mobileNumber",                     header = "Mobile Number" },
+                                new { accessorKey = "accountNumber",                    header = "Account Number" },
+                                new { accessorKey = "ifscCode",                         header = "IFSC Code" },
+                                new { accessorKey = "bankName",                         header = "Bank Name" },
+                                new { accessorKey = "branchName",                       header = "Branch Name" },
+                                new { accessorKey = "presentAddress",                   header = "Present Address" },
+                                new { accessorKey = "presentDistrict",                  header = "Present District" },
+                                new { accessorKey = "presentTehsil",                    header = "Present Tehsil" },
+                                new { accessorKey = "permanentAddress",                 header = "Permanent Address" },
+                                new { accessorKey = "permanentDistrict",                header = "Permanent District" },
+                                new { accessorKey = "permanentTehsil",                  header = "Permanent Tehsil" },
+                                new { accessorKey = "pensionType",                      header = "Pension Type" },
+                                new { accessorKey = "udidCardNumber",                   header = "UDID Card Number" },
+                                new { accessorKey = "typeOfDisability",                 header = "Type of Disability" },
+                                new { accessorKey = "kindOfDisability",                 header = "Kind of Disability" },
+                                new { accessorKey = "percentageOfDisability",           header = "Percentage of Disability" },
+                                new { accessorKey = "disabilityOthers",                 header = "Disability (If Others)" },
+                                new { accessorKey = "temporaryDisabilityValidUpto",     header = "Temporary Disability Valid Upto" },
+                                new { accessorKey = "civilCondition",                   header = "Civil Condition" },
+                                new { accessorKey = "lastActionTaken",                  header = "Last Action Taken" },
+                                new { accessorKey = "remarks",                          header = "Remarks" },
+                                new { accessorKey = "actionTakenOn",                    header = "Action Taken On" },
+                                new { accessorKey = "sanctionedDate",                   header = "Sanctioned Date" }
+                            };
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Detailed Applications report failed");
+                            return StatusCode(500, new { error = "Detailed Applications report failed", details = ex.Message });
+                        }
                         break;
+
+                    case "TehsilWise":
+                        try
+                        {
+                            var tehsilParameters = new[]
+                            {
+                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
+                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
+                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
+                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
+                        new NpgsqlParameter("@fromdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
+                        new NpgsqlParameter("@todate", NpgsqlDbType.Timestamp) { Value = toDateParam }
+                    };
+
+                            var tehsilData = dbcontext.Database
+                                .SqlQueryRaw<SummaryReports>(
+                                    "SELECT * FROM get_applications_for_report(@accesscode, @serviceid, @accesslevel, @datatype, @fromdate, @todate)",
+                                    tehsilParameters)
+                                .ToList();
+
+                            totalRecords = tehsilData.Count;
+                            data = tehsilData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
+                            columns = new List<dynamic>
+                    {
+                        new { accessorKey = "tehsilName", header = "Tehsil Name" },
+                        new { accessorKey = "totalApplicationsSubmitted", header = "Total Applications Received" },
+                        new { accessorKey = "totalApplicationsPending", header = "Total Applications Pending" },
+                        new { accessorKey = "totalApplicationsReturnToEdit", header = "Pending With Citizens" },
+                        new { accessorKey = "totalApplicationsSanctioned", header = "Total Sanctioned" },
+                        new { accessorKey = "totalApplicationsRejected", header = "Total Rejected" }
+                    };
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "TehsilWise report failed");
+                            return StatusCode(500, new { error = "TehsilWise report failed", details = ex.Message });
+                        }
+                        break;
+                    case "WithheldApplications":
+                        try
+                        {
+                            int? divisionCode = null;
+                            if (string.Equals(officer.AccessLevel, "Division", StringComparison.OrdinalIgnoreCase))
+                            {
+                                divisionCode = officer.AccessCode;
+                            }
+                            else if (string.Equals(officer.AccessLevel, "District", StringComparison.OrdinalIgnoreCase)
+                                     && officer.AccessCode.HasValue)
+                            {
+                                divisionCode = dbcontext.District
+                                    .Where(d => d.Districtid == officer.AccessCode.Value)
+                                    .Select(d => (int?)d.Division)
+                                    .FirstOrDefault();
+                            }
+                            else if (string.Equals(officer.AccessLevel, "Tehsil", StringComparison.OrdinalIgnoreCase)
+                                     && officer.AccessCode.HasValue)
+                            {
+                                divisionCode = dbcontext.Tswotehsil
+                                    .Where(t => t.Tehsilid == officer.AccessCode.Value)
+                                    .Select(t => (int?)t.Divisioncode)
+                                    .FirstOrDefault();
+                            }
+
+                            var withheldParameters = new[]
+                            {
+                                new NpgsqlParameter("@p_role",           NpgsqlDbType.Varchar)   { Value = officer.Role ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_access_level",   NpgsqlDbType.Varchar)   { Value = officer.AccessLevel ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_access_code",    NpgsqlDbType.Integer)   { Value = officer.AccessCode ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_service_id",     NpgsqlDbType.Integer)   { Value = Serviceid },
+                                new NpgsqlParameter("@p_page_index",     NpgsqlDbType.Integer)   { Value = pageIndex },
+                                new NpgsqlParameter("@p_page_size",      NpgsqlDbType.Integer)   { Value = pageSize },
+                                new NpgsqlParameter("@p_is_paginated",   NpgsqlDbType.Boolean)   { Value = true },
+                                new NpgsqlParameter("@p_data_type",      NpgsqlDbType.Varchar)   { Value = dataTypeParam },
+                                new NpgsqlParameter("@p_division_code",  NpgsqlDbType.Integer)   { Value = divisionCode ?? (object)DBNull.Value },
+                                new NpgsqlParameter("@p_startdate",      NpgsqlDbType.Timestamp) { Value = fromDateParam },
+                                new NpgsqlParameter("@p_enddate",        NpgsqlDbType.Timestamp) { Value = toDateParam }
+                            };
+
+                            var withheldData = dbcontext.Database
+                                .SqlQueryRaw<WithheldDetailedReportDto>(
+                                    "SELECT * FROM get_withheld_applications_report(" +
+                                    "@p_role, @p_access_level, @p_access_code, @p_service_id, " +
+                                    "@p_page_index, @p_page_size, @p_is_paginated, " +
+                                    "@p_data_type, @p_division_code, @p_startdate, @p_enddate)",
+                                    withheldParameters)
+                                .ToList();
+
+                            totalRecords = (int)(withheldData.FirstOrDefault()?.Totalcount ?? 0);
+                            data = [.. withheldData.Cast<dynamic>()];
+
+                            columns = new List<dynamic>
+                    {
+                        new { accessorKey = "districtname",            header = "District" },
+                        new { accessorKey = "tswofficename",           header = "TSWO Office" },
+                        new { accessorKey = "application_status",      header = "Application Status" },
+                        new { accessorKey = "application_pending_with",header = "Application Pending With" },
+                        new { accessorKey = "referencenumber",         header = "Reference Number" },
+                        new { accessorKey = "applicant_name",          header = "Applicant Name" },
+                        new { accessorKey = "parentage",               header = "Parentage" },
+                        new { accessorKey = "mobile_number",           header = "Mobile Number" },
+                        new { accessorKey = "account_number",          header = "Account Number" },
+                        new { accessorKey = "ifsc_code",               header = "IFSC Code" },
+                        new { accessorKey = "bank_name",               header = "Bank Name" },
+                        new { accessorKey = "branch_name",             header = "Branch Name" },
+                        new { accessorKey = "actionTakenOn",           header = "Action Taken On" },
+                        new { accessorKey = "iswithheld",              header = "Is Withheld" },
+                        new { accessorKey = "withheldtype",            header = "Withheld Type" },
+                        new { accessorKey = "withheldreason",          header = "Withheld Reason" }
+                    };
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Withheld Applications report failed");
+                            return StatusCode(500, new { error = "Withheld Applications report failed", details = ex.Message });
+                        }
+                        break;
+
                     default:
                         return BadRequest(new { status = false, message = "Invalid report type" });
+
                 }
 
-                return Ok(new
+                return Json(new
                 {
                     status = true,
                     data,
@@ -2514,7 +2918,39 @@ namespace SahayataNidhi.Controllers.Officer
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error executing report - AccessCode: {accessCode}, ServiceId: {serviceId}, ReportType: {reportType}");
+                _logger.LogError(ex, $"Error executing report for AccessCode: {AccessCode}, Serviceid: {Serviceid}, ReportType: {ReportType}");
+                return StatusCode(500, new
+                {
+                    status = false,
+                    error = "An error occurred while fetching the report",
+                    details = ex.Message,
+                    reportType = ReportType,
+                    serviceId = Serviceid,
+                    accessCode = AccessCode
+                });
+            }
+        }
+
+        [HttpGet]
+        public IActionResult GetReportTypes()
+        {
+            try
+            {
+                var reportTypes = new List<dynamic>
+                {
+                    new { value = "TehsilWise",           label = "Tehsil Wise Applications Report" },
+                    new { value = "AgeWise",              label = "Age Wise Report" },
+                    new { value = "PensionTypeWise",      label = "Pension Type Wise Report" },
+                    new { value = "GenderWise",           label = "Gender Wise Report" },
+                    new { value = "DetailedApplications", label = "Detailed Applications Report" },
+                    new { value = "WithheldApplications", label = "Withheld Applications Report" }   // ← comma added above
+                };
+
+                return Ok(new { status = true, reportTypes });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching report types");
                 return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
@@ -2701,14 +3137,12 @@ namespace SahayataNidhi.Controllers.Officer
             formDetailsToken = ReorderFormDetails(formDetailsToken, applicationId, isSanctioned);
             var formDetails = JsonConvert.DeserializeObject<dynamic>(details.Formdetails!);
             var officerArray = JsonConvert.DeserializeObject<JArray>(details.Workflow!);
-            _logger.LogInformation($"-------------------- Current Player Index: {details.Currentplayer} ----------------------- Officer Array Count: {officerArray} -----------------------");
+            _logger.LogInformation($"-------------------- Current Player Index: {details.Currentplayer} ----------------------- Officer Array Count: {officerArray!.Count} -----------------------");
             int currentPlayer = details.Currentplayer ?? 0;
 
-            // NEW: Collect all previous officers' declarations and recommendations
             List<dynamic> previousOfficersDetails = new List<dynamic>();
-            JObject previousAdditionalDetails = new JObject(); // Kept for backward compatibility
+            JObject previousAdditionalDetails = new JObject();
 
-            // Collect all previous officers' details (excluding current officer)
             for (int i = 0; i < currentPlayer; i++)
             {
                 var prevOfficer = officerArray![i];
@@ -2717,13 +3151,11 @@ namespace SahayataNidhi.Controllers.Officer
                 var status = prevOfficer["status"]?.ToString() ?? "";
                 var officerArea = GetOfficerArea(accessLevel, formDetails);
 
-                // Get additional details (declarations, recommendations, etc.)
                 var additionalDetails = prevOfficer["additionalDetails"] as JObject;
                 var remarks = additionalDetails?["remarks"]?.ToString() ?? "";
                 var recommendation = additionalDetails?["recommendation"]?.ToString() ?? "";
                 var recommendationRemarks = additionalDetails?["recommendationRemarks"]?.ToString() ?? "";
 
-                // Get all action form fields if they exist
                 var actionForm = prevOfficer["actionForm"] as JArray;
                 List<dynamic> actionFormFields = new List<dynamic>();
 
@@ -2744,7 +3176,6 @@ namespace SahayataNidhi.Controllers.Officer
                     }
                 }
 
-                // Add officer details to the list
                 previousOfficersDetails.Add(new
                 {
                     officerDesignation = designation,
@@ -2760,28 +3191,44 @@ namespace SahayataNidhi.Controllers.Officer
                     actionDate = additionalDetails?["actionDate"]?.ToString() ?? ""
                 });
 
-                // For backward compatibility, keep the immediate previous officer's details
                 if (i == currentPlayer - 1)
                 {
                     previousAdditionalDetails = additionalDetails ?? new JObject();
                 }
             }
 
+            // ★ NEW: Mark the application as opened once for the current officer
+            if (currentPlayer >= 0 && currentPlayer < officerArray!.Count)
+            {
+                var currentStep = officerArray[currentPlayer];
+                if (currentStep["openedOnce"] == null || currentStep["openedOnce"]!.ToString().ToLower() != "true")
+                {
+                    currentStep["openedOnce"] = true;
+                    _logger.LogInformation($"Marked openedOnce=true for {officer.Role} on application {applicationId}");
+                }
+            }
+
             UpdateWorkflowFlags(officerArray!, currentPlayer);
+
+            _logger.LogInformation("Saving workflow for {ApplicationId}: {Workflow}", applicationId, details.Workflow);
             details.Workflow = JsonConvert.SerializeObject(officerArray);
+
+
             dbcontext.SaveChanges();
+
+            _logger.LogInformation("Workflow saved successfully for {ApplicationId}", applicationId);
 
             var mainCurrentOfficer = officerArray!.FirstOrDefault(o => (int)o["playerId"]! == currentPlayer);
             var currentOfficerClone = mainCurrentOfficer != null ? (JObject)mainCurrentOfficer.DeepClone() : new JObject();
 
-            canTakeAction = mainCurrentOfficer
-                != null && mainCurrentOfficer["designation"]?.ToString() == officer.Role
-                && mainCurrentOfficer["status"]?.ToString() == "pending";
+            canTakeAction = mainCurrentOfficer != null &&
+                            mainCurrentOfficer["designation"]?.ToString() == officer.Role &&
+                            mainCurrentOfficer["status"]?.ToString() == "pending";
 
             InjectEditableActionForm(currentOfficerClone, serviceDetails, currentPlayer);
             UpdateOfficerActionFormLabels(currentOfficerClone, formDetails);
             ReplaceCodeFieldsWithNames(formDetailsToken);
-            FormatDateFields(formDetailsToken);
+            // FormatDateFields(formDetailsToken);
 
             var corrigendumData = new
             {
@@ -2802,16 +3249,16 @@ namespace SahayataNidhi.Controllers.Officer
                 currentOfficerDetails = currentOfficerClone,
                 hasPending,
                 privatedFields,
-                previousOfficersDetails, // NEW: Array of all previous officers
+                previousOfficersDetails,
                 isSanctioned,
                 corrigendum = corrigendumData,
                 canTakeAction,
-                previousAdditionalDetails // Kept for backward compatibility
+                previousAdditionalDetails
             });
         }
 
         private List<dynamic> BuildCorrigendumActions(JArray workflow, int currentPlayerIndex,
-            string corrigendumType, JToken formDetails)
+     string corrigendumType, JToken formDetails)
         {
             var actions = new List<dynamic> { new { label = "Reject", value = "reject" } };
 
@@ -2983,6 +3430,7 @@ namespace SahayataNidhi.Controllers.Officer
 
             foreach (var item in sortedHistory)
             {
+                _logger.LogInformation($"ACCESS LEVEL: {item.Locationlevel}  ACCESS CODE: {item.Locationvalue}");
                 string officerArea = GetOfficerAreaForHistory(item.Locationlevel!, item.Locationvalue);
 
                 string actionTaker = item.Actiontaker != "Citizen"
@@ -3039,6 +3487,16 @@ namespace SahayataNidhi.Controllers.Officer
             });
         }
 
+        // A withheld record is "active" (still editable / in-flight) until it reaches
+        // a terminal status. Approved/completed records are treated as immutable
+        // history, so any further action spins up a new record instead.
+        private static bool IsWithheldRecordActive(WithheldApplications wa)
+        {
+            if (wa == null) return false;
+            var s = (wa.LatestWfStatus ?? wa.Status ?? "").Trim().ToLower();
+            return s != "approved" && s != "sanctioned" && s != "legacy data";
+        }
+
         public IActionResult GetWithheldApplication(string referenceNumber, string serviceId)
         {
             if (string.IsNullOrEmpty(referenceNumber) || string.IsNullOrEmpty(serviceId))
@@ -3057,10 +3515,21 @@ namespace SahayataNidhi.Controllers.Officer
                 return Json(new { status = false, response = "Unauthorized: Officer details not found." });
             }
 
-            var withheldApplication = dbcontext.WithheldApplications
-                .FirstOrDefault(wa => wa.Referencenumber == referenceNumber && wa.Serviceid == parsedServiceId);
+            // 1. Load ALL withheld records for this application (ordered oldest → newest)
+            var allWithheldRecords = dbcontext.WithheldApplications
+                .Where(wa => wa.Referencenumber == referenceNumber && wa.Serviceid == parsedServiceId)
+                .OrderBy(wa => wa.WithheldId)
+                .ToList();
 
-            var CitizenApplications = dbcontext.CitizenApplications
+            var withheldApplication = allWithheldRecords.FirstOrDefault(IsWithheldRecordActive);
+            var lastWithheldRecord = allWithheldRecords.LastOrDefault();
+            var displayRecord = withheldApplication ?? lastWithheldRecord;
+
+            bool hasAnyRecord = allWithheldRecords.Count > 0;
+            bool hasActiveRecord = withheldApplication != null;
+            bool isNewRecordMode = hasAnyRecord && !hasActiveRecord;
+
+            var citizenApplication = dbcontext.CitizenApplications
                 .FirstOrDefault(ca => ca.Referencenumber == referenceNumber);
 
             var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == parsedServiceId);
@@ -3078,7 +3547,6 @@ namespace SahayataNidhi.Controllers.Officer
             if (workflow.Count == 0)
                 return Json(new { status = false, response = "No workflow defined for this service." });
 
-            // Find current officer in workflow
             dynamic currentOfficer = workflow.FirstOrDefault(p => p.designation == officer.Role)!;
             if (currentOfficer == null)
                 return Json(new { status = false, response = "Officer not part of the workflow." });
@@ -3086,17 +3554,16 @@ namespace SahayataNidhi.Controllers.Officer
             int currentPlayerId = (int)currentOfficer.playerId;
             bool isLastPlayer = currentPlayerId == workflow.Count - 1;
 
-            // Get authorities
             bool canWithhold = (bool?)currentOfficer.canWithhold ?? false;
             bool canDirectWithheld = (bool?)currentOfficer.canDirectWithheld ?? false;
 
             // Determine if current officer is the one who sanctioned
             bool isSanctioningOfficer = false;
-            if (CitizenApplications != null && !string.IsNullOrEmpty(CitizenApplications.Workflow))
+            if (citizenApplication != null && !string.IsNullOrEmpty(citizenApplication.Workflow))
             {
                 try
                 {
-                    var citizenWorkflowHistory = JsonConvert.DeserializeObject<List<dynamic>>(CitizenApplications.Workflow);
+                    var citizenWorkflowHistory = JsonConvert.DeserializeObject<List<dynamic>>(citizenApplication.Workflow);
                     var sanctionEntry = citizenWorkflowHistory?
                         .LastOrDefault(h => h.status?.ToString()?.Equals("sanctioned", StringComparison.OrdinalIgnoreCase) == true);
 
@@ -3122,17 +3589,13 @@ namespace SahayataNidhi.Controllers.Officer
 
             if (withheldApplication == null)
             {
-                if (CitizenApplications == null)
-                {
+                if (citizenApplication == null)
                     return Json(new { status = false, response = "Application not found." });
-                }
-                if (CitizenApplications.Status != "Sanctioned")
-                {
+                if (citizenApplication.Status != "Sanctioned")
                     return Json(new { status = false, response = "Application is not sanctioned and cannot be withheld." });
-                }
             }
 
-            // Determine if current officer can remove from withheld
+            // 2. Permission flags on the ACTIVE record
             bool canRemoveFromWithheld = false;
             bool isWithholdingOfficer = false;
             bool isFirstOfficer = false;
@@ -3140,36 +3603,30 @@ namespace SahayataNidhi.Controllers.Officer
             if (withheldApplication != null)
             {
                 var historyList = JsonConvert.DeserializeObject<List<dynamic>>(withheldApplication.History ?? "[]");
-
                 var firstWithheldEntry = historyList?.FirstOrDefault(h => h.status == "withheld");
                 isFirstOfficer = firstWithheldEntry != null &&
-                                firstWithheldEntry!.ContainsKey("playerId") &&
-                                (int)firstWithheldEntry!.playerId == currentPlayerId;
+                                 firstWithheldEntry!.ContainsKey("playerId") &&
+                                 (int)firstWithheldEntry!.playerId == currentPlayerId;
 
                 var withheldEntry = historyList?.LastOrDefault(h => h.status == "withheld" || h.status == "approved");
-                if (withheldEntry != null)
+                if (withheldEntry != null && withheldEntry!.ContainsKey("playerId"))
                 {
-                    var withheldPlayer = historyList?.Where(h => h.status == "withheld" || h.status == "approved")
-                                                   .OrderByDescending(h => h.actionTakenOn)
-                                                   .FirstOrDefault();
-                    if (withheldPlayer != null && withheldPlayer!.ContainsKey("playerId"))
-                    {
-                        int withheldPlayerId = (int)withheldPlayer!.playerId;
-                        isWithholdingOfficer = currentPlayerId == withheldPlayerId;
-                        canRemoveFromWithheld = currentPlayerId >= withheldPlayerId;
-                    }
+                    int withheldPlayerId = (int)withheldEntry!.playerId;
+                    isWithholdingOfficer = currentPlayerId == withheldPlayerId;
+                    canRemoveFromWithheld = currentPlayerId >= withheldPlayerId;
                 }
             }
 
-            // Check if there's a pending release request
             bool hasPendingReleaseRequest = false;
             string pendingReleaseFromPlayer = "";
             if (withheldApplication != null)
             {
                 var historyList = JsonConvert.DeserializeObject<List<dynamic>>(withheldApplication.History ?? "[]");
-                var pendingRequest = historyList?.LastOrDefault(h => h.status == "forwarded" &&
-                                                                   (h.remarks?.ToString()?.Contains("release", StringComparison.OrdinalIgnoreCase) == true ||
-                                                                    h.remarks?.ToString()?.Contains("remove", StringComparison.OrdinalIgnoreCase) == true));
+                var pendingRequest = historyList?.LastOrDefault(h =>
+                    h.status == "forwarded" &&
+                    (h.remarks?.ToString()?.Contains("release", StringComparison.OrdinalIgnoreCase) == true ||
+                     h.remarks?.ToString()?.Contains("remove", StringComparison.OrdinalIgnoreCase) == true));
+
                 if (pendingRequest != null)
                 {
                     hasPendingReleaseRequest = true;
@@ -3177,54 +3634,93 @@ namespace SahayataNidhi.Controllers.Officer
                 }
             }
 
-            // Build response data
-            var history = withheldApplication != null ?
-                JsonConvert.DeserializeObject<List<dynamic>>(withheldApplication.History ?? "[]") :
-                new List<dynamic>();
+            // 3. Merged Action History
+            var history = new List<dynamic>();
+            foreach (var rec in allWithheldRecords)
+            {
+                var h = JsonConvert.DeserializeObject<List<dynamic>>(rec.History ?? "[]");
+                if (h != null) history.AddRange(h);
+            }
 
             var columns = new List<dynamic>
-    {
-        new { header = "S.No", accessorKey="sno" },
-        new { header = "Action Taker", accessorKey="actionTaker" },
-        new { header = "Action Taken", accessorKey="actionTaken" },
-        new { header = "Remarks", accessorKey="remarks" },
-        new { header = "Action Taken On", accessorKey="actionTakenOn" },
-    };
+            {
+                new { header = "S.No", accessorKey = "sno" },
+                new { header = "Action Taker", accessorKey = "actionTaker" },
+                new { header = "Action Taken", accessorKey = "actionTaken" },
+                new { header = "Remarks", accessorKey = "remarks" },
+                new { header = "Action Taken On", accessorKey = "actionTakenOn" },
+            };
 
             int index = 1;
-            List<dynamic> data = [];
-            foreach (var item in history!)
+            List<dynamic> data = new List<dynamic>();
+            foreach (var item in history)
             {
                 data.Add(new
                 {
                     sno = index,
                     actionTaker = item.officer,
                     actionTaken = item.status,
-                    item.remarks,
-                    item.actionTakenOn,
+                    remarks = item.remarks,
+                    actionTakenOn = item.actionTakenOn,
                 });
                 index++;
+            }
+
+            // =====================================================================
+            // 3b. Aggregate EVERY officer-uploaded file across all cycles
+            //     (read-only audit list; kept separate from displayRecord.Files so
+            //      the editable "existingFilesToKeep" behaviour on the client is
+            //      never affected by historical cycles)
+            // =====================================================================
+            var allOfficerFiles = new List<dynamic>();
+            foreach (var rec in allWithheldRecords)
+            {
+                List<string> recFiles;
+                try
+                {
+                    recFiles = JsonConvert.DeserializeObject<List<string>>(rec.Files ?? "[]") ?? new List<string>();
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError($"Error parsing WithheldApplications.Files for WithheldId={rec.WithheldId}: {ex.Message}");
+                    recFiles = new List<string>();
+                }
+
+                foreach (var f in recFiles)
+                {
+                    if (string.IsNullOrWhiteSpace(f)) continue;
+
+                    allOfficerFiles.Add(new
+                    {
+                        fileName = f,
+                        withheldId = rec.WithheldId,
+                        withheldType = rec.Withheldtype,
+                        isWithheld = rec.Iswithheld,
+                        status = rec.Status,
+                        cycleLabel = $"Cycle #{rec.WithheldId}"
+                    });
+                }
             }
 
             var applicationDetails = new ExpandoObject() as IDictionary<string, object>;
             var withheldDetails = new ExpandoObject() as IDictionary<string, dynamic>;
 
-            if (withheldApplication != null)
+            if (displayRecord != null)
             {
-                withheldDetails["withheldType"] = withheldApplication.Withheldtype;
-                withheldDetails["withheldReason"] = withheldApplication.Withheldreason;
-                withheldDetails["isWithheld"] = withheldApplication.Iswithheld;
-                withheldDetails["currentPlayer"] = withheldApplication.Currentplayer!;
-                withheldDetails["status"] = withheldApplication.Status!;
-                withheldDetails["files"] = JsonConvert.DeserializeObject<List<string>>(withheldApplication.Files ?? "[]")!;
+                withheldDetails["withheldType"] = displayRecord.Withheldtype;
+                withheldDetails["withheldReason"] = displayRecord.Withheldreason;
+                withheldDetails["isWithheld"] = displayRecord.Iswithheld;
+                withheldDetails["currentPlayer"] = displayRecord.Currentplayer!;
+                withheldDetails["status"] = displayRecord.Status!;
+                withheldDetails["files"] = JsonConvert.DeserializeObject<List<string>>(displayRecord.Files ?? "[]")!;
                 withheldDetails["isFirstOfficer"] = isFirstOfficer;
             }
 
-            if (CitizenApplications?.Formdetails != null)
+            if (citizenApplication?.Formdetails != null)
             {
                 try
                 {
-                    var formDetails = JToken.Parse(CitizenApplications.Formdetails);
+                    var formDetails = JToken.Parse(citizenApplication.Formdetails);
                     var dswovalue = dbcontext.District
                         .FirstOrDefault(to => to.Districtid == Convert.ToInt32(GetFieldValue("District", formDetails)))?.Districtname ?? "N/A";
 
@@ -3232,18 +3728,11 @@ namespace SahayataNidhi.Controllers.Officer
                     applicationDetails["parentage"] = GetFieldValue("Parentage", formDetails) ?? "N/A";
                     applicationDetails["r/o"] = $"DISTRICT: {dswovalue}, ADDRESS: {GetFieldValue("PresentAddress", formDetails)}";
                 }
-                catch (JsonException)
-                {
-                    // Handle error
-                }
+                catch (JsonException) { }
             }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // CORRECTED PERMISSION LOGIC
-            // ═══════════════════════════════════════════════════════════════════
-            bool recordExists = withheldApplication != null;
+            bool recordExists = hasAnyRecord;
             bool canCreate = false;
-            bool isNewRecordMode = false;
             bool canChooseWithheldType = false;
             bool canChooseIsWithheld = false;
 
@@ -3256,61 +3745,56 @@ namespace SahayataNidhi.Controllers.Officer
             }
             else
             {
-                var currentPlayerInWithheld = withheldApplication.Currentplayer;
-                bool isCurrentPlayer = currentPlayerId == currentPlayerInWithheld;
-
+                bool isCurrentPlayer = currentPlayerId == withheldApplication.Currentplayer;
                 if (isCurrentPlayer)
                 {
                     canCreate = true;
                     canChooseWithheldType = isFirstOfficer;
                     canChooseIsWithheld = isFirstOfficer;
                 }
-                else
-                {
-                    string latestStatus = (withheldApplication.LatestWfStatus ?? withheldApplication.Status ?? "").ToLower();
-                    bool isWorkflowDone = latestStatus == "approved" || latestStatus == "completed" || latestStatus == "legacy data";
-
-                    if (isWorkflowDone)
-                    {
-                        canCreate = true;
-                        isNewRecordMode = true;
-                        canChooseWithheldType = true;
-                        canChooseIsWithheld = true;
-                        isFirstOfficer = true;
-                    }
-                }
             }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // BUILD OPTIONS (after permission logic — so isNewRecordMode is known)
-            // ═══════════════════════════════════════════════════════════════════
+            if (displayRecord != null)
+            {
+                withheldDetails["isFirstOfficer"] = isFirstOfficer;
+            }
+
+            // =====================================================================
+            // 4. Build action options
+            // =====================================================================
             var options = new List<dynamic>();
 
-            if (withheldApplication == null || isNewRecordMode)
+            if (withheldApplication != null && hasActiveRecord)
             {
-                // Fresh creation OR new record on approved workflow
-                if (canWithhold && !canDirectWithheld)
+                var workflowList = JsonConvert.DeserializeObject<List<dynamic>>(withheldApplication.Workflow ?? "[]");
+                if (workflowList != null && workflowList.Count > 0 && currentPlayerId >= 0 && currentPlayerId < workflowList.Count)
                 {
-                    options.Add(new { label = "Forward", value = "forward" });
-                }
-                if (canDirectWithheld)
-                {
-                    options.Add(new { label = "Approve", value = "approve" });
+                    if (currentPlayerId > 0)
+                    {
+                        var prevOfficer = workflowList[currentPlayerId - 1];
+                        options.Add(new { label = $"Return to {prevOfficer.designation}", value = "return" });
+                    }
+
+                    if (isLastPlayer || isSanctioningOfficer)
+                    {
+                        options.Add(new { label = "Approve", value = "approve" });
+                    }
+                    else if (currentPlayerId < workflowList.Count - 1 && (canWithhold || canDirectWithheld))
+                    {
+                        var nextOfficer = workflowList[currentPlayerId + 1];
+                        options.Add(new { label = $"Forward to {nextOfficer.designation}", value = "forward" });
+                    }
                 }
             }
             else
             {
-                // Existing application - current player updating
-                if (canDirectWithheld)
+                if (canDirectWithheld && (isLastPlayer || isSanctioningOfficer))
                 {
-                    if (isSanctioningOfficer)
-                    {
-                        options.Add(new { label = "Approve", value = "approve" });
-                    }
-                    else
-                    {
-                        options.Add(new { label = "Forward", value = "forward" });
-                    }
+                    options.Add(new { label = "Approve", value = "approve" });
+                }
+                else if (canWithhold || canDirectWithheld)
+                {
+                    options.Add(new { label = "Forward", value = "forward" });
                 }
             }
 
@@ -3325,7 +3809,9 @@ namespace SahayataNidhi.Controllers.Officer
                 options,
                 data,
                 columns,
+                allOfficerFiles,          // 👈 NEW — every file uploaded by officers for this ref
                 recordExists,
+                hasActiveRecord,
                 canRemoveFromWithheld,
                 isLastPlayer,
                 currentPlayerId,
@@ -3339,6 +3825,7 @@ namespace SahayataNidhi.Controllers.Officer
                 isNewRecordMode
             });
         }
+
 
         [HttpGet]
         public async Task<IActionResult> GetCorrigendumSanctionLetter(string referenceNumber, string corrigendumId, string type)
@@ -3395,6 +3882,11 @@ namespace SahayataNidhi.Controllers.Officer
                 var corrigendumFieldsObj = JObject.Parse(corrigendum.Corrigendumfields ?? "{}");
                 corrigendumFieldsObj.Remove("Files");
 
+                // ✅ Normalize any date-shaped values to dd/MM/yyyy before the PDF
+                // renderer sees them, so they don't appear as ISO strings, mismatched
+                // separators, or with time components on the printed letter.
+                NormalizeCorrigendumDateValues(corrigendumFieldsObj);
+
                 await _pdfService.CreateCorrigendumSanctionPdf(
                     corrigendumFieldsObj.ToString(),
                     referenceNumber,
@@ -3412,6 +3904,131 @@ namespace SahayataNidhi.Controllers.Officer
             {
                 return StatusCode(500, new { status = false, response = ex.Message });
             }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // Date normalisation helpers for the corrigendum sanction PDF
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // Field names that should be treated as dates even though the name does not
+        // contain the substring "date" — e.g. "IfTemporaryDisabilityUdidCardValidUpto".
+        private static readonly HashSet<string> AdditionalDateFieldNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "IfTemporaryDisabilityUdidCardValidUpto",
+                "UdidCardValidUpto",
+                "TemporaryDisabilityValidUpto",
+                "ValidUpto",
+                "ValidFrom",
+                "ValidTill",
+            };
+
+        // Formats we recognise on the way in. Order matters only for readability;
+        // TryParseExact tries each until one matches.
+        private static readonly string[] IncomingDateFormats = new[]
+        {
+            "dd/MM/yyyy",
+            "d/M/yyyy",
+            "dd-MM-yyyy",
+            "d-M-yyyy",
+            "yyyy-MM-dd",
+            "yyyy/MM/dd",
+            "dd MMM yyyy",
+            "d MMM yyyy",
+            "dd MMMM yyyy",
+            "d MMMM yyyy",
+            "dd MMM yyyy hh:mm:ss tt",
+            "d MMM yyyy hh:mm:ss tt",
+            "dd MMMM yyyy hh:mm:ss tt",
+            "d MMMM yyyy hh:mm:ss tt",
+            "dd-MM-yyyy HH:mm:ss",
+            "dd-MM-yyyy hh:mm:ss tt",
+            "yyyy-MM-ddTHH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+        };
+
+        /// <summary>
+        /// Walks every field in the corrigendum object and, for any field that is
+        /// a date (either by name — contains "date" / "dob" — or by inclusion in
+        /// <see cref="AdditionalDateFieldNames"/>), rewrites old_value / new_value
+        /// to the dd/MM/yyyy format the sanction letter expects.
+        /// Non-date fields (account numbers, names, IDs) are never touched because
+        /// they do not match any format in <see cref="IncomingDateFormats"/>.
+        /// </summary>
+        private static void NormalizeCorrigendumDateValues(JObject corrigendumFields)
+        {
+            if (corrigendumFields == null) return;
+
+            foreach (var prop in corrigendumFields.Properties().ToList())
+            {
+                var fieldName = prop.Name;
+
+                // Skip the Files block
+                if (string.Equals(fieldName, "Files", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Only transform fields that look like dates
+                if (!IsDateFieldName(fieldName))
+                    continue;
+
+                // Each field is expected to be an object with old_value / new_value
+                if (prop.Value is not JObject fieldObj)
+                    continue;
+
+                foreach (var key in new[] { "old_value", "new_value" })
+                {
+                    var token = fieldObj[key];
+                    if (token == null || token.Type != JTokenType.String)
+                        continue;
+
+                    var raw = token.ToString();
+                    if (string.IsNullOrWhiteSpace(raw))
+                        continue;
+
+                    if (TryParseAnyFormat(raw.Trim(), out var parsed))
+                    {
+                        fieldObj[key] = parsed.ToString(
+                            "dd/MM/yyyy", CultureInfo.InvariantCulture);
+                    }
+                    // else: leave value untouched — best-effort normalisation
+                }
+            }
+        }
+
+        // Returns true when a field name looks like a date. Matches the substring
+        // "date" or "dob" (case-insensitive), or an exact match against the
+        // AdditionalDateFieldNames set.
+        private static bool IsDateFieldName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+
+            if (AdditionalDateFieldNames.Contains(name)) return true;
+
+            var lower = name.ToLowerInvariant();
+            return lower.Contains("date") || lower.Contains("dob");
+        }
+
+        // Try to parse using the strict format list, then fall back to the general
+        // parser as a last resort. The fallback is intentional: some rows may carry
+        // a value with an unusual separator that the strict list missed, and
+        // dropping the reformat is better than passing an ugly string to the PDF.
+        private static bool TryParseAnyFormat(string raw, out DateTime parsed)
+        {
+            if (DateTime.TryParseExact(
+                    raw,
+                    IncomingDateFormats,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out parsed))
+            {
+                return true;
+            }
+
+            return DateTime.TryParse(
+                raw,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out parsed);
         }
 
 
@@ -3613,6 +4230,135 @@ namespace SahayataNidhi.Controllers.Officer
                     return Json(new { status = false, message = $"Failed to parse form details: {ex.Message}" });
                 }
 
+                var legacyBankMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "STATE BANK OF INDIA", "2" },
+                    { "INDIA POST PAYMENTS BANK", "3" },
+                    { "INDIA POST PAYMENTS BANK LIMITED", "3" },
+                    { "J & K GRAMEEN BANK", "4" },
+                    { "THE JAMMU AND KASHMIR BANK LTD./WATERGAM", "1" },
+                    { "ELLAQUAI DEHATI BANK", "5" },
+                    { "جموں اور کشمیر بینک لمیٹڈ", "1" },
+                    { "KASHMIR MERCANTILE CO-OPERATIVE BANK LTD.", "6" },
+                    { "KASHMIR MERCANTILE CO OP BANK LTD", "6" },
+                    { "THE JAMMU AND KASHMIR BANK LTD.", "1" },
+                    { "JAMMU AND KASHMIR BANK LIMITED", "1" }
+                };
+
+                if (formDetailsToken is JObject formDetailsObject)
+                {
+                    foreach (var section in formDetailsObject.Properties())
+                    {
+                        if (section.Value is not JArray fields) continue;
+
+                        int bankNameIndex = -1;
+                        string? resolvedBankIdForSection = null;
+
+                        // ── Pass 1: resolve BankName → id, write the canonical name back ──
+                        for (int i = 0; i < fields.Count; i++)
+                        {
+                            var field = fields[i];
+                            if (field["name"]?.ToString() != "BankName") continue;
+
+                            bankNameIndex = i;
+                            var val = field["value"]?.ToString();
+
+                            if (string.IsNullOrEmpty(val) || val == "Please Select") continue;
+
+                            string? resolvedBankId = null;
+
+                            // Step 1: normalize input → bank id
+                            if (int.TryParse(val, out _))
+                            {
+                                resolvedBankId = val;
+                            }
+                            else if (legacyBankMappings.TryGetValue(val, out string? mappedId))
+                            {
+                                resolvedBankId = mappedId;
+                            }
+                            else
+                            {
+                                // Partial-match fallback for legacy names
+                                if (val.Contains("JAMMU AND KASHMIR BANK", StringComparison.OrdinalIgnoreCase) ||
+                                    val.Contains("جموں اور کشمیر بینک", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    resolvedBankId = "1";
+                                }
+                                else if (val.Contains("STATE BANK", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    resolvedBankId = "2";
+                                }
+                                else if (val.Contains("INDIA POST", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    resolvedBankId = "3";
+                                }
+                                else if (val.Contains("GRAMEEN", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    resolvedBankId = "4";
+                                }
+                                else if (val.Contains("ELLAQUAI", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    resolvedBankId = "5";
+                                }
+                                else if (val.Contains("KASHMIR MERCANTILE", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    resolvedBankId = "6";
+                                }
+                            }
+
+                            // Step 2: bank id → canonical name (BankName keeps the name)
+                            // Step 2: bank id → id only. Do NOT rewrite the stored name.
+                            if (!string.IsNullOrEmpty(resolvedBankId) &&
+                                int.TryParse(resolvedBankId, out int bankId))
+                            {
+                                // Optional: verify the id exists so we don't inject a bogus BankId
+                                var bankExists = dbcontext.Bank.Any(b => b.Id == bankId);
+                                if (bankExists)
+                                {
+                                    resolvedBankIdForSection = resolvedBankId;
+                                }
+                                else
+                                {
+                                    // Unknown id — don't inject a BankId, and leave the name alone.
+                                    resolvedBankIdForSection = null;
+                                }
+                            }
+                            // else: nothing matched — leave the original value untouched
+                            // else: nothing matched — leave the original value untouched
+                        }
+
+                        // ── Pass 2: inject (or update) a BankId field right after BankName ──
+                        if (resolvedBankIdForSection != null && bankNameIndex >= 0)
+                        {
+                            int existingBankIdIndex = -1;
+                            for (int i = 0; i < fields.Count; i++)
+                            {
+                                if (fields[i]["name"]?.ToString() == "BankId")
+                                {
+                                    existingBankIdIndex = i;
+                                    break;
+                                }
+                            }
+
+                            if (existingBankIdIndex >= 0)
+                            {
+                                // Idempotent: if a BankId already exists (e.g. from a prior
+                                // corrigendum), just refresh its value.
+                                fields[existingBankIdIndex]["value"] = resolvedBankIdForSection;
+                            }
+                            else
+                            {
+                                var bankIdField = new JObject
+                                {
+                                    ["name"] = "BankId",
+                                    ["label"] = "BankId",
+                                    ["value"] = resolvedBankIdForSection
+                                };
+                                fields.Insert(bankNameIndex + 1, bankIdField);
+                            }
+                        }
+                    }
+                }
                 // ------------------ UPDATE FORMDETAILS USING ALL APPROVED CORRIGENDUM/CORRECTION ------------------
                 var approvedCorrigenda = dbcontext.Corrigendum
                     .Where(c => c.Referencenumber == referenceNumber &&
@@ -3654,7 +4400,7 @@ namespace SahayataNidhi.Controllers.Officer
                 formDetailsToken = ReorderFormDetails(formDetailsToken, referenceNumber, isSanctioned);
                 var formDetailsWithCodes = formDetailsToken.DeepClone();
                 ReplaceCodeFieldsWithNames(formDetailsToken, false);
-                FormatDateFields(formDetailsToken);
+                // FormatDateFields(formDetailsToken);
 
                 var workFlow = JArray.Parse(result[0].Workflow ?? "[]");
                 bool isCurrentOfficer = type == "Correction" && workFlow.Count > result[0].Currentplayer &&
@@ -3722,13 +4468,13 @@ namespace SahayataNidhi.Controllers.Officer
 
                     var history = JsonConvert.DeserializeObject<List<dynamic>>(existingCorrigendum.History ?? "[]") ?? new List<dynamic>();
                     var columns = new List<dynamic>
-            {
-                new { accessorKey = "sno", header = "S.No." },
-                new { accessorKey = "officer", header = "Officer" },
-                new { accessorKey = "actionTaken", header = "Action Taken" },
-                new { accessorKey = "remarks", header = "Remarks" },
-                new { accessorKey = "actionTakenOn", header = "Action Taken On" },
-            };
+                    {
+                        new { accessorKey = "sno", header = "S.No." },
+                        new { accessorKey = "officer", header = "Officer" },
+                        new { accessorKey = "actionTaken", header = "Action Taken" },
+                        new { accessorKey = "remarks", header = "Remarks" },
+                        new { accessorKey = "actionTakenOn", header = "Action Taken On" },
+                    };
 
                     var data = new List<dynamic>();
                     int index = 1;
@@ -3863,34 +4609,25 @@ namespace SahayataNidhi.Controllers.Officer
             }
         }
 
+
+
+
         [HttpGet]
-        public IActionResult GetCorrigendumApplications(string type, string applicationType, string Serviceid, int pageIndex = 0, int pageSize = 10)
+        public IActionResult GetCorrigendumApplications(string type, string applicationType, string Serviceid, int pageIndex = 0, int pageSize = 10, string? searchQuery = null)
         {
             var officer = GetOfficerDetails();
-            if (officer == null)
-            {
-                return Unauthorized();
-            }
+            if (officer == null) return Unauthorized();
 
-            _logger.LogInformation("------------------ Getting applications for officer: {Officer} -----------------------", officer.Role);
+            _logger.LogInformation("Getting corrigendum applications for officer: {Officer}, search='{Search}'", officer.Role, searchQuery);
 
-            var parameters = new[]
-            {
-                new NpgsqlParameter("@officeraccesslevel", officer.AccessLevel),
-                new NpgsqlParameter("@officeraccesscode", officer.AccessCode),
-                new NpgsqlParameter("@referencenumber", DBNull.Value),
-                new NpgsqlParameter("@status", type),
-                new NpgsqlParameter("@corrigendumid", DBNull.Value),
-                new NpgsqlParameter("@type", applicationType),
-                new NpgsqlParameter("@officerrole", officer.Role)
-            };
-
-            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == Convert.ToInt32(Serviceid));
+            int serviceIdInt = Convert.ToInt32(Serviceid);
+            var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceIdInt);
+            if (service == null) return NotFound("Service not found.");
 
             List<dynamic> workflow;
             try
             {
-                workflow = JsonConvert.DeserializeObject<List<dynamic>>(service!.Officereditablefield!) ?? new List<dynamic>();
+                workflow = JsonConvert.DeserializeObject<List<dynamic>>(service.Officereditablefield!) ?? new List<dynamic>();
             }
             catch (JsonException ex)
             {
@@ -3900,169 +4637,348 @@ namespace SahayataNidhi.Controllers.Officer
             if (workflow.Count == 0)
                 return Json(new { countList = new List<object>(), corrigendumList = new List<object>(), correctionList = new List<object>(), canSanction = false });
 
-            // Find officer authorities
             dynamic authorities = workflow.FirstOrDefault(p => p.designation == officer.Role)!;
 
-            var applications = dbcontext.Corrigendum
-                .FromSqlRaw("SELECT * FROM get_corrigendum_by_location_access(@officeraccesslevel, @officeraccesscode, @referencenumber, @status, @corrigendumid, @type, @officerrole)", parameters)
-                .ToList();
-
-            var applicationReferenceNumbers = applications.Select(c => c.Referencenumber).ToList();
-            var CitizenApplications = dbcontext.CitizenApplications
-                .Where(ca => applicationReferenceNumbers.Contains(ca.Referencenumber))
-                .ToDictionary(ca => ca.Referencenumber!, ca => ca);
-
-            var sortedData = applications.OrderBy(a =>
-            {
-                var parts = a.Corrigendumid!.Split('/');
-                var numberPart = parts.Last();
-                return int.TryParse(numberPart, out int num) ? num : 0;
-            }).ToList();
-
-            var totalRecords = sortedData.Count;
-
-            var pagedData = sortedData
-                .Skip(pageIndex * pageSize)
-                .Take(pageSize)
-                .ToList();
-
             List<dynamic> data = new();
+            int totalRecords = 0;
 
-            foreach (var application in pagedData)
+            try
             {
-                if (CitizenApplications.TryGetValue(application.Referencenumber!, out var citizenApp))
+                // ═══════════════════════════════════════════════════════════════
+                // BRANCH 1: Use SEARCH function ONLY if a search query is provided
+                // (Pagination is handled by the SQL function)
+                // ═══════════════════════════════════════════════════════════════
+                if (!string.IsNullOrEmpty(searchQuery))
                 {
-                    var formDetails = JsonConvert.DeserializeObject<dynamic>(citizenApp.Formdetails!);
-                    var workFlow = JsonConvert.DeserializeObject<JArray>(application.Workflow!) ?? new JArray();
-                    var history = JArray.Parse(application.History!) ?? new JArray();
-
-                    // ========== SAFE WORKFLOW ACCESS ==========
-                    // Get creation officer (first entry)
-                    string creationOfficerDesignation = "Legacy Data";
-                    string creationOfficerAccessLevel = "State";
-                    if (workFlow.Count > 0 && workFlow[0] is JObject firstEntry)
+                    var searchParameters = new[]
                     {
-                        creationOfficerDesignation = (string?)firstEntry["designation"] ?? "Legacy Data";
-                        creationOfficerAccessLevel = (string?)firstEntry["accessLevel"] ?? "State";
-                    }
+                        new NpgsqlParameter("@p_officer_access_level", NpgsqlDbType.Varchar) { Value = officer.AccessLevel ?? (object)DBNull.Value },
+                        new NpgsqlParameter("@p_officer_access_code",  NpgsqlDbType.Integer) { Value = officer.AccessCode ?? (object)DBNull.Value },
+                        new NpgsqlParameter("@p_status",                NpgsqlDbType.Varchar) { Value = (object?)type ?? DBNull.Value },
+                        new NpgsqlParameter("@p_type",                  NpgsqlDbType.Varchar) { Value = (object?)applicationType ?? DBNull.Value },
+                        new NpgsqlParameter("@p_officer_role",          NpgsqlDbType.Varchar) { Value = officer.Role ?? (object)DBNull.Value },
+                        new NpgsqlParameter("@p_service_id",            NpgsqlDbType.Integer) { Value = serviceIdInt },
+                        new NpgsqlParameter("@p_page_index",            NpgsqlDbType.Integer) { Value = pageIndex },
+                        new NpgsqlParameter("@p_page_size",             NpgsqlDbType.Integer) { Value = pageSize },
+                        new NpgsqlParameter("@p_search_query",          NpgsqlDbType.Varchar) { Value = searchQuery }
+                    };
 
-                    // Get current player info with bounds checking
-                    int currentPlayer = application.Currentplayer;
-                    string officerDesignation = "N/A";
-                    string offierAccessLevel = "N/A";
-                    string officerStatus = "N/A";
+                    var applications = dbcontext.Database
+                        .SqlQueryRaw<CorrigendumSearchDto>(
+                            "SELECT * FROM search_corrigendum_applications_for_officer(@p_officer_access_level, @p_officer_access_code, @p_status, @p_type, @p_officer_role, @p_service_id, @p_page_index, @p_page_size, @p_search_query)",
+                            searchParameters)
+                        .ToList();
 
-                    if (currentPlayer >= 0 && currentPlayer < workFlow.Count && workFlow[currentPlayer] is JObject currentEntry)
+                    totalRecords = applications.Count > 0 ? (int)applications[0].Totalrecords : 0;
+
+                    var applicationReferenceNumbers = applications
+                        .Select(c => c.Referencenumber)
+                        .Where(r => !string.IsNullOrEmpty(r))
+                        .Distinct()
+                        .ToList();
+
+                    var citizenApplications = dbcontext.CitizenApplications
+                        .Where(ca => applicationReferenceNumbers.Contains(ca.Referencenumber))
+                        .ToDictionary(ca => ca.Referencenumber!, ca => ca);
+
+                    foreach (var application in applications)
                     {
-                        officerDesignation = (string?)currentEntry["designation"] ?? "N/A";
-                        offierAccessLevel = (string?)currentEntry["accessLevel"] ?? "N/A";
-                        officerStatus = (string?)currentEntry["status"] ?? "N/A";
-                    }
-                    else if (workFlow.Count > 0)
-                    {
-                        // Fallback: use last available entry
-                        var lastEntry = workFlow[workFlow.Count - 1] as JObject;
-                        officerDesignation = (string?)lastEntry?["designation"] ?? "N/A";
-                        offierAccessLevel = (string?)lastEntry?["accessLevel"] ?? "N/A";
-                        officerStatus = (string?)lastEntry?["status"] ?? "N/A";
-                    }
+                        if (!citizenApplications.TryGetValue(application.Referencenumber!, out var citizenApp))
+                            continue;
 
-                    // Get current status from officer with matching playerId, or fallback
-                    var officerWithApplication = workFlow
-                        .OfType<JObject>()
-                        .FirstOrDefault(o => o["playerId"] != null && (int)o["playerId"]! == application.Currentplayer);
+                        var formDetails = JsonConvert.DeserializeObject<dynamic>(citizenApp.Formdetails!);
+                        var workFlow = string.IsNullOrEmpty(application.Workflow)
+                            ? new JArray()
+                            : JsonConvert.DeserializeObject<JArray>(application.Workflow) ?? new JArray();
+                        var history = string.IsNullOrEmpty(application.History)
+                            ? new JArray()
+                            : JArray.Parse(application.History);
 
-                    string? CurrentStatus = officerWithApplication != null
-                        ? (string?)officerWithApplication["status"]
-                        : (workFlow.Count > 0 ? (string?)workFlow[workFlow.Count - 1]?["status"] : "Legacy Data");
-
-                    // Get first history action
-                    var firstAction = history.Count > 0 ? history[0] : null;
-                    string actionTaker = firstAction != null ? (string?)firstAction["actionTaker"] ?? "System" : "System";
-
-                    // Areas
-                    string currentOfficerArea = GetOfficerArea(offierAccessLevel, formDetails);
-                    string officerArea = GetOfficerArea(creationOfficerAccessLevel, JObject.Parse(citizenApp.Formdetails!));
-
-                    var customActions = new List<dynamic>();
-
-                    // Find current officer in workflow for canPull check
-                    var currentOfficer = workFlow
-                        .OfType<JObject>()
-                        .FirstOrDefault(o => o["designation"] != null && (string)o["designation"]! == officer.Role);
-
-                    bool canPull = currentOfficer?["canPull"] != null && (bool)currentOfficer["canPull"]!;
-
-                    if ((type == "forwarded" || type == "returned") && canPull)
-                    {
-                        customActions.Add(new
+                        // Get creation officer (first entry)
+                        string creationOfficerDesignation = "Legacy Data";
+                        string creationOfficerAccessLevel = "State";
+                        if (workFlow.Count > 0 && workFlow[0] is JObject firstEntry)
                         {
-                            type = "Pull",
-                            tooltip = "Pull",
-                            color = "#F0C38E",
-                            actionFunction = "pullApplication"
-                        });
-                    }
-                    else
-                    {
-                        var matchedItem = workFlow
+                            creationOfficerDesignation = (string?)firstEntry["designation"] ?? "Legacy Data";
+                            creationOfficerAccessLevel = (string?)firstEntry["accessLevel"] ?? "State";
+                        }
+
+                        // Get current player info with bounds checking
+                        int currentPlayer = application.Currentplayer;
+                        string officerDesignation = "N/A";
+                        string offierAccessLevel = "N/A";
+                        if (currentPlayer >= 0 && currentPlayer < workFlow.Count && workFlow[currentPlayer] is JObject currentEntry)
+                        {
+                            officerDesignation = (string?)currentEntry["designation"] ?? "N/A";
+                            offierAccessLevel = (string?)currentEntry["accessLevel"] ?? "N/A";
+                        }
+                        else if (workFlow.Count > 0)
+                        {
+                            var lastEntry = workFlow[workFlow.Count - 1] as JObject;
+                            officerDesignation = (string?)lastEntry?["designation"] ?? "N/A";
+                            offierAccessLevel = (string?)lastEntry?["accessLevel"] ?? "N/A";
+                        }
+
+                        var officerWithApplication = workFlow
                             .OfType<JObject>()
-                            .FirstOrDefault(item => item["designation"] != null && (string)item["designation"]! == officer.Role);
+                            .FirstOrDefault(o => o["playerId"]?.Type == JTokenType.Integer && (int)o["playerId"]! == application.Currentplayer);
+                        string? CurrentStatus = officerWithApplication != null
+                            ? (string?)officerWithApplication["status"]
+                            : (workFlow.Count > 0 ? (string?)workFlow[workFlow.Count - 1]?["status"] : "Legacy Data");
 
-                        bool isToEdit = matchedItem != null
-                            && (string?)matchedItem["status"] == "pending"
-                            && matchedItem["playerId"] != null
-                            && (int?)matchedItem["playerId"] == application.Currentplayer
-                            && authorities != null
-                            && (bool)authorities!.canCorrigendum
-                            && actionTaker != "Citizen";
+                        var firstAction = history.Count > 0 ? history[0] : null;
+                        string actionTaker = firstAction != null ? (string?)firstAction["actionTaker"] ?? "System" : "System";
 
-                        string actionFunction = isToEdit
-                            ? "handleEditCorrigendumApplication"
-                            : application.Status == "Sanctioned"
+                        string currentOfficerArea = GetOfficerArea(offierAccessLevel, formDetails);
+                        string officerArea = GetOfficerArea(creationOfficerAccessLevel, JObject.Parse(citizenApp.Formdetails!));
+
+                        var customActions = new List<dynamic>();
+                        var currentOfficer = workFlow
+                            .OfType<JObject>()
+                            .FirstOrDefault(o => o["designation"]?.Type == JTokenType.String && (string)o["designation"]! == officer.Role);
+
+                        bool canPull = currentOfficer?["canPull"]?.Type == JTokenType.Boolean && (bool)currentOfficer["canPull"]!;
+
+                        if ((type == "forwarded" || type == "returned") && canPull)
+                        {
+                            customActions.Add(new { type = "Pull", tooltip = "Pull", color = "#F0C38E", actionFunction = "pullCorrigendum" });
+                        }
+                        else
+                        {
+                            var matchedItem = workFlow
+                                .OfType<JObject>()
+                                .FirstOrDefault(item => item["designation"]?.Type == JTokenType.String && (string)item["designation"]! == officer.Role);
+
+                            bool isToEdit = matchedItem != null
+                                && (string?)matchedItem["status"] == "pending"
+                                && matchedItem["playerId"]?.Type == JTokenType.Integer
+                                && (int?)matchedItem["playerId"] == application.Currentplayer
+                                && authorities != null
+                                && (bool?)authorities!.canCorrigendum == true
+                                && actionTaker != "Citizen";
+
+                            string actionFunction = isToEdit
+                                ? "handleEditCorrigendumApplication"
+                                : application.Status == "Sanctioned"
                                 ? "handleViewPdf"
                                 : "handleViewCorrigendumApplication";
 
+                            customActions.Add(new
+                            {
+                                type = application.Status?.ToLower() == "sanctioned" ? "View" : "handleViewCorrigendumApplication",
+                                tooltip = "View",
+                                corrigendumId = application.Corrigendumid,
+                                color = "#F0C38E",
+                                actionFunction,
+                            });
+                        }
 
-                        bool isLegacy = application.Referencenumber?.StartsWith("JK-SW-PNS") == true;
-                        customActions.Add(new
+                        data.Add(new
                         {
-
-                            type = application.Status == "sanctioned" ? "View" : "handleViewCorrigendumApplication",
-                            tooltip = "View",
-                            corrigendumId = application.Corrigendumid,
-                            color = "#F0C38E",
-                            actionFunction,
+                            referenceNumber = application.Referencenumber,
+                            applicationId = application.Corrigendumid,
+                            createdBy = actionTaker == "Citizen" ? "Citizen" : creationOfficerDesignation + " " + officerArea,
+                            applicantName = application.Applicantname ?? GetFieldValue("ApplicantName", formDetails),
+                            currentlyWith = officerDesignation + " " + currentOfficerArea,
+                            currentStatus = CurrentStatus?.ToLower() == "sanctioned" ? "Issued" : CurrentStatus,
+                            creationDate = application.Createdat.ToString("dd MMM yyyy hh:mm:ss tt"),
+                            applicationType,
+                            serviceId = citizenApp.Serviceid,
+                            customActions
                         });
                     }
-
-                    data.Add(new
+                }
+                // ═══════════════════════════════════════════════════════════════
+                // BRANCH 2: Use ORIGINAL function when NO search query is provided
+                // (Requires in-memory sorting/pagination to match legacy behavior)
+                // ═══════════════════════════════════════════════════════════════
+                else
+                {
+                    var parameters = new[]
                     {
-                        referenceNumber = application.Referencenumber,
-                        applicationId = application.Corrigendumid,
-                        createdBy = actionTaker == "Citizen" ? "Citizen" : creationOfficerDesignation + " " + officerArea,
-                        applicantName = GetFieldValue("ApplicantName", formDetails),
-                        currentlyWith = officerDesignation + " " + currentOfficerArea,
-                        currentStatus = CurrentStatus == "sanctioned" ? "Issued" : CurrentStatus,
-                        creationDate = application.Createdat.ToString("dd MMM yyyy hh:mm:ss tt"),
-                        applicationType,
-                        serviceId = citizenApp.Serviceid,
-                        customActions
-                    });
+                        new NpgsqlParameter("@officeraccesslevel", officer.AccessLevel),
+                        new NpgsqlParameter("@officeraccesscode", officer.AccessCode),
+                        new NpgsqlParameter("@referencenumber", DBNull.Value),
+                        new NpgsqlParameter("@status", type),
+                        new NpgsqlParameter("@corrigendumid", DBNull.Value),
+                        new NpgsqlParameter("@type", applicationType),
+                        new NpgsqlParameter("@officerrole", officer.Role)
+                    };
+
+                    var applications = dbcontext.Corrigendum
+                        .FromSqlRaw("SELECT * FROM get_corrigendum_by_location_access(@officeraccesslevel, @officeraccesscode, @referencenumber, @status, @corrigendumid, @type, @officerrole)", parameters)
+                        .ToList();
+
+                    _logger.LogInformation(
+                        "SQL params → level='{L}' (len={LL}), code={C}, status='{S}', type='{T}', role='{R}' (len={RL})",
+                        officer.AccessLevel, officer.AccessLevel?.Length,
+                        officer.AccessCode,
+                        type, applicationType,
+                        officer.Role, officer.Role?.Length);
+
+                    // In-memory sorting and pagination for the original function
+                    var sortedData = applications.OrderBy(a =>
+                    {
+                        var parts = a.Corrigendumid!.Split('/');
+                        var numberPart = parts.Last();
+                        return int.TryParse(numberPart, out int num) ? num : 0;
+                    }).ToList();
+
+                    totalRecords = sortedData.Count;
+                    var pagedData = sortedData.Skip(pageIndex * pageSize).Take(pageSize).ToList();
+
+                    var applicationReferenceNumbers = pagedData.Select(c => c.Referencenumber).ToList();
+                    var citizenApplications = dbcontext.CitizenApplications
+                        .Where(ca => applicationReferenceNumbers.Contains(ca.Referencenumber))
+                        .ToDictionary(ca => ca.Referencenumber!, ca => ca);
+
+                    foreach (var application in pagedData)
+                    {
+                        if (!citizenApplications.TryGetValue(application.Referencenumber!, out var citizenApp))
+                            continue;
+
+                        var formDetails = JsonConvert.DeserializeObject<dynamic>(citizenApp.Formdetails!);
+                        var workFlow = JsonConvert.DeserializeObject<JArray>(application.Workflow!) ?? new JArray();
+                        var history = JArray.Parse(application.History!) ?? new JArray();
+
+                        // Get creation officer (first entry)
+                        string creationOfficerDesignation = "Legacy Data";
+                        string creationOfficerAccessLevel = "State";
+                        if (workFlow.Count > 0 && workFlow[0] is JObject firstEntry)
+                        {
+                            creationOfficerDesignation = (string?)firstEntry["designation"] ?? "Legacy Data";
+                            creationOfficerAccessLevel = (string?)firstEntry["accessLevel"] ?? "State";
+                        }
+
+                        // Get current player info with bounds checking
+                        int currentPlayer = application.Currentplayer;
+                        string officerDesignation = "N/A";
+                        string offierAccessLevel = "N/A";
+                        if (currentPlayer >= 0 && currentPlayer < workFlow.Count && workFlow[currentPlayer] is JObject currentEntry)
+                        {
+                            officerDesignation = (string?)currentEntry["designation"] ?? "N/A";
+                            offierAccessLevel = (string?)currentEntry["accessLevel"] ?? "N/A";
+                        }
+                        else if (workFlow.Count > 0)
+                        {
+                            var lastEntry = workFlow[workFlow.Count - 1] as JObject;
+                            officerDesignation = (string?)lastEntry?["designation"] ?? "N/A";
+                            offierAccessLevel = (string?)lastEntry?["accessLevel"] ?? "N/A";
+                        }
+
+                        var officerWithApplication = workFlow
+                            .OfType<JObject>()
+                            .FirstOrDefault(o => o["playerId"]?.Type == JTokenType.Integer && (int)o["playerId"]! == application.Currentplayer);
+                        string? CurrentStatus = officerWithApplication != null
+                            ? (string?)officerWithApplication["status"]
+                            : (workFlow.Count > 0 ? (string?)workFlow[workFlow.Count - 1]?["status"] : "Legacy Data");
+
+                        var firstAction = history.Count > 0 ? history[0] : null;
+                        string actionTaker = firstAction != null ? (string?)firstAction["actionTaker"] ?? "System" : "System";
+
+                        string currentOfficerArea = GetOfficerArea(offierAccessLevel, formDetails);
+                        string officerArea = GetOfficerArea(creationOfficerAccessLevel, JObject.Parse(citizenApp.Formdetails!));
+
+                        var customActions = new List<dynamic>();
+                        var currentOfficer = workFlow
+                            .OfType<JObject>()
+                            .FirstOrDefault(o => o["designation"]?.Type == JTokenType.String && (string)o["designation"]! == officer.Role);
+
+                        bool canPull = currentOfficer?["canPull"]?.Type == JTokenType.Boolean && (bool)currentOfficer["canPull"]!;
+
+                        if ((type == "forwarded" || type == "returned") && canPull)
+                        {
+                            customActions.Add(new { type = "Pull", tooltip = "Pull", color = "#F0C38E", actionFunction = "pullCorrigendum" });
+                        }
+                        else
+                        {
+                            var matchedItem = workFlow
+                                .OfType<JObject>()
+                                .FirstOrDefault(item => item["designation"]?.Type == JTokenType.String && (string)item["designation"]! == officer.Role);
+
+                            bool isToEdit = matchedItem != null
+                                && (string?)matchedItem["status"] == "pending"
+                                && matchedItem["playerId"]?.Type == JTokenType.Integer
+                                && (int?)matchedItem["playerId"] == application.Currentplayer
+                                && authorities != null
+                                && (bool?)authorities!.canCorrigendum == true
+                                && actionTaker != "Citizen";
+
+                            string actionFunction = isToEdit
+                                ? "handleEditCorrigendumApplication"
+                                : application.Status == "Sanctioned"
+                                ? "handleViewPdf"
+                                : "handleViewCorrigendumApplication";
+
+                            customActions.Add(new
+                            {
+                                type = application.Status?.ToLower() == "sanctioned" ? "View" : "handleViewCorrigendumApplication",
+                                tooltip = "View",
+                                corrigendumId = application.Corrigendumid,
+                                color = "#F0C38E",
+                                actionFunction,
+                            });
+                        }
+
+                        data.Add(new
+                        {
+                            referenceNumber = application.Referencenumber,
+                            applicationId = application.Corrigendumid,
+                            createdBy = actionTaker == "Citizen" ? "Citizen" : creationOfficerDesignation + " " + officerArea,
+                            applicantName = GetFieldValue("ApplicantName", formDetails),
+                            currentlyWith = officerDesignation + " " + currentOfficerArea,
+                            currentStatus = CurrentStatus?.ToLower() == "sanctioned" ? "Issued" : CurrentStatus,
+                            creationDate = application.Createdat.ToString("dd MMM yyyy hh:mm:ss tt"),
+                            applicationType,
+                            serviceId = citizenApp.Serviceid,
+                            customActions
+                        });
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching corrigendum applications");
+                return StatusCode(500, new { error = "Failed to fetch applications" });
+            }
+
+            // Build columns based on access level, matching GetApplications shape
+            var serviceLocation = ResolveServiceLocationFields(service?.Formelement);
+            bool serviceHasDistrict = serviceLocation.HasDistrict;
+            bool serviceHasChildLocation = serviceLocation.HasChildLocation;
+            string childLocationHeader = serviceLocation.ChildLocationHeader;
 
             List<dynamic> columns = new()
-    {
-        new { accessorKey = "referenceNumber", header = "Reference Number" },
-        new { accessorKey = "applicationId", header = applicationType + " Id" },
-        new { accessorKey = "createdBy", header = "Creation Officer" },
-        new { accessorKey = "applicantName", header = "Applicant Name" },
-        new { accessorKey = "currentlyWith", header = "Currently With" },
-        new { accessorKey = "currentStatus", header = "Current Status" },
-        new { accessorKey = "creationDate", header = applicationType + " Creation Date" },
-        new { accessorKey = "applicationType", header = "Application Type" }
-    };
+            {
+                new { accessorKey = "referenceNumber", header = "Reference Number" },
+                new { accessorKey = "applicationId",   header = applicationType + " Id" }
+            };
+
+            if (officer.AccessLevel == "State")
+            {
+                columns.Add(new { accessorKey = "divisionName", header = "Division Name" });
+                if (serviceHasDistrict)
+                    columns.Add(new { accessorKey = "districtName", header = "District Name" });
+            }
+            else if (officer.AccessLevel == "Division")
+            {
+                if (serviceHasDistrict)
+                    columns.Add(new { accessorKey = "districtName", header = "District Name" });
+                if (serviceHasChildLocation)
+                    columns.Add(new { accessorKey = "tehsilName", header = childLocationHeader });
+            }
+            else if (officer.AccessLevel == "District")
+            {
+                if (serviceHasChildLocation)
+                    columns.Add(new { accessorKey = "tehsilName", header = childLocationHeader });
+            }
+
+            columns.Add(new { accessorKey = "createdBy", header = "Creation Officer" });
+            columns.Add(new { accessorKey = "applicantName", header = "Applicant Name" });
+            columns.Add(new { accessorKey = "currentlyWith", header = "Currently With" });
+            columns.Add(new { accessorKey = "currentStatus", header = "Current Status" });
+            columns.Add(new { accessorKey = "creationDate", header = applicationType + " Creation Date" });
+            columns.Add(new { accessorKey = "applicationType", header = "Application Type" });
 
             return Json(new
             {
@@ -4099,7 +5015,9 @@ namespace SahayataNidhi.Controllers.Officer
                 new NpgsqlParameter("@officerrole", officer.Role)
             };
 
-            bool isLegacy = !string.IsNullOrEmpty(referenceNumber) && referenceNumber.StartsWith("JK-SW-PNS");
+            // Split legacy check: Parent app vs Corrigendum
+            bool isParentAppLegacy = !string.IsNullOrEmpty(referenceNumber) && referenceNumber.StartsWith("JK-SW-PNS");
+            bool isCorrigendumLegacy = false; // Will be set after fetching corrigendum
 
             var corrigendumApplication = dbcontext.Corrigendum
             .FromSqlRaw(
@@ -4125,6 +5043,13 @@ namespace SahayataNidhi.Controllers.Officer
                 return NotFound("Corrigendum application not found.");
             }
 
+            // Now determine if the corrigendum itself is legacy
+            // Check the datatype column or workflow structure
+            isCorrigendumLegacy = string.Equals(corrigendumApplication.Datatype, "legacy", StringComparison.OrdinalIgnoreCase);
+
+            // Fallback: If Datatype property doesn't exist in your model, use this instead:
+            // isCorrigendumLegacy = string.IsNullOrEmpty(corrigendumApplication.Workflow) || !corrigendumApplication.Workflow.Contains("playerId");
+
             referenceNumber = corrigendumApplication.Referencenumber;
 
             List<dynamic>? history = string.IsNullOrEmpty(corrigendumApplication.History)
@@ -4145,8 +5070,8 @@ namespace SahayataNidhi.Controllers.Officer
                 ? null
                 : JsonConvert.DeserializeObject<JArray>(application.Workflow);
 
-            // ========== NON-LEGACY ONLY: UpdateWorkflowFlags for citizen application ==========
-            if (!isLegacy)
+            // ========== NON-LEGACY PARENT APP: UpdateWorkflowFlags for citizen application ==========
+            if (!isParentAppLegacy)
             {
                 UpdateWorkflowFlags(applicationWorkFlow!, application.Currentplayer ?? 0);
             }
@@ -4156,17 +5081,21 @@ namespace SahayataNidhi.Controllers.Officer
                 ? null
                 : JsonConvert.DeserializeObject<JArray>(corrigendumApplication.Workflow);
 
-            // ========== NON-LEGACY ONLY: UpdateWorkflowFlags for corrigendum workflow ==========
-            if (!isLegacy && corrigendumWorkFlow != null)
+            if (!isCorrigendumLegacy && corrigendumWorkFlow != null)
             {
                 UpdateWorkflowFlags(corrigendumWorkFlow, corrigendumApplication.Currentplayer);
             }
             corrigendumApplication.Workflow = JsonConvert.SerializeObject(corrigendumWorkFlow);
 
+            // ✅ FIX: Explicitly tell EF Core to track and update this untracked entity 
+            // so the revoked 'canPull' flags actually get saved to the database.
+            dbcontext.Corrigendum.Update(corrigendumApplication);
+
             dbcontext.SaveChanges();
 
-            // ========== NON-LEGACY ONLY: Find sanction officer from application workflow ==========
-            if (!isLegacy && applicationWorkFlow != null)
+            // ========== ANY PARENT APP: Find sanction officer from application workflow ==========
+            // Legacy parents carry the same workflow structure, so the lookup applies to both.
+            if (applicationWorkFlow != null)
             {
                 foreach (var item in applicationWorkFlow)
                 {
@@ -4181,8 +5110,8 @@ namespace SahayataNidhi.Controllers.Officer
                 ? null
                 : JsonConvert.DeserializeObject<List<JObject>>(corrigendumApplication.Workflow);
 
-            // ========== NON-LEGACY ONLY: Validate workflow index ==========
-            if (!isLegacy)
+            // ========== NON-LEGACY CORRIGENDUM: Validate workflow index ==========
+            if (!isCorrigendumLegacy)
             {
                 if (Officer == null || corrigendumApplication.Currentplayer < 0 || corrigendumApplication.Currentplayer >= Officer.Count)
                 {
@@ -4190,8 +5119,8 @@ namespace SahayataNidhi.Controllers.Officer
                 }
             }
 
-            // ========== NON-LEGACY ONLY: Current officer access check ==========
-            if (!isLegacy)
+            // ========== NON-LEGACY CORRIGENDUM: Current officer access check ==========
+            if (!isCorrigendumLegacy)
             {
                 var currentOfficer = Officer![corrigendumApplication.Currentplayer];
                 if (currentOfficer["designation"]?.ToString() != officer.Role ||
@@ -4207,10 +5136,10 @@ namespace SahayataNidhi.Controllers.Officer
 
             string remarks = corrigendumFields?["remarks"]?.ToString() ?? "";
 
-            // ========== NON-LEGACY ONLY: Build actions based on workflow navigation ==========
+            // ========== NON-LEGACY CORRIGENDUM: Build actions based on workflow navigation ==========
             List<dynamic> actions = [new { label = "Reject", value = "reject" }];
 
-            if (!isLegacy)
+            if (!isCorrigendumLegacy)
             {
                 var currentOfficer = Officer![corrigendumApplication.Currentplayer];
 
@@ -4228,11 +5157,16 @@ namespace SahayataNidhi.Controllers.Officer
                     }
                 }
 
-                if (sanctionOfficer != null && sanctionOfficer!["designation"]?.ToString() == currentOfficer["designation"]?.ToString())
+                bool suppressForwardForCorrection = sanctionOfficer == null
+                    && type == "Correction"
+                    && Officer.Count <= corrigendumApplication.Currentplayer + 2;
+
+                if (sanctionOfficer != null &&
+                    sanctionOfficer!["designation"]?.ToString() == currentOfficer["designation"]?.ToString())
                 {
                     actions.Add(new { label = $"Issue {type}", value = "sanction" });
                 }
-                else if (Officer.Count > corrigendumApplication.Currentplayer + 1)
+                else if (Officer.Count > corrigendumApplication.Currentplayer + 1 && !suppressForwardForCorrection)
                 {
                     var nextOfficer = Officer[corrigendumApplication.Currentplayer + 1];
                     string nextOfficerDesignation = (string)nextOfficer["designation"]!;
@@ -4249,7 +5183,7 @@ namespace SahayataNidhi.Controllers.Officer
         new { accessorKey = "actionTaken", header = "Action Taken" },
         new { accessorKey = "remarks", header = "Remarks" },
         new { accessorKey = "actionTakenOn", header = "Action Taken On" },
-    ];
+        ];
 
             var data = new List<dynamic>();
             int index = 1;
@@ -4289,8 +5223,8 @@ namespace SahayataNidhi.Controllers.Officer
                 }
             }
 
-            // ========== NON-LEGACY ONLY: Add pending officer from workflow ==========
-            if (!isLegacy)
+            // ========== NON-LEGACY CORRIGENDUM: Add pending officer from workflow ==========
+            if (!isCorrigendumLegacy)
             {
                 var formdetails = JObject.Parse(application.Formdetails!);
                 foreach (var item in JsonConvert.DeserializeObject<List<dynamic>>(corrigendumApplication.Workflow)!)
@@ -4388,7 +5322,7 @@ namespace SahayataNidhi.Controllers.Officer
                 columns,
                 fieldColumns,
                 fieldsData,
-                canTakeAction = !isLegacy && noaction,
+                canTakeAction = !isCorrigendumLegacy && noaction,
                 actions,
                 remarks,
                 corrigendumApplication.Corrigendumid,
@@ -4741,63 +5675,190 @@ namespace SahayataNidhi.Controllers.Officer
             });
         }
 
+        public class CitizenApplicationSearchResultDto
+        {
+            public string? ReferenceNumber { get; set; }
+            public string? FormDetails { get; set; }
+            public string? Status { get; set; }
+            public int? DistrictId { get; set; }
+            public string? DistrictName { get; set; }
+            public int? TehsilId { get; set; }
+            public string? TehsilName { get; set; }
+            public int? DivisionId { get; set; }
+            public string? ApplicantName { get; set; }
+            public bool? IsWithheld { get; set; }   // ★ NEW
+        }
 
+        // ─────────────────────────────────────────────────────────────────────
+        //  1. Search — returns a lightweight list of all matching applications
+        // ─────────────────────────────────────────────────────────────────────
         [HttpGet]
-        public IActionResult SearchApplication(string Serviceid, string Referencenumber)
+        public IActionResult SearchApplication(string Serviceid, string SearchBy, string SearchValue)
         {
             var officer = GetOfficerDetails();
-            int serviceId = Convert.ToInt32(Serviceid);
 
-            var application = dbcontext.CitizenApplications
-                .FirstOrDefault(ca => ca.Serviceid == serviceId && ca.Referencenumber == Referencenumber);
+            if (!int.TryParse(Serviceid, out int serviceId))
+                return Json(new { status = false, message = "Invalid service id." });
 
-            if (application == null)
+            if (string.IsNullOrWhiteSpace(SearchBy) ||
+                (SearchBy != "ReferenceNumber" && SearchBy != "AccountNumber"))
             {
-                return Json(new { status = false, message = "Application not found" });
+                return Json(new { status = false, message = "Invalid search type." });
             }
 
-            var formDetails = JObject.Parse(application.Formdetails ?? "{}");
-            var formDetailsToken = JToken.Parse(application.Formdetails!);
-            formDetailsToken = ReorderFormDetails(formDetailsToken, Referencenumber, application.Status == "Sanctioned");
-            ReplaceCodeFieldsWithNames(formDetailsToken);
+            if (string.IsNullOrWhiteSpace(SearchValue))
+                return Json(new { status = false, message = "Search value is required." });
 
-            // Extract Tehsil & District only once
-            int? tehsilId = Convert.ToInt32(GetFieldValue("Tehsil", formDetails));
-            int? districtId = Convert.ToInt32(GetFieldValue("District", formDetails));
-
-            // Preload district & tehsil objects only if needed
-            var district = districtId.HasValue
-                ? dbcontext.District.FirstOrDefault(d => d.Districtid == districtId.Value)
-                : null;
-
-            var tehsil = tehsilId.HasValue
-                ? dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == tehsilId.Value)
-                : null;
-
-            // Compute accessCode in one place
-            int accessCode = officer.AccessLevel switch
+            var parameters = new[]
             {
-                "Tehsil" => tehsilId ?? 0,
-                "District" => districtId ?? 0,
-                "Division" => district?.Division ?? 0,
-                _ => 0
-            };
+        new NpgsqlParameter("p_service_id",   serviceId),
+        new NpgsqlParameter("p_search_by",    SearchBy),
+        new NpgsqlParameter("p_search_value", SearchValue.Trim()),
+    };
 
-            // Officer has access
-            if (officer.AccessCode == accessCode)
+            List<CitizenApplicationSearchResultDto> results;
+            try
             {
-                return Json(new { status = true, isAccessible = true, formDetailsToken });
+                results = dbcontext.Database
+                    .SqlQueryRaw<CitizenApplicationSearchResultDto>(
+                        @"SELECT referencenumber AS ""ReferenceNumber"",
+                         formdetails     AS ""FormDetails"",
+                         status          AS ""Status"",
+                         district_id     AS ""DistrictId"",
+                         district_name   AS ""DistrictName"",
+                         tehsil_id       AS ""TehsilId"",
+                         tehsil_name     AS ""TehsilName"",
+                         division_id     AS ""DivisionId"",
+                         applicant_name  AS ""ApplicantName"",
+                         iswithheld      AS ""IsWithheld""        -- ★ NEW
+                  FROM search_citizen_application(
+                          @p_service_id,
+                          @p_search_by,
+                          @p_search_value)",
+                        parameters)
+                    .ToList();
+            }
+            catch (PostgresException pgEx) when (pgEx.SqlState == "22023")
+            {
+                return Json(new { status = false, message = "Invalid search type." });
             }
 
-            // Officer does not have access
+            if (results.Count == 0)
+                return Json(new { status = false, message = "No applications found for the given criteria." });
+
+            var list = results.Select(app =>
+            {
+                // Prefer the SQL-derived name (handles JSON variants in one place);
+                // fall back to the C# extraction that other callers already use.
+                var formDetails = JsonConvert.DeserializeObject<dynamic>(app.FormDetails ?? "{}");
+                var applicantName = !string.IsNullOrWhiteSpace(app.ApplicantName)
+                    ? app.ApplicantName
+                    : GetFieldValue("ApplicantName", formDetails);
+
+                return new
+                {
+                    referenceNumber = app.ReferenceNumber,
+                    applicantName,
+                    accountNumber = GetFieldValue("AccountNumber", formDetails),
+                    ifcCode = GetFieldValue("IfscCode", formDetails),
+                    datofBirth = GetFieldValue("DateOfBirth", formDetails),
+                    status = app.Status,
+                    districtName = app.DistrictName,
+                    tehsilName = app.TehsilName,
+                    // ★ Boolean → YES/NO/N/A so the UI can render it directly
+                    isWithheld = app.IsWithheld.HasValue
+                                        ? (app.IsWithheld.Value ? "YES" : "NO")
+                                        : "N/A",
+                };
+            }).ToList();
+
             return Json(new
             {
                 status = true,
-                isAccessible = false,
-                message = $"You don't have access of this application. This application belongs to District: {district!.Districtname}, Tehsil: {tehsil!.Tehsilname}",
+                count = list.Count,
+                applications = list
             });
         }
+        //  2. Get details for a single application (invoked when the officer
+        //     clicks a row in the results list).
+        // ─────────────────────────────────────────────────────────────────────
+        [HttpGet]
+        public IActionResult GetApplicationDetails(string ReferenceNumber, string Serviceid)
+        {
+            if (string.IsNullOrWhiteSpace(ReferenceNumber))
+                return Json(new { status = false, message = "Reference number is required." });
 
+            if (!int.TryParse(Serviceid, out int serviceId))
+                return Json(new { status = false, message = "Invalid service id." });
+
+            var parameters = new[]
+            {
+        new NpgsqlParameter("p_service_id",   serviceId),
+        new NpgsqlParameter("p_search_by",    "ReferenceNumber"),
+        new NpgsqlParameter("p_search_value", ReferenceNumber.Trim()),
+    };
+
+            List<CitizenApplicationSearchResultDto> results;
+            try
+            {
+                results = dbcontext.Database
+                    .SqlQueryRaw<CitizenApplicationSearchResultDto>(
+                        @"SELECT referencenumber AS ""ReferenceNumber"",
+                         formdetails     AS ""FormDetails"",
+                         status          AS ""Status"",
+                         district_id     AS ""DistrictId"",
+                         district_name   AS ""DistrictName"",
+                         tehsil_id       AS ""TehsilId"",
+                         tehsil_name     AS ""TehsilName"",
+                         division_id     AS ""DivisionId"",
+                         applicant_name  AS ""ApplicantName"",
+                         iswithheld      AS ""IsWithheld""        -- ★ NEW
+                  FROM search_citizen_application(
+                          @p_service_id,
+                          @p_search_by,
+                          @p_search_value)",
+                        parameters)
+                    .ToList();
+            }
+            catch (PostgresException pgEx) when (pgEx.SqlState == "22023")
+            {
+                return Json(new { status = false, message = "Invalid search type." });
+            }
+
+            var application = results.FirstOrDefault();
+            if (application == null)
+                return Json(new { status = false, message = "Application not found." });
+
+            // ★ access check removed — the SQL already governs what's searchable
+            //   and the officer can only reach this endpoint by way of a reference
+            //   number that SearchApplication already returned.
+
+            var formDetailsToken = JToken.Parse(application.FormDetails ?? "{}");
+            formDetailsToken = ReorderFormDetails(
+                formDetailsToken,
+                application.ReferenceNumber!,
+                application.Status == "Sanctioned");
+            ReplaceCodeFieldsWithNames(formDetailsToken);
+
+            // ★ deserialise before calling GetFieldValue — same pattern as SearchApplication
+            var formDetailsDynamic = JsonConvert.DeserializeObject<dynamic>(
+                application.FormDetails ?? "{}");
+
+            return Json(new
+            {
+                status = true,
+                referenceNumber = application.ReferenceNumber,
+                applicantName = GetFieldValue("ApplicantName", formDetailsDynamic),
+                statusText = application.Status,
+                districtName = application.DistrictName,
+                tehsilName = application.TehsilName,
+                // ★ Boolean → YES/NO/N/A, same shape the search list uses
+                isWithheld = application.IsWithheld.HasValue
+                                ? (application.IsWithheld.Value ? "YES" : "NO")
+                                : "N/A",
+                formDetailsToken
+            });
+        }
         [HttpGet]
         public IActionResult RedirectToCitizen(string username, bool isCitizen)
         {

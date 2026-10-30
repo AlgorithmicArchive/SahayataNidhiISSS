@@ -8,42 +8,16 @@ import {
   Button,
   Typography,
   CircularProgress,
-  Card,
-  CardContent,
+  Grid,
+  Paper,
+  Container,
+  Alert,
 } from "@mui/material";
 import { toast } from "react-toastify";
-import { Container, Row, Col } from "react-bootstrap";
-import styled from "@emotion/styled";
 import ServerSideTable from "../../components/ServerSideTable";
 import axiosInstance from "../../axiosConfig";
-
-// Styled components
-const StyledCard = styled(Card)`
-  background: linear-gradient(135deg, #ffffff, #f8f9fa);
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  &:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 6px 25px rgba(0, 0, 0, 0.15);
-  }
-`;
-
-const StyledButton = styled(Button)`
-  background: linear-gradient(45deg, #1976d2, #2196f3);
-  padding: 12px 24px;
-  font-weight: 600;
-  border-radius: 8px;
-  text-transform: none;
-  &:hover {
-    background: linear-gradient(45deg, #1565c0, #1976d2);
-    transform: scale(1.05);
-  }
-  &:disabled {
-    background: #cccccc;
-    color: #666666;
-  }
-`;
+import { Assessment, FilterList, ErrorOutline } from "@mui/icons-material";
+import GovPageHeader from "../../components/gov/GovPageHeader";
 
 export default function ReportsAdmin() {
   const [district, setDistrict] = useState("");
@@ -66,48 +40,44 @@ export default function ReportsAdmin() {
       setError(null);
 
       try {
-        // Fetch districts/access areas
         const districtsRes = await axiosInstance.get("/Base/GetAccessAreas");
-
-        // Fetch services
         const servicesRes = await axiosInstance.get("/Base/GetServices");
 
-        // Check if both responses are successful
         if (!districtsRes.data.status || !servicesRes.data.status) {
           throw new Error("Failed to fetch districts or services");
         }
 
-        // Handle districts/tehsils logic
         if (districtsRes.data.tehsils) {
           setIsTehsil(true);
           setDistricts(
             districtsRes.data.tehsils.map((d) => ({
-              value: d.tehsilId,
-              label: d.tehsilName,
-            }))
+              value: d.tehsilid,
+              label: d.tehsilname,
+            })),
           );
         } else {
           setDistricts(
             districtsRes.data.districts.map((d) => ({
-              value: d.districtId,
-              label: d.districtName,
-            }))
+              value: d.districtid,
+              label: d.districtname,
+            })),
           );
         }
 
-        // Set services
         setServices(
           servicesRes.data.services.map((s) => ({
             value: s.serviceId,
             label: s.serviceName,
-          }))
+          })),
         );
       } catch (err) {
-        const message = err.response?.data?.message || err.message || "Something went wrong";
+        const message =
+          err.response?.data?.message || err.message || "Something went wrong";
         setError(message);
         toast.error(`Error: ${message}`, {
           position: "top-right",
           autoClose: 3000,
+          theme: "colored",
         });
       } finally {
         setLoading(false);
@@ -119,27 +89,22 @@ export default function ReportsAdmin() {
 
   const handleDistrictChange = (event) => {
     setDistrict(event.target.value);
-    if (service) {
-      setIsButtonDisabled(false);
-    }
+    if (service) setIsButtonDisabled(false);
   };
 
   const handleServiceChange = (event) => {
     setService(event.target.value);
-    if (district) {
-      setIsButtonDisabled(false);
-    }
+    if (district) setIsButtonDisabled(false);
   };
 
   const handleGetReports = () => {
     setShowTable(true);
-    setSelectedStatus(""); // Default to no status filter
+    setSelectedStatus("");
     setTimeout(() => {
       tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
   };
 
-  // Extra params for ServerSideTable
   const extraParams = {
     AccessCode: district,
     ServiceId: service,
@@ -155,10 +120,10 @@ export default function ReportsAdmin() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          bgcolor: "#f8f9fa",
+          bgcolor: "#F8FAFC",
         }}
       >
-        <CircularProgress size={60} />
+        <CircularProgress size={60} sx={{ color: "#2562E9" }} />
       </Box>
     );
   }
@@ -173,139 +138,158 @@ export default function ReportsAdmin() {
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
-          bgcolor: "#f8f9fa",
+          bgcolor: "#F8FAFC",
+          gap: 3,
         }}
       >
-        <Typography color="error" variant="h6" sx={{ mb: 2 }}>
+        <ErrorOutline sx={{ fontSize: 64, color: "#DC2626" }} />
+        <Typography color="error" variant="h6" sx={{ fontWeight: 600 }}>
           {error}
         </Typography>
-        <StyledButton
+        <Button
           variant="contained"
           onClick={() => window.location.reload()}
+          sx={{
+            bgcolor: "#2562E9",
+            textTransform: "none",
+            fontWeight: 600,
+            "&:hover": { bgcolor: "#1D4ED8" },
+          }}
         >
           Retry
-        </StyledButton>
+        </Button>
       </Box>
     );
   }
 
   return (
-    <Box
-      sx={{
-        width: "100%",
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        p: { xs: 3, md: 5 },
-        bgcolor: "#f8f9fa",
-      }}
-    >
-      <Typography
-        variant="h4"
-        sx={{
-          mb: 5,
-          fontWeight: 700,
-          color: "#2d3748",
-          fontFamily: "'Inter', sans-serif",
-        }}
-      >
-        Reportsssssssssss
-      </Typography>
+    <Box sx={{ bgcolor: "#F8FAFC", minHeight: "100vh", py: 4 }}>
+      <Container maxWidth="xl">
+        {/* Page Header - GIGW standard */}
+        <GovPageHeader
+          title="Admin Reports"
+          hindiTitle="प्रशासनिक रिपोर्ट"
+          subtitle="Generate and export application reports by region and service"
+          icon={<Assessment sx={{ fontSize: 32, color: "primary.main" }} />}
+        />
 
-      <Container>
-        <Row className="mb-5 justify-content-center">
-          <Col xs={12} md={6} lg={4}>
-            <FormControl fullWidth sx={{ mb: { xs: 2, md: 0 } }}>
-              <InputLabel id="district-select-label">
-                {isTehsil ? "Tehsil" : "District"}
-              </InputLabel>
-              <Select
-                labelId="district-select-label"
-                value={district}
-                label={isTehsil ? "Tehsil" : "District"}
-                onChange={handleDistrictChange}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              >
-                <MenuItem value="">
-                  <em>Please Select</em>
-                </MenuItem>
-                {districts.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+        {/* Filter Card */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: 4,
+            mb: 4,
+            borderRadius: 3,
+            border: "1px solid #E2E8F0",
+            bgcolor: "white",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 3 }}>
+            <FilterList sx={{ color: "#2562E9" }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, color: "#0F172A" }}>
+              Report Filters
+            </Typography>
+          </Box>
+
+          <Grid container spacing={3} alignItems="center">
+            <Grid item xs={12} md={5}>
+              <FormControl fullWidth>
+                <InputLabel>{isTehsil ? "Tehsil" : "District"}</InputLabel>
+                <Select
+                  value={district}
+                  label={isTehsil ? "Tehsil" : "District"}
+                  onChange={handleDistrictChange}
+                  sx={{
+                    bgcolor: "white",
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#E2E8F0",
+                    },
+                    "&:hover .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#2562E9",
+                    },
+                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#2562E9",
+                    },
+                  }}
+                >
+                  <MenuItem value="">
+                    <em>Please Select</em>
                   </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Col>
-          <Col xs={12} md={6} lg={4}>
-            <FormControl fullWidth>
-              <InputLabel id="service-select-label">Service</InputLabel>
-              <Select
-                labelId="service-select-label"
-                value={service}
-                label="Service"
-                onChange={handleServiceChange}
-                sx={{ bgcolor: "#fff", borderRadius: "8px" }}
-              >
-                <MenuItem value="">
-                  <em>Please Select</em>
-                </MenuItem>
-                {services.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
+                  {districts.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12} md={5}>
+              <FormControl fullWidth>
+                <InputLabel>Service</InputLabel>
+                <Select
+                  value={service}
+                  label="Service"
+                  onChange={handleServiceChange}
+                  sx={{
+                    bgcolor: "white",
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#E2E8F0",
+                    },
+                    "&:hover .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#2562E9",
+                    },
+                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#2562E9",
+                    },
+                  }}
+                >
+                  <MenuItem value="">
+                    <em>Please Select</em>
                   </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Col>
-        </Row>
+                  {services.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
 
-        <Row className="mb-5 justify-content-center">
-          <Col xs="auto">
-            <StyledButton
-              variant="contained"
-              onClick={handleGetReports}
-              disabled={isButtonDisabled}
-            >
-              Generate Reports
-            </StyledButton>
-          </Col>
-        </Row>
+            <Grid item xs={12} md={2}>
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={handleGetReports}
+                disabled={isButtonDisabled}
+                sx={{
+                  py: 1.6,
+                  bgcolor: "#2562E9",
+                  "&:hover": { bgcolor: "#1D4ED8" },
+                  textTransform: "none",
+                  fontWeight: 700,
+                  fontSize: "1rem",
+                  boxShadow: "0 4px 12px rgba(37, 99, 233, 0.2)",
+                  "&.Mui-disabled": { bgcolor: "#E2E8F0", color: "#94A3B8" },
+                }}
+              >
+                Generate Reports
+              </Button>
+            </Grid>
+          </Grid>
+        </Paper>
 
+        {/* Results Table */}
         {showTable && (
-          <Row ref={tableRef} className="mt-5">
-            <Col xs={12}>
-              <StyledCard>
-                <CardContent>
-                  <Typography
-                    variant="h6"
-                    sx={{ mb: 3, fontWeight: 600, color: "#2d3748" }}
-                  >
-                    Application Reports
-                  </Typography>
-                  <ServerSideTable
-                    key={`${district}-${service}-${selectedStatus}`}
-                    url={`/Admin/GetApplicationsForReports`}
-                    extraParams={extraParams}
-                    Title={"Tehsil Wise Reports"}
-                    sx={{
-                      "& .MuiTable-root": {
-                        background: "#ffffff",
-                      },
-                      "& .MuiTableCell-root": {
-                        color: "#2d3748",
-                        borderColor: "#e0e0e0",
-                      },
-                      "& .MuiButton-root": {
-                        color: "#1976d2",
-                      },
-                    }}
-                  />
-                </CardContent>
-              </StyledCard>
-            </Col>
-          </Row>
+          <Box ref={tableRef}>
+            <ServerSideTable
+              key={`${district}-${service}-${selectedStatus}`}
+              url={`/Admin/GetApplicationsForReports`}
+              extraParams={extraParams}
+              Title={isTehsil ? "Tehsil Wise Reports" : "District Wise Reports"}
+              showDownloadButtons={true}
+            />
+          </Box>
         )}
       </Container>
     </Box>

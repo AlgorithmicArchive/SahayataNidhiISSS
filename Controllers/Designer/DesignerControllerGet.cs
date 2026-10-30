@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SahayataNidhi.Models.Entities;
 using JsonException = Newtonsoft.Json.JsonException;
+using SahayataNidhi.Helpers;
 
 namespace SahayataNidhi.Controllers
 {
@@ -228,44 +229,116 @@ namespace SahayataNidhi.Controllers
                 return Json(new { status = false, message = ex.Message });
             }
         }
+
         [HttpGet]
-        public IActionResult GetWebService(int serviceId)
+        public async Task<IActionResult> GetWebServiceLogs([FromQuery] int? webserviceId = null, [FromQuery] int pageIndex = 0, [FromQuery] int pageSize = 20)
         {
             try
             {
-                var webService = dbcontext.Webservice
-                    .FirstOrDefault(ws => ws.Serviceid == serviceId);
+                var query = dbcontext.WebserviceLogs.AsQueryable();
 
-                if (webService == null)
+                if (webserviceId.HasValue && webserviceId.Value > 0)
                 {
-                    return Json(new { status = false, message = "No configuration found for the specified service" });
+                    query = query.Where(x => x.Webserviceid == webserviceId.Value);
                 }
 
-                return Json(new
+                var totalRecords = await query.CountAsync();
+
+                var data = await query
+                    .OrderByDescending(x => x.Createdat)
+                    .Skip(pageIndex * pageSize)
+                    .Take(pageSize)
+                    .Select(x => new
+                    {
+                        id = x.Id,
+                        executionId = x.Executionid,
+                        webserviceId = x.Webserviceid,
+                        serviceId = x.Serviceid,
+                        triggerName = x.Triggername,
+                        referenceNumber = x.Referencenumber,
+                        attemptNumber = x.Attemptnumber,
+                        requestUrl = x.Requesturl,
+                        requestMethod = x.Requestmethod,
+                        responseStatusCode = x.Responsestatuscode,
+                        isSuccess = x.Issuccess,
+                        errorMessage = x.Errormessage,
+                        durationMs = x.Durationms,
+                        createdAt = x.Createdat
+                    })
+                    .ToListAsync();
+
+                return Ok(new
                 {
                     status = true,
-                    config = new
-                    {
-                        id = webService.Id,
-                        serviceId = webService.Serviceid,
-                        webServiceName = webService.Webservicename,
-                        apiEndpoint = webService.Apiendpoint,
-                        onAction = webService.Onaction,
-                        fieldMappings = webService.Fieldmappings,
-                        headers = webService.Headers,          // ← ADD THIS LINE
-                        createdAt = webService.Createdat,
-                        updatedAt = webService.Updatedat
-                    }
+                    data,
+                    totalRecords
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching web service configuration");
-                return Json(new { status = false, message = $"Error fetching configuration: {ex.Message}" });
+                _logger.LogError(ex, "Error fetching web service logs");
+                return StatusCode(500, new
+                {
+                    status = false,
+                    message = ex.Message
+                });
             }
         }
 
+        [HttpGet]
+        public async Task<IActionResult> GetWebServiceLogById([FromQuery] int id)
+        {
+            var log = await dbcontext.WebserviceLogs
+                .FirstOrDefaultAsync(x => x.Id == id);
 
+            if (log == null)
+                return NotFound(new { status = false, message = "Log not found" });
+
+            return Ok(new
+            {
+                status = true,
+                data = log
+            });
+        }
+
+        [HttpGet]
+        public IActionResult GetWebServices(int serviceId)
+        {
+            try
+            {
+                var webServices = dbcontext.Webservice
+                    .Where(ws => ws.Serviceid == serviceId)
+                    .Select(ws => new
+                    {
+                        id = ws.Id,
+                        serviceId = ws.Serviceid,
+                        webServiceName = ws.Webservicename,
+                        apiEndpoint = ws.Apiendpoint,
+                        onAction = ws.Onaction,
+                        fieldMappings = ws.Fieldmappings,
+                        headers = ws.Headers,
+                        createdAt = ws.Createdat,
+                        updatedAt = ws.Updatedat,
+
+                        // ✅ Include retry configuration fields for the UI
+                        retryEnabled = ws.Retryenabled,
+                        maxAttempts = ws.Maxattempts,
+                        retryDelaySeconds = ws.Retrydelayseconds
+                    })
+                    .ToList();
+
+                return Json(new
+                {
+                    status = true,
+                    configs = webServices
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching web services");
+                return Json(new { status = false, message = $"Error: {ex.Message}" });
+            }
+        }
         [HttpGet]
         public IActionResult GetLetterDetails(int serviceId, string objField)
         {
@@ -581,6 +654,101 @@ namespace SahayataNidhi.Controllers
             }
         }
 
+        // =====================================================================
+        // Dynamic notifications: SMS provider settings, per-service notification
+        // rules, and the workflow steps used to build recipient options.
+        // =====================================================================
+        [HttpGet]
+        public async Task<IActionResult> GetSmsSettings()
+        {
+            var sms = await dbcontext.Smssettings.AsNoTracking().FirstOrDefaultAsync();
+            if (sms == null)
+                return Json(new { status = true, settings = (object?)null });
+
+            return Json(new
+            {
+                status = true,
+                settings = new
+                {
+                    sms.Id,
+                    sms.Providername,
+                    sms.Apiurl,
+                    sms.Httpmethod,
+                    sms.Keylocation,
+                    sms.Keyname,
+                    sms.Senderid,
+                    sms.Bodytemplate,
+                    sms.Successindicator,
+                    sms.Enabled,
+                    HasApiKey = !string.IsNullOrEmpty(sms.Apikey)
+                }
+            });
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetNotificationConfig([FromQuery] int serviceId)
+        {
+            if (serviceId <= 0)
+                return BadRequest(new { status = false, message = "Invalid service ID." });
+
+            var service = await dbcontext.Services.AsNoTracking().FirstOrDefaultAsync(s => s.Serviceid == serviceId);
+            if (service == null)
+                return NotFound(new { status = false, message = "Service not found." });
+
+            try
+            {
+                var config = string.IsNullOrWhiteSpace(service.Notificationconfig)
+                    ? new JObject()
+                    : JObject.Parse(service.Notificationconfig!);
+                return Json(new { status = true, config });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse notification config for service {Svc}", serviceId);
+                return Json(new { status = false, message = "Failed to parse notification config." });
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetServiceWorkflowSteps([FromQuery] int serviceId)
+        {
+            if (serviceId <= 0)
+                return BadRequest(new { status = false, message = "Invalid service ID." });
+
+            try
+            {
+                var sample = await dbcontext.CitizenApplications
+                    .AsNoTracking()
+                    .Where(a => a.Serviceid == serviceId && a.Workflow != null)
+                    .OrderByDescending(a => a.ApplId)
+                    .Select(a => a.Workflow)
+                    .FirstOrDefaultAsync();
+
+                var steps = new List<object>();
+                if (!string.IsNullOrEmpty(sample))
+                {
+                    var arr = JArray.Parse(sample);
+                    for (int i = 0; i < arr.Count; i++)
+                    {
+                        var step = arr[i];
+                        steps.Add(new
+                        {
+                            step = i,
+                            designation = step["designation"]?.ToString() ?? "",
+                            accessLevel = step["accessLevel"]?.ToString() ?? ""
+                        });
+                    }
+                }
+
+                return Json(new { status = true, steps });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load workflow steps for service {Svc}", serviceId);
+                return Json(new { status = false, message = "Failed to load workflow steps." });
+            }
+        }
+
 
         [HttpGet]
         public async Task<IActionResult> GetServiceConfig([FromQuery] int serviceId)
@@ -599,11 +767,25 @@ namespace SahayataNidhi.Controllers
                 if (service == null)
                     return NotFound(new { status = false, message = "Service not found." });
 
+                const int DefaultPoolLimit = 5;
+                const int MinPoolLimit = 1;
+                const int MaxPoolLimit = 100;
+
                 object config;
 
                 try
                 {
                     var parsed = JObject.Parse(service.Submissionlimitconfig!);
+
+                    // Read poolSanctionBatchLimit with validation, fall back to default
+                    int poolSanctionBatchLimit = DefaultPoolLimit;
+                    var poolToken = parsed.GetValue("poolSanctionBatchLimit", StringComparison.OrdinalIgnoreCase);
+                    if (poolToken != null && poolToken.Type != JTokenType.Null
+                        && int.TryParse(poolToken.ToString(), out var parsedPool)
+                        && parsedPool >= MinPoolLimit && parsedPool <= MaxPoolLimit)
+                    {
+                        poolSanctionBatchLimit = parsedPool;
+                    }
 
                     // New format: has "limits" array
                     if (parsed["limits"] != null)
@@ -611,7 +793,8 @@ namespace SahayataNidhi.Controllers
                         config = new
                         {
                             isLimited = parsed["isLimited"]?.Value<bool>() ?? false,
-                            limits = parsed["limits"]?.ToObject<List<dynamic>>() ?? new List<dynamic>()
+                            limits = parsed["limits"]?.ToObject<List<dynamic>>() ?? new List<dynamic>(),
+                            poolSanctionBatchLimit
                         };
                     }
                     // Old format: migrate on-the-fly
@@ -629,12 +812,17 @@ namespace SahayataNidhi.Controllers
                             });
                         }
 
-                        config = new { isLimited, limits };
+                        config = new { isLimited, limits, poolSanctionBatchLimit };
                     }
                 }
                 catch
                 {
-                    config = new { isLimited = false, limits = new List<object>() };
+                    config = new
+                    {
+                        isLimited = false,
+                        limits = new List<object>(),
+                        poolSanctionBatchLimit = DefaultPoolLimit
+                    };
                 }
 
                 return Ok(new { status = true, config });
@@ -812,6 +1000,135 @@ namespace SahayataNidhi.Controllers
             await dbcontext.SaveChangesAsync();
 
             return Ok(new { status = true, message = "Deleted successfully" });
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        // DYNAMIC REPORT TEMPLATE ENDPOINTS
+        // Queries are built dynamically from JSON config stored in the `reports` table.
+        // No PostgreSQL function binding required.
+        // ─────────────────────────────────────────────────────────────────────────
+
+        [HttpGet]
+        public IActionResult GetReportTemplates([FromQuery] int? serviceId = null)
+        {
+            try
+            {
+                var templates = dbcontext.Reports
+                    .OrderByDescending(r => r.Createdat)
+                    .Select(r => new
+                    {
+                        id = r.Id,
+                        name = r.Name,
+                        description = r.Description,
+                        tableName = r.Tablename,
+                        serviceId = r.ServiceId,
+                        columns = r.Columns,
+                        filters = r.Filters,
+                        createdAt = r.Createdat,
+                        createdBy = r.Createdby
+                    })
+                    .ToList();
+
+                return Ok(new { status = true, data = templates });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching report templates");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetReportTemplateById([FromQuery] int id)
+        {
+            try
+            {
+                var report = await dbcontext.Reports.FindAsync(id);
+                if (report == null)
+                    return NotFound(new { status = false, message = "Report template not found" });
+
+                var columns = string.IsNullOrEmpty(report.Columns)
+                    ? new List<object>()
+                    : JsonConvert.DeserializeObject<List<object>>(report.Columns);
+
+                var filters = string.IsNullOrEmpty(report.Filters)
+                    ? new List<object>()
+                    : JsonConvert.DeserializeObject<List<object>>(report.Filters);
+
+                return Ok(new
+                {
+                    status = true,
+                    data = new
+                    {
+                        id = report.Id,
+                        name = report.Name,
+                        description = report.Description,
+                        tableName = report.Tablename,
+                        serviceId = report.ServiceId,
+                        columns,
+                        filters,
+                        createdAt = report.Createdat,
+                        createdBy = report.Createdby
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching report template {Id}", id);
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Executes a saved report template dynamically.
+        /// Reads the template's columns/filters JSON config, builds a parameterized SQL query,
+        /// and returns the data + column metadata. No PostgreSQL function binding required.
+        /// </summary>
+        [HttpGet]
+        public async Task<IActionResult> ExecuteReportTemplate([FromQuery] int templateId, [FromQuery] string? filterJson = null)
+        {
+            try
+            {
+                var template = await dbcontext.Reports.FindAsync(templateId);
+                if (template == null)
+                    return NotFound(new { status = false, message = "Report template not found" });
+
+                // ── Run the report template using the proven ADO.NET path ──
+
+                var result = await DynamicReportQuery.ExecuteAsync(dbcontext, template, filterJson);
+                if (!result.Success)
+                    return StatusCode(result.Status, new { status = false, message = result.Error });
+
+                return Ok(new
+                {
+                    status = true,
+                    data = result.Data,
+                    columns = result.Columns,
+                    totalRecords = result.TotalRecords
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error executing report template {TemplateId}", templateId);
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
+        }
+
+        // Distinct values for a filter field/JSON path, scoped to a service — feeds
+        // the report builder's filter-value dropdowns so the designer picks real values.
+        [HttpGet]
+        public async Task<IActionResult> GetReportFieldValues([FromQuery] int? serviceId = null, [FromQuery] string? field = null, [FromQuery] string? jsonPath = null)
+        {
+            try
+            {
+                var values = await DynamicReportQuery.GetDistinctValuesAsync(dbcontext, serviceId, field, jsonPath);
+                return Ok(new { status = true, values });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching report field values");
+                return StatusCode(500, new { status = false, message = ex.Message });
+            }
         }
     }
 }

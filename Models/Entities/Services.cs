@@ -35,6 +35,10 @@ public partial class Services
 
     public bool? Activeforofficers { get; set; }
 
+    public string? Notificationconfig { get; set; }
+
+    public virtual ICollection<DashboardStatistics> DashboardStatistics { get; set; } = new List<DashboardStatistics>();
+
     public virtual ICollection<ExpirationTypes> ExpirationTypes { get; set; } = new List<ExpirationTypes>();
 
     public virtual ICollection<Pool> Pool { get; set; } = new List<Pool>();

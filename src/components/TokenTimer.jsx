@@ -25,6 +25,7 @@ const TokenTimer = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lastActivityRef = useRef(Date.now()); // Track last activity
   const intervalRef = useRef(null); // Ref for countdown interval
+  const lastRefreshRef = useRef(Date.now()); // 👈 Track last successful token refresh / keep-alive
 
   const inactivityThreshold = 5 * 60 * 1000; // 5 minutes
   const sessionDuration = 30 * 60 * 1000; // 30 minutes
@@ -122,6 +123,29 @@ const TokenTimer = () => {
     };
   }, [countdownStartTime]);
 
+  // ── Periodic silent keep-alive ──────────────────────────────────────
+  // Fires at most every ~25 minutes while the user is actively working.
+  // The inactivity flow above only renews the token when the user has
+  // been idle and then comes back; this one covers the "user never went
+  // idle" case, which otherwise leaves them on the original 30-minute
+  // token until it dies mid-session.
+  useEffect(() => {
+    const REFRESH_AGE = 25 * 60 * 1000; // 25 min — 5 min buffer before exp
+    const CHECK_EVERY = 60 * 1000; // check once a minute
+
+    const id = setInterval(() => {
+      const age = Date.now() - lastRefreshRef.current;
+
+      // Don't interfere while the inactivity countdown is running —
+      // that flow owns the refresh in that window.
+      if (age >= REFRESH_AGE && !isRefreshing && !countdownStartTime) {
+        keepAlive();
+      }
+    }, CHECK_EVERY);
+
+    return () => clearInterval(id);
+  }, [isRefreshing, countdownStartTime]);
+
   // Stop countdown
   const stopCountdown = useCallback(() => {
     setCountdownStartTime(null);
@@ -137,6 +161,7 @@ const TokenTimer = () => {
   const refreshToken = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
+    lastRefreshRef.current = Date.now(); // 👈 record that a fresh token is being fetched
     try {
       const response = await axiosInstance.get("/Home/RefreshToken");
       if (response.data.status) {
@@ -172,6 +197,7 @@ const TokenTimer = () => {
   const keepAlive = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
+    lastRefreshRef.current = Date.now(); // 👈 record that a fresh token is being fetched
     try {
       const response = await axiosInstance.get("/Home/KeepAlive");
       if (response.data.status) {
@@ -219,7 +245,7 @@ const TokenTimer = () => {
     setProfile(null);
     setDesignation(null);
     setTokenExpiry(null);
-    window.location.href = "/login";
+    window.location.href = "/";
   };
 
   if (!timeLeft) return null;

@@ -14,6 +14,7 @@ using EncryptionHelper;
 using Microsoft.Extensions.Caching.Memory;
 using Npgsql;
 using System.Data;
+using SahayataNidhi.Services;
 
 namespace SahayataNidhi.Controllers.Officer
 {
@@ -30,14 +31,18 @@ namespace SahayataNidhi.Controllers.Officer
         IAuditLogService auditService,
         IConfiguration config,
         IMemoryCache memoryCache,
-        IExpirationSyncService expirationSyncService, SessionRepository sessionRepo) : Controller   // <-- add this parameter
+        IExpirationSyncService expirationSyncService, SessionRepository sessionRepo, IReferenceDataService referenceData,
+        ApplicationCounterService applicationCounterService,
+        INotificationDispatcher notifier, IServiceScopeFactory scopeFactory) : Controller
     {
         protected readonly SwdjkContext dbcontext = dbcontext;
         protected readonly ILogger<OfficerController> _logger = logger;
         protected readonly UserHelperFunctions helper = helper;
+        protected readonly ApplicationCounterService _applicationCounter = applicationCounterService;
         protected readonly EmailSender emailSender = emailSender;
         protected readonly PdfService _pdfService = pdfService;
         private readonly IWebHostEnvironment _webHostEnvironment = webHostEnvironment;
+        protected readonly INotificationDispatcher _notifier = notifier;
         private readonly IHubContext<ProgressHub> hubContext = hubContext;
         protected readonly IEncryptionService encryptionService = encryptionService;
         private readonly IAuditLogService _auditService = auditService;
@@ -45,17 +50,35 @@ namespace SahayataNidhi.Controllers.Officer
         private readonly IMemoryCache _memoryCache = memoryCache;
         private readonly IExpirationSyncService _expirationSyncService = expirationSyncService;
         private readonly SessionRepository _sessionRepo = sessionRepo;
+        protected readonly IReferenceDataService _referenceData = referenceData;
+        private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
         public override void OnActionExecuted(ActionExecutedContext context)
         {
             base.OnActionExecuted(context);
 
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var officer = dbcontext.Users.FirstOrDefault(u => u.Userid.ToString() == userId);
-            string profile = officer?.Profile ?? "/resources/dummyDocs/formImage.jpg";
+
+            string? username = null;
+            string profile = "/resources/dummyDocs/formImage.jpg";
+
+            // ✅ Use a separate DbContext instance so we don't collide with
+            //    any background work still using the request-scoped one.
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var scopedDb = scope.ServiceProvider.GetRequiredService<SwdjkContext>();
+
+                var officer = scopedDb.Users
+                    .AsNoTracking()
+                    .FirstOrDefault(u => u.Userid.ToString() == userId);
+
+                username = officer?.Username;
+                if (!string.IsNullOrEmpty(officer?.Profile))
+                    profile = officer.Profile;
+            }
 
             ViewData["UserType"] = "Officer";
-            ViewData["UserName"] = officer?.Username;
-            ViewData["Profile"] = string.IsNullOrEmpty(profile) ? "/resources/dummyDocs/formImage.jpg" : profile;
+            ViewData["UserName"] = username;
+            ViewData["Profile"] = profile;
         }
 
         public OfficerDetailsModal GetOfficerDetails()
@@ -76,6 +99,39 @@ namespace SahayataNidhi.Controllers.Officer
                 .FirstOrDefault();
 
             return officer!;
+        }
+
+        // =====================================================================
+        // Dashboard counts cache (Layer 1)
+        //
+        // Counts are expensive at State/Division level (get_dashboard_counts
+        // expands JSONB workflow/formdetails across all rows). We cache the
+        // per-scope result for a short TTL and invalidate only on actions taken
+        // by the same officer. Cross-officer staleness is bounded by the TTL.
+        // =====================================================================
+        protected const string DashboardCountCachePrefix = "officer:dashboard:counts:";
+
+        protected static readonly TimeSpan DashboardCountCacheTtl = TimeSpan.FromSeconds(60);
+
+        protected string BuildDashboardCountKey(string accessLevel, int? accessCode, string role, int serviceId)
+            => $"{DashboardCountCachePrefix}{accessLevel}|{accessCode}|{role}|{serviceId}";
+
+        /// <summary>
+        /// Removes the cached dashboard counts for the acting officer's scope.
+        /// Call after any successful action that changes application statuses.
+        /// </summary>
+        /// <param name="accessLevel">Officer access level (State/Division/District/Tehsil).</param>
+        /// <param name="accessCode">Officer access code.</param>
+        /// <param name="role">Officer designation/role.</param>
+        /// <param name="serviceId">Service whose counts changed; removes that key.</param>
+        protected void InvalidateDashboardCounts(string accessLevel, int? accessCode, string role, int? serviceId = null)
+        {
+            if (serviceId.HasValue)
+            {
+                _memoryCache.Remove(BuildDashboardCountKey(accessLevel, accessCode, role, serviceId.Value));
+            }
+            // If serviceId is unknown we intentionally do nothing — the 60s TTL
+            // is the backstop, so a stale value can never live longer than that.
         }
 
         public string GetAccessArea(string AccessLevel, int? AccessCode)
@@ -162,28 +218,160 @@ namespace SahayataNidhi.Controllers.Officer
                 if (getServices != null)
                 {
                     var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
-                    if (status == "sanctioned" && onAction != null && onAction.Contains("CallbackOnSanction"))
+
+                    string currentTrigger = "";
+                    if (status == "sanctioned") currentTrigger = "APPLICATION_SANCTIONED";
+                    else if (status == "corrigendum") currentTrigger = "CORRIGENDUM_SANCTIONED";
+                    else if (status == "withheld") currentTrigger = "WITHHELD_APPROVED";
+
+                    if (!string.IsNullOrEmpty(currentTrigger) && onAction != null && onAction.Contains(currentTrigger))
                     {
-                        var fieldMapObj = JObject.Parse(getServices.Fieldmappings);
-                        // var fieldMap = MapServiceFieldsFromForm(formDetailsObj, fieldMapObj);
-                        // await SendApiRequestAsync(getServices.Apiendpoint, fieldMap, getServices.Headers!);
+                        var fullFieldMapObj = JObject.Parse(getServices.Fieldmappings);
+                        var fieldMapObj = fullFieldMapObj[currentTrigger] as JObject ?? fullFieldMapObj;
+
+                        // ✅ FIX: Use unique variable names to avoid scope conflicts
+                        object targetEntity = details;
+
+                        JArray parsedWorkflowJson = new JArray();
+                        try
+                        {
+                            var wfProp = details.GetType().GetProperty("Workflow") ?? details.GetType().GetProperty("workflow");
+                            if (wfProp != null)
+                            {
+                                var wfString = wfProp.GetValue(details)?.ToString();
+                                if (!string.IsNullOrWhiteSpace(wfString))
+                                    parsedWorkflowJson = JArray.Parse(wfString);
+                            }
+                        }
+                        catch { }
+
+                        JObject parsedFormJson = new JObject();
+                        try
+                        {
+                            foreach (var propName in new[] { "Location", "FormDetails", "Data", "Fields", "location" })
+                            {
+                                var prop = details.GetType().GetProperty(propName);
+                                if (prop != null)
+                                {
+                                    var jsonString = prop.GetValue(details)?.ToString();
+                                    if (!string.IsNullOrWhiteSpace(jsonString) && jsonString.Trim().StartsWith("{"))
+                                    {
+                                        parsedFormJson = JObject.Parse(jsonString);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // Pass the uniquely named variables to the mapper
+                        var fieldMap = MapServiceFieldsFromForm(parsedFormJson, fieldMapObj, parsedWorkflowJson, targetEntity, dbcontext);
+
+                        await SendApiRequestAsync(getServices.Apiendpoint, fieldMap!, getServices.Headers!);
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in external service call");
+                _logger.LogError(ex, "Error executing web service callback for service {ServiceId}", details.Serviceid);
             }
 
             details.Workflow = JsonConvert.SerializeObject(players);
             details.Currentplayer = (int)currentPlayer!["playerId"]!;
             dbcontext.SaveChanges();
 
+            // Invalidate cached dashboard counts owned by this officer (TTL is the outer backstop).
+            InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, details.Serviceid);
+
             helper.InsertHistory(applicationId, "Pulled Application", (string)currentPlayer["designation"]!, "Call back Application", officer.AccessLevel!, (int)officer.AccessCode!);
 
 
             return Json(new { status = true });
         }
+
+        [HttpGet]
+        public async Task<IActionResult> PullCorrigendum(string corrigendumId)
+        {
+            var officer = GetOfficerDetails();
+            if (officer == null)
+            {
+                return Json(new { status = false, message = "Officer details not found." });
+            }
+
+            var corrigendum = dbcontext.Corrigendum.FirstOrDefault(c => c.Corrigendumid == corrigendumId);
+            if (corrigendum == null)
+            {
+                return Json(new { status = false, message = "Corrigendum not found." });
+            }
+
+            var players = JArray.Parse(corrigendum.Workflow ?? "[]");
+            var currentPlayer = players.FirstOrDefault(p => (string)p["designation"]! == officer.Role);
+
+            if (currentPlayer == null)
+            {
+                return Json(new { status = false, message = "You are not part of this workflow." });
+            }
+
+            string status = (string)currentPlayer["status"]!;
+
+            // ★ Security Check: Verify the officer actually has pull rights
+            if (currentPlayer["canPull"]?.ToString().ToLower() != "true")
+            {
+                return Json(new { status = false, message = "You are not authorized to pull this corrigendum." });
+            }
+
+            // ★ State Transitions
+            if (status == "forwarded")
+            {
+                var nextPlayer = players.FirstOrDefault(p => (int)p["playerId"]! == ((int)currentPlayer["playerId"]! + 1));
+                if (nextPlayer != null)
+                {
+                    nextPlayer["status"] = "";
+                    nextPlayer["completedAt"] = "";
+                    nextPlayer["remarks"] = "";
+                }
+                currentPlayer["status"] = "pending";
+            }
+            else if (status == "returned")
+            {
+                var prevPlayer = players.FirstOrDefault(p => (int)p["playerId"]! == ((int)currentPlayer["playerId"]! - 1));
+                if (prevPlayer != null)
+                {
+                    prevPlayer["status"] = "forwarded";
+                }
+                currentPlayer["status"] = "pending";
+            }
+            else if (status == "sanctioned" || status == "verified" || status == "rejected")
+            {
+                currentPlayer["status"] = "pending";
+                // Optional: If pulling a sanctioned/verified corrigendum, you may want to revert the main status
+                // corrigendum.Status = "Initiated"; 
+            }
+            else
+            {
+                return Json(new { status = false, message = "Application cannot be pulled in its current state." });
+            }
+
+            // ★ Save Changes
+            corrigendum.Workflow = players.ToString();
+            corrigendum.Currentplayer = (int)currentPlayer["playerId"]!;
+            dbcontext.SaveChanges();
+
+            // ★ Invalidate Cache & Log History
+            InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, corrigendum.Serviceid);
+
+            helper.InsertHistory(
+                corrigendum.Referencenumber,
+                "Pulled Corrigendum",
+                (string)currentPlayer["designation"]!,
+                $"Pulled back to pending from {status}",
+                officer.AccessLevel!,
+                (int)officer.AccessCode!
+            );
+
+            return Json(new { status = true, message = "Corrigendum pulled successfully." });
+        }
+
 
         [HttpPost]
         public async Task<IActionResult> HandleAction([FromForm] IFormCollection form)
@@ -248,11 +436,26 @@ namespace SahayataNidhi.Controllers.Officer
 
                 var players = JArray.Parse(workFlow);
 
-                // Bounds checks
+                // ---------- Bounds checks ----------
+                if (currentPlayer < 0 || currentPlayer >= players.Count)
+                    return Json(new { status = false, response = "Invalid workflow position" });
+
                 if (action == "Forward" && currentPlayer + 1 >= players.Count)
                     return Json(new { status = false, response = "Cannot forward: No next officer" });
                 if (action == "ReturnToPlayer" && currentPlayer <= 0)
                     return Json(new { status = false, response = "Cannot return further" });
+
+                // ---------- Idempotency guard for terminal actions ----------
+                string currentStatus = players[currentPlayer]?["status"]?.ToString() ?? "";
+                if ((action == "Sanction" || action == "Reject") &&
+                    (currentStatus.Equals("sanctioned", StringComparison.OrdinalIgnoreCase) ||
+                     currentStatus.Equals("rejected", StringComparison.OrdinalIgnoreCase)))
+                {
+                    _logger.LogInformation(
+                        "HandleAction idempotent skip | AppID: {AppId} | Action: {Action} | CurrentStatus: {Status}",
+                        applicationId, action, currentStatus);
+                    return Json(new { status = true, response = "Action already applied (idempotent)." });
+                }
 
                 // ---------- 1. Apply action to workflow ----------
                 if (action == "Forward")
@@ -286,11 +489,133 @@ namespace SahayataNidhi.Controllers.Officer
                 else if (action == "Sanction")
                 {
                     players[currentPlayer]["status"] = "sanctioned";
+
+                    await RemoveApplicationFromOfficerPoolAsync(
+                        formdetails.Serviceid.ToString()!, officer, applicationId);
                 }
                 else if (action == "Reject")
                 {
                     players[currentPlayer]["status"] = "rejected";
+
+                    await RemoveApplicationFromOfficerPoolAsync(
+                        formdetails.Serviceid.ToString()!, officer, applicationId);
                 }
+                else if (action == "PushToPool")
+                {
+                    players[currentPlayer]["status"] = "pushedtopool";
+
+                    var pool = await dbcontext.Pool.FirstOrDefaultAsync(p =>
+                        p.Serviceid == formdetails.Serviceid &&
+                        p.Listtype == "Pool" &&
+                        p.Accesslevel == officer.AccessLevel &&
+                        p.Accesscode == officer.AccessCode);
+
+                    List<string> poolList;
+                    if (string.IsNullOrWhiteSpace(pool?.List))
+                        poolList = new List<string>();
+                    else
+                        poolList = System.Text.Json.JsonSerializer.Deserialize<List<string>>(pool!.List!)
+                                   ?? new List<string>();
+
+                    if (!poolList.Contains(applicationId))
+                        poolList.Add(applicationId);
+
+                    var serialized = System.Text.Json.JsonSerializer.Serialize(poolList);
+
+                    if (pool == null)
+                    {
+                        pool = new Pool
+                        {
+                            Serviceid = formdetails.Serviceid,
+                            Listtype = "Pool",
+                            Accesslevel = officer.AccessLevel!,
+                            Accesscode = (int)officer.AccessCode!,
+                            List = serialized
+                        };
+                        dbcontext.Pool.Add(pool);
+                    }
+                    else
+                    {
+                        pool.List = serialized;
+                    }
+                }
+
+                // =================================================================
+                // Legacy officer document upload (multi-document, officer-defined names)
+                // - Only on Forward action
+                // - Files posted as multipart parts named legacyDocument_0, _1, ...
+                // - Matching enclosure names posted as legacyDocumentName_0, _1, ...
+                // - Each file gets its own entry in Formdetails.Documents with:
+                //     name       = camelCase(enclosureName)
+                //     label      = enclosureName
+                //     Enclosure  = enclosureName
+                //     File       = stored path
+                // - Files stored via the same helper used by InsertFormDetails
+                //   (hash deduped, root folder = "document")
+                // =================================================================
+                if (action == "Forward")
+                {
+                    var legacyDocs = new List<(IFormFile File, string EnclosureName)>();
+                    int idx = 0;
+                    while (true)
+                    {
+                        var f = form.Files.FirstOrDefault(x => x.Name == $"legacyDocument_{idx}");
+                        if (f == null) break;
+
+                        var enclosureName = form[$"legacyDocumentName_{idx}"].ToString();
+                        if (string.IsNullOrWhiteSpace(enclosureName))
+                            enclosureName = "Legacy Application Document";
+
+                        legacyDocs.Add((f, enclosureName.Trim()));
+                        idx++;
+                    }
+
+                    if (legacyDocs.Count > 0)
+                    {
+                        try
+                        {
+                            if (formDetailsObj["Documents"] is not JArray docsArray)
+                            {
+                                docsArray = new JArray();
+                                formDetailsObj["Documents"] = docsArray;
+                            }
+
+                            foreach (var (legacyFile, enclosureNameRaw) in legacyDocs)
+                            {
+                                // Store the physical file (hash-deduped)
+                                string filePath = await helper.GetFilePath(legacyFile, null, null, "document");
+
+                                // Convert officer's enclosure name into a camelCase key
+                                string enclosureKey = ToCamelCase(enclosureNameRaw);
+                                if (string.IsNullOrEmpty(enclosureKey))
+                                    enclosureKey = "legacyApplicationDocument";
+
+                                docsArray.Add(new JObject
+                                {
+                                    ["name"] = enclosureKey,
+                                    ["label"] = enclosureNameRaw,
+                                    ["Enclosure"] = enclosureNameRaw,
+                                    ["File"] = filePath
+                                });
+
+                                _logger.LogInformation(
+                                    "Legacy document attached | AppID: {AppId} | Enclosure: {Enclosure} | Name: {Name} | Path: {Path}",
+                                    applicationId, enclosureNameRaw, enclosureKey, filePath);
+                            }
+
+                            // Persist the updated JSON back onto the entity
+                            formdetails.Formdetails = formDetailsObj.ToString(Formatting.None);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Do not abort the Forward action if the attachment failed —
+                            // log and continue. The workflow change is the critical part.
+                            _logger.LogError(ex,
+                                "Legacy document upload FAILED | AppID: {AppId}", applicationId);
+                        }
+                    }
+                }
+                // ========== End of legacy document upload ==========
 
                 // Common updates
                 players[currentPlayer]["remarks"] = remarks;
@@ -304,7 +629,6 @@ namespace SahayataNidhi.Controllers.Officer
                         playerAdditional = new JObject();
                         currentPlayerObj["additionalDetails"] = playerAdditional;
                     }
-                    // Remove remark duplicates from additionalDetails
                     var remarksFieldsToRemove = additionalDetailsObj.Properties()
                         .Where(p => p.Name.Equals("Remarks", StringComparison.OrdinalIgnoreCase) ||
                                     p.Name.Equals("remarks", StringComparison.OrdinalIgnoreCase) ||
@@ -330,9 +654,8 @@ namespace SahayataNidhi.Controllers.Officer
                 // =================================================================
                 // 2. Update status_counts_snapshot (Entity Framework only)
                 // =================================================================
-                string dataType = formdetails.Datatype ?? "new";   // "new" or "legacy"
+                string dataType = formdetails.Datatype ?? "new";
 
-                // ---- 2a. Current officer: decrement pending, increment action ----
                 var currentOfficerKey = await GetOrCreateSnapshotForOfficer(
                     formdetails.Serviceid,
                     officer.AccessLevel!,
@@ -341,11 +664,9 @@ namespace SahayataNidhi.Controllers.Officer
                     officer.Role!,
                     dataType);
 
-                // Decrement pending
                 if (currentOfficerKey.Pendingcount > 0)
                     currentOfficerKey.Pendingcount--;
 
-                // Increment action column
                 switch (action.ToLower())
                 {
                     case "forward": currentOfficerKey.Forwardedcount++; break;
@@ -356,7 +677,6 @@ namespace SahayataNidhi.Controllers.Officer
                 }
                 currentOfficerKey.CapturedAt = DateTime.UtcNow;
 
-                // ---- 2b. Target officer (only Forward / ReturnToPlayer) ----
                 if (action == "Forward" || action == "ReturnToPlayer")
                 {
                     int targetIndex = action == "Forward" ? currentPlayer + 1 : currentPlayer - 1;
@@ -379,17 +699,14 @@ namespace SahayataNidhi.Controllers.Officer
 
                         if (action == "Forward")
                         {
-                            // Target receives a new pending application
                             targetOfficerKey.Pendingcount++;
                             targetOfficerKey.Totalapplications++;
                         }
-                        else // ReturnToPlayer
+                        else
                         {
-                            // Returning officer gets the application back
                             targetOfficerKey.Pendingcount++;
                             if (targetOfficerKey.Forwardedcount > 0)
                                 targetOfficerKey.Forwardedcount--;
-                            // totalapplications is NOT incremented
                         }
                         targetOfficerKey.CapturedAt = DateTime.UtcNow;
                     }
@@ -402,6 +719,8 @@ namespace SahayataNidhi.Controllers.Officer
                 {
                     await dbcontext.SaveChangesAsync();
                     _logger.LogInformation("SaveChanges succeeded | AppID: {AppId} | Action: {Action}", applicationId, action);
+
+                    InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, formdetails.Serviceid);
                 }
                 catch (DbUpdateException dbEx)
                 {
@@ -411,102 +730,188 @@ namespace SahayataNidhi.Controllers.Officer
                 }
 
                 // =================================================================
-                // 4. History, email, external API (unchanged)
+                // 4. Post-commit side effects
                 // =================================================================
-                helper.InsertHistory(applicationId, action, officer.Role!, remarks, officer.AccessLevel!, (int)officer.AccessCode!);
+                try
+                {
+                    helper.InsertHistory(applicationId, action, officer.Role!, remarks,
+                        officer.AccessLevel!, (int)officer.AccessCode!);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "InsertHistory FAILED | AppID: {AppId} | Action: {Action}", applicationId, action);
+                }
 
                 if (action == "Sanction")
                 {
-                    try { await _expirationSyncService.SyncExpirationsAsync(formdetails, HttpContext.RequestAborted); }
-                    catch (Exception ex) { _logger.LogError(ex, "Expiration sync FAILED for {AppId}", applicationId); }
+                    try
+                    {
+                        await _expirationSyncService.SyncExpirationsAsync(formdetails, HttpContext.RequestAborted);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Expiration sync FAILED for {AppId}", applicationId);
+                    }
+
+                    try
+                    {
+                        await DispatchWebServicesAsync(
+                            "APPLICATION_SANCTIONED",
+                            formDetailsObj,
+                            JArray.Parse(newWorkFlow),
+                            formdetails,
+                            formdetails.Serviceid);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "DispatchWebServicesAsync FAILED for {AppId}", applicationId);
+                    }
+                }
+
+                string officerArea = "Unknown";
+                try
+                {
+                    string appliedDistrictId = GetFieldValue("District", formDetailsObj);
+                    string appliedTehsilId = GetFieldValue("Tehsil", formDetailsObj);
+                    string districtName = "Unknown District";
+                    if (!string.IsNullOrWhiteSpace(appliedDistrictId) && int.TryParse(appliedDistrictId, out int distId))
+                        districtName = dbcontext.District.FirstOrDefault(d => d.Districtid == distId)?.Districtname ?? districtName;
+                    officerArea = officer.AccessLevel switch
+                    {
+                        "Tehsil" => !string.IsNullOrWhiteSpace(appliedTehsilId) && int.TryParse(appliedTehsilId, out int tId)
+                            ? (dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == tId)?.Tehsilname ?? "") + ", " + districtName
+                            : districtName,
+                        "District" => districtName,
+                        "Division" => officer.AccessCode == 1 ? "Jammu" : officer.AccessCode == 2 ? "Kashmir" : "Unknown Division",
+                        "State" => "Jammu and Kashmir",
+                        _ => "Unknown"
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "officerArea computation FAILED | AppID: {AppId}", applicationId);
                 }
 
                 try
                 {
-                    var webService = await dbcontext.Webservice.FirstOrDefaultAsync(ws => ws.Serviceid == formdetails.Serviceid && ws.Isactive);
-                    if (webService != null)
+                    string Action = action == "ReturnToCitizen" ? "Returned for correction" : action + "ed";
+
+                    byte[]? letterData = null;
+                    string? letterName = null;
+                    if (action == "Sanction")
                     {
-                        var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction);
-                        if (onAction != null && onAction.Contains(action))
+                        string fileName = applicationId.Replace("/", "_") + "_SanctionLetter.pdf";
+                        var fileModel = await dbcontext.Userdocuments.FirstOrDefaultAsync(f => f.Filename == fileName);
+                        if (fileModel != null)
                         {
-                            var fieldMappings = JObject.Parse(webService.Fieldmappings);
-                            if (fieldMappings[action] is JObject sanctionMapping)
-                            {
-                                string endpoint = JsonConvert.DeserializeObject<string>(webService.Apiendpoint) ?? webService.Apiendpoint?.Trim('"')!;
-                                var payload = MapServiceFieldsFromForm(formDetailsObj, sanctionMapping, JArray.Parse(formdetails.Workflow), formdetails);
-                                await SendApiRequestAsync(endpoint, payload, webService.Headers!);
-                            }
+                            letterData = fileModel.Filedata;
+                            letterName = fileName;
                         }
                     }
-                }
-                catch (Exception ex) { _logger.LogError(ex, "External service error for {AppId}", applicationId); }
 
-                // --- Email notification (existing code, keep as is) ---
-                string fullName = GetFieldValue("ApplicantName", formDetailsObj);
-                string ServiceName = dbcontext.Services.FirstOrDefault(s => s.Serviceid == formdetails.Serviceid)?.Servicename ?? "Unknown Service";
-                string appliedDistrictId = GetFieldValue("District", formDetailsObj);
-                string appliedTehsilId = GetFieldValue("Tehsil", formDetailsObj);
-                string districtName = "Unknown District";
-                if (!string.IsNullOrWhiteSpace(appliedDistrictId) && int.TryParse(appliedDistrictId, out int distId))
-                    districtName = dbcontext.District.FirstOrDefault(d => d.Districtid == distId)?.Districtname ?? districtName;
-                string officerArea = officer.AccessLevel switch
-                {
-                    "Tehsil" => !string.IsNullOrWhiteSpace(appliedTehsilId) && int.TryParse(appliedTehsilId, out int tId)
-                        ? (dbcontext.Tswotehsil.FirstOrDefault(t => t.Tehsilid == tId)?.Tehsilname ?? "") + ", " + districtName
-                        : districtName,
-                    "District" => districtName,
-                    "Division" => officer.AccessCode == 1 ? "Jammu" : officer.AccessCode == 2 ? "Kashmir" : "Unknown Division",
-                    "State" => "Jammu and Kashmir",
-                    _ => "Unknown"
-                };
+                    JArray? wf = null;
+                    try { wf = string.IsNullOrEmpty(newWorkFlow) ? null : JArray.Parse(newWorkFlow); } catch { }
 
-                string userEmail = GetFieldValue("Email", formDetailsObj);
-                string Action = action == "ReturnToCitizen" ? "Returned for correction" : action + "ed";
-                var emailTemplateObj = await dbcontext.Emailsettings.FirstOrDefaultAsync();
-                string template = emailTemplateObj?.Templates != null
-                    ? JObject.Parse(emailTemplateObj.Templates)["OfficerAction"]?.ToString() ?? ""
-                    : "";
-                var placeholders = new Dictionary<string, string>
-        {
-            { "ApplicantName", fullName },
-            { "ServiceName", ServiceName },
-            { "ReferenceNumber", applicationId },
-            { "OfficerRole", officer.Role! },
-            { "ActionTaken", Action },
-            { "OfficerArea", officerArea }
-        };
-                foreach (var pair in placeholders)
-                    template = template.Replace($"{{{pair.Key}}}", pair.Value);
-
-                if (action == "Sanction")
-                {
-                    string fileName = applicationId.Replace("/", "_") + "_SanctionLetter.pdf";
-                    var fileModel = await dbcontext.Userdocuments.FirstOrDefaultAsync(f => f.Filename == fileName);
-                    if (fileModel != null)
+                    await _notifier.DispatchAsync(new NotificationRequest
                     {
-                        await emailSender.SendEmailWithAttachments(userEmail!, "Form Submission", template, fileModel.Filedata, fileName);
-                    }
+                        ServiceId = formdetails.Serviceid,
+                        Action = action,
+                        FormDetails = formDetailsObj,
+                        ApplicationWorkflow = wf,
+                        ReferenceNumber = applicationId,
+                        OfficerRole = officer.Role ?? "",
+                        OfficerArea = officerArea,
+                        ActionTaken = Action,
+                        ActingOfficerUserId = officer.UserId,
+                        AttachmentData = letterData,
+                        AttachmentName = letterName
+                    });
                 }
-                else if (action != "Forward" && action != "ReturnToPlayer")
+                catch (Exception ex)
                 {
-                    await emailSender.SendEmail(userEmail, "Application Status Update", template);
+                    _logger.LogError(ex, "Notification dispatch FAILED | AppID: {AppId} | Action: {Action}", applicationId, action);
                 }
 
-                _auditService.InsertLog(HttpContext, action,
-                    action != "returntoedit"
-                        ? $"Application {action} by {officer.RoleShort} {officerArea}"
-                        : $"Application Returned to citizen for correction by {officer.RoleShort} {officerArea}",
-                    officer.UserId, "Success");
+                try
+                {
+                    _auditService.InsertLog(HttpContext, action,
+                        action != "returntoedit"
+                            ? $"Application {action} by {officer.RoleShort} {officerArea}"
+                            : $"Application Returned to citizen for correction by {officer.RoleShort} {officerArea}",
+                        officer.UserId, "Success");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Audit log FAILED | AppID: {AppId} | Action: {Action}", applicationId, action);
+                }
 
                 return Json(new { status = true });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error in HandleAction | AppID: {AppId} | Action: {Action}", applicationId, action);
-                _auditService.InsertLog(HttpContext, action, $"Error: {ex.Message}", officer.UserId, "Failure");
+                try { _auditService.InsertLog(HttpContext, action, $"Error: {ex.Message}", officer.UserId, "Failure"); } catch { }
                 return Json(new { status = false, response = "Server error: " + ex.Message });
             }
         }
+
+        // =================================================================
+        // Helper: convert a human-readable enclosure name like "Aadhaar Card"
+        // into a camelCase identifier like "aadhaarCard".
+        // =================================================================
+        private static string ToCamelCase(string label)
+        {
+            if (string.IsNullOrWhiteSpace(label)) return string.Empty;
+
+            var cleaned = System.Text.RegularExpressions.Regex.Replace(
+                label.Trim(), @"[^a-zA-Z0-9 ]+", " ");
+
+            var words = cleaned.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length == 0) return string.Empty;
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < words.Length; i++)
+            {
+                var w = words[i].ToLowerInvariant();
+                if (i == 0) sb.Append(w);
+                else sb.Append(char.ToUpperInvariant(w[0])).Append(w.Substring(1));
+            }
+            return sb.ToString();
+        }
+
+
+        private async Task RemoveApplicationFromOfficerPoolAsync(string serviceId, OfficerDetailsModal officer, string applicationId)
+        {
+            var pool = await dbcontext.Pool.FirstOrDefaultAsync(p =>
+                p.Serviceid == Convert.ToInt32(serviceId) &&
+                p.Listtype == "Pool" &&
+                p.Accesslevel == officer.AccessLevel &&
+                p.Accesscode == officer.AccessCode);
+
+            if (pool == null || string.IsNullOrWhiteSpace(pool.List))
+                return;
+
+            List<string> poolList;
+            try
+            {
+                poolList = System.Text.Json.JsonSerializer.Deserialize<List<string>>(pool.List!)
+                           ?? new List<string>();
+            }
+            catch
+            {
+                poolList = new List<string>();
+            }
+
+            int removed = poolList.RemoveAll(x => x == applicationId);
+            if (removed == 0)
+                return;
+
+            if (poolList.Count == 0)
+                dbcontext.Pool.Remove(pool);
+            else
+                pool.List = System.Text.Json.JsonSerializer.Serialize(poolList);
+        }
+
         [HttpPost]
         public IActionResult UploadToSftp([FromForm] IFormCollection form)
         {

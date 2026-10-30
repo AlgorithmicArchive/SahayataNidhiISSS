@@ -14,21 +14,40 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.Authorization;
 using Npgsql;
 using System.Net.Http.Headers;
+using System.Text.RegularExpressions;
 
 namespace SahayataNidhi.Controllers.Officer
 {
     public partial class OfficerController : Controller
     {
+        [HttpPost]
         public IActionResult UpdatePool(int Serviceid, string list)
         {
+
             var officer = GetOfficerDetails();
-            var PoolList = dbcontext.Pool.FirstOrDefault(p => p.Serviceid == Convert.ToInt32(Serviceid) && p.Listtype == "Pool" && p.Accesslevel == officer.AccessLevel && p.Accesscode == officer.AccessCode);
-            var pool = PoolList != null && !string.IsNullOrWhiteSpace(PoolList!.List) ? JsonConvert.DeserializeObject<List<string>>(PoolList.List) : [];
-            var poolList = JsonConvert.DeserializeObject<List<string>>(list);
-            foreach (var item in poolList!)
-            {
-                pool!.Add(item);
-            }
+            if (officer == null)
+                return Json(new { status = false, message = "Officer not found." });
+
+            var PoolList = dbcontext.Pool.FirstOrDefault(p =>
+                p.Serviceid == Serviceid &&
+                p.Listtype == "Pool" &&
+                p.Accesslevel == officer.AccessLevel &&
+                p.Accesscode == officer.AccessCode);
+
+
+            // Deserialize existing pool, or start with an empty list
+            var pool = PoolList != null && !string.IsNullOrWhiteSpace(PoolList.List)
+                ? JsonConvert.DeserializeObject<List<string>>(PoolList.List) ?? new List<string>()
+                : new List<string>();
+
+            // Null-safe parse of the incoming list
+            var poolList = string.IsNullOrWhiteSpace(list)
+                ? new List<string>()
+                : JsonConvert.DeserializeObject<List<string>>(list) ?? new List<string>();
+
+
+            // Union merges the lists and removes duplicates
+            pool = [.. pool.Union(poolList)];
 
             if (PoolList == null)
             {
@@ -43,12 +62,113 @@ namespace SahayataNidhi.Controllers.Officer
                 dbcontext.Pool.Add(newPool);
             }
             else
-                PoolList!.List = JsonConvert.SerializeObject(pool);
+            {
+                PoolList.List = JsonConvert.SerializeObject(pool);
+            }
+
+            // ✅ Log the local list — PoolList may still be null on the create path.
 
             dbcontext.SaveChanges();
+
+            // Invalidate cached dashboard counts owned by this officer
+            InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, Serviceid);
+
             return Json(new { status = true, Serviceid, list });
         }
 
+        [HttpPost]
+        public IActionResult RemoveFromPool(int Serviceid, string list)
+        {
+            var officer = GetOfficerDetails();
+            if (officer == null)
+            {
+                return Json(new { status = false, response = "Officer not found" });
+            }
+
+            // 1. Find the existing pool record for this officer/service
+            var PoolList = dbcontext.Pool.FirstOrDefault(p =>
+                p.Serviceid == Serviceid &&
+                p.Listtype == "Pool" &&
+                p.Accesslevel == officer.AccessLevel &&
+                p.Accesscode == officer.AccessCode
+            );
+
+            if (PoolList == null || string.IsNullOrWhiteSpace(PoolList.List))
+            {
+                return Json(new { status = true, message = "Pool is already empty.", removed = 0 });
+            }
+
+            // 2. Deserialize existing pool and items to remove
+            var pool = JsonConvert.DeserializeObject<List<string>>(PoolList.List) ?? new List<string>();
+            var itemsToRemove = JsonConvert.DeserializeObject<List<string>>(list) ?? new List<string>();
+
+            if (itemsToRemove.Count == 0)
+            {
+                return Json(new { status = true, message = "No items provided to remove.", removed = 0 });
+            }
+
+            // 3. Items actually present in the pool (requested ∩ pool)
+            var toRemoveSet = new HashSet<string>(itemsToRemove);
+            var actuallyRemovedItems = pool.Where(item => toRemoveSet.Contains(item)).ToList();
+            int actuallyRemoved = actuallyRemovedItems.Count;
+
+            if (actuallyRemoved == 0)
+            {
+                return Json(new
+                {
+                    status = true,
+                    Serviceid,
+                    removed = 0,
+                    message = "None of the provided items were present in the pool."
+                });
+            }
+
+            // 4. Flip latest_wf_status "pushedtopool" -> "pending".
+            //    The DB trigger will sync workflow_map from this column.
+            var appsToReset = dbcontext.CitizenApplications
+                .Where(ca => actuallyRemovedItems.Contains(ca.Referencenumber)
+                          && ca.Serviceid == Serviceid
+                          && ca.LatestWfStatus == "pushedtopool"
+                          && ca.LatestWfDesignation == officer.Role)
+                .ToList();
+
+            foreach (var app in appsToReset)
+            {
+                app.LatestWfStatus = "pending";
+            }
+
+            // 5. Update or delete the pool record based on remaining count
+            pool.RemoveAll(item => toRemoveSet.Contains(item));
+
+            if (pool.Count == 0)
+            {
+                dbcontext.Pool.Remove(PoolList);
+            }
+            else
+            {
+                PoolList.List = JsonConvert.SerializeObject(pool);
+                dbcontext.Pool.Update(PoolList);
+            }
+
+            dbcontext.SaveChanges();
+
+            _logger.LogInformation(
+                "RemoveFromPool | Service: {ServiceId} | Officer: {Role} ({Code}) | Requested: {Requested} | RemovedFromPool: {Removed} | ResetToPending: {Reset}",
+                Serviceid, officer.Role, officer.AccessCode,
+                itemsToRemove.Count, actuallyRemoved, appsToReset.Count);
+
+            // 6. Invalidate cached dashboard counts
+            InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, Serviceid);
+
+            return Json(new
+            {
+                status = true,
+                Serviceid,
+                removed = actuallyRemoved,
+                resetToPending = appsToReset.Count,
+                message = $"{actuallyRemoved} application(s) removed from pool and returned to inbox."
+            });
+        }
         [HttpPost]
         public async Task<IActionResult> UpdatePdf([FromForm] IFormCollection form)
         {
@@ -104,6 +224,8 @@ namespace SahayataNidhi.Controllers.Officer
                 return StatusCode(500, new { status = false, response = $"An error occurred while updating the sanction letter: {ex.Message}" });
             }
         }
+
+
         public async Task<IActionResult> SubmitDocumentChange(IFormCollection form)
         {
             try
@@ -449,15 +571,34 @@ namespace SahayataNidhi.Controllers.Officer
 
                         filteredWorkflow.Add(filteredPlayer);
                     }
+                    // Find the index of the initiating officer in the workflow
+                    int initiatingPlayerId = -1;
+                    for (int i = 0; i < filteredWorkflow.Count; i++)
+                    {
+                        if (filteredWorkflow[i]["designation"]?.ToString() == officer.Role)
+                        {
+                            initiatingPlayerId = i;
+                            break;
+                        }
+                    }
+
+                    // Safety check: Ensure the officer is actually part of this workflow
+                    if (initiatingPlayerId == -1)
+                    {
+                        return Json(new { status = false, message = "Officer not in workflow. You are not authorized to initiate this." });
+                    }
 
                     if (filteredWorkflow.Count > 0)
                     {
-                        filteredWorkflow[0]["status"] = "forwarded";
-                        filteredWorkflow[0]["remarks"] = remarks;
-                        filteredWorkflow[0]["completedAt"] = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
-                        if (filteredWorkflow.Count > 1)
+                        // Update the INITIATING player dynamically
+                        filteredWorkflow[initiatingPlayerId]["status"] = "forwarded";
+                        filteredWorkflow[initiatingPlayerId]["remarks"] = remarks;
+                        filteredWorkflow[initiatingPlayerId]["completedAt"] = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
+
+                        // Update the NEXT player dynamically
+                        if (initiatingPlayerId + 1 < filteredWorkflow.Count)
                         {
-                            filteredWorkflow[1]["status"] = "pending";
+                            filteredWorkflow[initiatingPlayerId + 1]["status"] = "pending";
                         }
                     }
 
@@ -497,6 +638,9 @@ namespace SahayataNidhi.Controllers.Officer
 
                 dbcontext.SaveChanges();
 
+                // Invalidate cached dashboard counts owned by this officer (TTL is the outer backstop).
+                InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, serviceId);
+
                 return Json(new
                 {
                     status = true,
@@ -535,7 +679,7 @@ namespace SahayataNidhi.Controllers.Officer
                 var remarks = form["remarks"].ToString();
                 var corrigendumId = form["corrigendumId"].ToString();
 
-                List<string> Files = new List<string>();
+                List<string> files = new List<string>();
                 if (form.Files != null && form.Files.Count > 0)
                 {
                     foreach (var formFile in form.Files)
@@ -543,21 +687,23 @@ namespace SahayataNidhi.Controllers.Officer
                         if (formFile.Length > 0)
                         {
                             string filePath = await helper.GetFilePath(formFile);
-                            Files.Add(filePath);
+                            files.Add(filePath);
                         }
                     }
                 }
 
                 var corrigendum = dbcontext.Corrigendum
                     .FirstOrDefault(c => c.Referencenumber == referenceNumber && c.Corrigendumid == corrigendumId && c.Type == type);
+
                 if (corrigendum == null)
                 {
                     return NotFound($"{type} not found.");
                 }
 
-                var CitizenApplications = dbcontext.CitizenApplications
+                var citizenApplication = dbcontext.CitizenApplications
                     .FirstOrDefault(c => c.Referencenumber == referenceNumber);
-                if (CitizenApplications == null)
+
+                if (citizenApplication == null)
                 {
                     return NotFound("Citizen application not found.");
                 }
@@ -571,10 +717,13 @@ namespace SahayataNidhi.Controllers.Officer
                     }
                 }
 
-                var formDetails = JObject.Parse(CitizenApplications.Formdetails!);
+                // Parse JSON objects early for efficient access
+                var formDetails = JObject.Parse(citizenApplication.Formdetails!);
+                var corrigendumFields = JObject.Parse(corrigendum.Corrigendumfields ?? "{}");
 
                 int currentPlayer = corrigendum.Currentplayer;
                 var workFlowCorrigendum = JArray.Parse(corrigendum.Workflow ?? "[]");
+
                 if (workFlowCorrigendum.Count > 0)
                 {
                     if (action == "forward")
@@ -591,6 +740,18 @@ namespace SahayataNidhi.Controllers.Officer
                     {
                         workFlowCorrigendum[currentPlayer]["status"] = "sanctioned";
                         corrigendum.Status = "Sanctioned";
+
+                        // ==========================================
+                        // APPLY CORRIGENDUM CHANGES TO CITIZEN APPLICATION
+                        // ==========================================
+                        bool fieldsChanged = ApplyCorrigendumFieldsToFormDetails(
+                            formDetails, corrigendumFields, referenceNumber);
+
+                        if (fieldsChanged)
+                        {
+                            citizenApplication.Formdetails = formDetails.ToString(Formatting.None);
+                            dbcontext.Entry(citizenApplication).Property(c => c.Formdetails).IsModified = true;
+                        }
                     }
                     else if (action == "return")
                     {
@@ -608,18 +769,32 @@ namespace SahayataNidhi.Controllers.Officer
                     {
                         workFlowCorrigendum[currentPlayer]["status"] = "verified";
                         corrigendum.Status = "Verified";
+
+                        // ==========================================
+                        // APPLY CORRECTION CHANGES TO CITIZEN APPLICATION
+                        // ==========================================
+                        bool fieldsChanged = ApplyCorrigendumFieldsToFormDetails(
+                            formDetails, corrigendumFields, referenceNumber);
+
+                        if (fieldsChanged)
+                        {
+                            citizenApplication.Formdetails = formDetails.ToString(Formatting.None);
+                            dbcontext.Entry(citizenApplication).Property(c => c.Formdetails).IsModified = true;
+                        }
                     }
                     else if (action == "reject")
                     {
                         workFlowCorrigendum[currentPlayer]["status"] = "rejected";
                         corrigendum.Status = "Rejected";
                     }
+
                     workFlowCorrigendum[currentPlayer]["remarks"] = remarks;
                     workFlowCorrigendum[currentPlayer]["completedAt"] = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt");
                     corrigendum.Workflow = workFlowCorrigendum.ToString(Formatting.None);
                 }
 
-                var corrigendumHistory = JsonConvert.DeserializeObject<List<dynamic>>(corrigendum.History ?? "[]");
+                // Update History
+                var corrigendumHistory = JsonConvert.DeserializeObject<List<dynamic>>(corrigendum.History ?? "[]") ?? new List<dynamic>();
                 var newCorrigendumHistory = new
                 {
                     actionTaker = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetails),
@@ -627,113 +802,286 @@ namespace SahayataNidhi.Controllers.Officer
                     remarks = remarks,
                     actionTakenOn = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt"),
                 };
-                corrigendumHistory!.Add(newCorrigendumHistory);
+                corrigendumHistory.Add(newCorrigendumHistory);
                 corrigendum.History = JsonConvert.SerializeObject(corrigendumHistory);
 
-                var corrigendumFields = JObject.Parse(corrigendum.Corrigendumfields);
+                // Handle Files metadata in corrigendumFields
                 if (corrigendumFields["Files"] is not JObject filesObj)
                 {
                     filesObj = new JObject();
                     corrigendumFields["Files"] = filesObj;
                 }
 
+                // Special Case: Temporary Disability UDID Card Expiry
                 if (corrigendumFields["IfTemporaryDisabilityUdidCardValidUpto"] is JObject fieldObj)
                 {
                     var newValue = fieldObj["new_value"]?.ToString();
-
-                    if (!string.IsNullOrWhiteSpace(newValue))
+                    if (!string.IsNullOrWhiteSpace(newValue) && DateOnly.TryParse(newValue, out var parsedDate))
                     {
                         var expiring = dbcontext.ApplicationExpirations
                             .FirstOrDefault(ae => ae.Referencenumber == referenceNumber);
 
                         if (expiring != null)
                         {
-                            expiring.ExpirationDate = DateOnly.Parse(newValue);
-                            dbcontext.SaveChanges();
+                            expiring.ExpirationDate = parsedDate;
                         }
                         else
                         {
                             _logger.LogWarning($"No expiring eligibility found for reference {referenceNumber}.");
                         }
                     }
-                    else
-                    {
-                        _logger.LogWarning($"Field 'new_value' is null or empty for 'IfTemporaryDisabilityUdidCardValidUpto'.");
-                    }
                 }
 
-                var roleKey = officer.RoleShort!;
-                var newFiles = new JArray(Files.Select(Path.GetFileName));
+                var roleKey = officer.RoleShort ?? "Unknown";
+                var newFilesArray = new JArray(files.Select(Path.GetFileName));
+
                 if (filesObj[roleKey] is JArray existingFiles)
                 {
-                    foreach (var file in Files)
+                    foreach (var file in files)
                     {
                         existingFiles.Add(file);
                     }
                 }
                 else
                 {
-                    filesObj[roleKey] = newFiles;
+                    filesObj[roleKey] = newFilesArray;
                 }
-                try
-                {
-                    var getServices = dbcontext.Webservice.FirstOrDefault(ws => ws.Serviceid == CitizenApplications.Serviceid && ws.Isactive);
-                    Console.WriteLine("Retrieved web service configuration: " + (getServices != null ? JsonConvert.SerializeObject(getServices) : "null"));
-                    if (getServices != null)
-                    {
-                        var onAction = JsonConvert.DeserializeObject<List<string>>(getServices.Onaction);
-                        Console.WriteLine("Web service onAction: " + (onAction != null ? string.Join(", ", onAction) : "null"));
-                        Console.WriteLine("Current action: " + action);
-                        if (onAction != null && onAction.Contains("Corrigendum") && action == "sanction")
-                        {
-                            var fieldMappings = JObject.Parse(getServices.Fieldmappings);
-
-                            if (fieldMappings["Corrigendum"] is JObject sanctionMapping)
-                            {
-                                // Deserialize the endpoint (stored as a JSON string)
-                                string endpoint = JsonConvert.DeserializeObject<string>(getServices.Apiendpoint)
-                                                  ?? getServices.Apiendpoint?.Trim('"')!;
-
-                                // Prepare column values (workflow JSON)
-                                var columnWorkFlow = JArray.Parse(corrigendum.Workflow!);
-
-                                // Build payload using the mapper
-                                var payload = MapServiceFieldsFromForm(null, sanctionMapping, columnWorkFlow, corrigendum);
-
-                                // 🔹 Clean correctionFields if exists
-                                if (payload["correctionFields"] != null &&
-                                    !string.IsNullOrWhiteSpace(payload["correctionFields"]?.ToString()))
-                                {
-                                    payload["correctionFields"] =
-                                        CleanCorrectionFields(payload["correctionFields"]!.ToString());
-                                }
-
-                                // Send request
-                                await SendApiRequestAsync(endpoint, payload, getServices.Headers!);
-
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Error in external service call: " + ex.Message);
-                }
-
 
                 corrigendum.Corrigendumfields = corrigendumFields.ToString(Formatting.None);
                 corrigendum.Type = type;
 
                 dbcontext.Corrigendum.Update(corrigendum);
-                dbcontext.SaveChanges();
 
-                return Json(new { status = true });
+                // ==========================================
+                // 1. SAVE TO DATABASE FIRST (Data Integrity)
+                // ==========================================
+                await dbcontext.SaveChangesAsync();
+
+                // 2. Invalidate cache immediately after successful save
+                InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, citizenApplication.Serviceid);
+
+                // 3. Refresh denormalized UDID expiry (Layer 2)
+                // The BEFORE trigger on citizen_applications re-reads the formdetails JSON on every UPDATE.
+                try
+                {
+                    await dbcontext.Database.ExecuteSqlRawAsync(
+                        "UPDATE citizen_applications SET is_pcp = is_pcp WHERE referencenumber = {0}",
+                        referenceNumber);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to refresh udid_expiry_date for {ReferenceNumber}", referenceNumber);
+                }
+
+                if (action == "sanction")
+                {
+                    // ==========================================
+                    // 4. DISPATCH WEB SERVICE (Non-blocking / Timeout protected)
+                    // ==========================================
+
+                    // Check if the corrigendum contains fields from the UDID group
+                    bool isUdidGroupCorrigendum = corrigendumFields.ContainsKey("UdidCardNumber") ||
+                                                  corrigendumFields.ContainsKey("UdidCardIssueDate") ||
+                                                  corrigendumFields.ContainsKey("KindOfDisability") ||
+                                                  corrigendumFields.ContainsKey("IfTemporaryDisabilityUdidCardValidUpto");
+
+                    if (!isUdidGroupCorrigendum)
+                    {
+                        try
+                        {
+                            // Fire all web services configured with the CORRIGENDUM_SANCTIONED event.
+                            // The DB's onaction values are used verbatim.
+                            await DispatchWebServicesAsync(
+                                "CORRIGENDUM_SANCTIONED",
+                                null,
+                                JArray.Parse(corrigendum.Workflow!),
+                                corrigendum,
+                                citizenApplication.Serviceid,
+                                payload =>
+                                {
+                                    // 1. CorrigendumFields: string → nested object; strip Files / additional_values / supporting_document
+                                    var rawFields = payload["CorrigendumFields"];
+                                    if (!IsEmptyOrMissing(rawFields))
+                                    {
+                                        // Only transform if it's still a string — skip if already an object
+                                        if (rawFields!.Type == JTokenType.String)
+                                        {
+                                            var cleaned = CleanCorrectionFieldsObject(rawFields.ToString());
+                                            payload["CorrigendumFields"] = cleaned ?? new JObject();
+                                        }
+                                    }
+
+                                    // 2. SanctionedOn: reformat to YYYY-MM-DD (idempotent)
+                                    var sanctionedOn = payload["SanctionedOn"];
+                                    if (!IsEmptyOrMissing(sanctionedOn))
+                                    {
+                                        var s = sanctionedOn!.ToString();
+                                        if (Regex.IsMatch(s, @"^\d{4}-\d{2}-\d{2}$"))
+                                        {
+                                            // already YYYY-MM-DD — leave alone
+                                        }
+                                        else if (DateTime.TryParse(s, out var dt))
+                                        {
+                                            payload["SanctionedOn"] = dt.ToString("yyyy-MM-dd");
+                                        }
+                                    }
+
+                                    // 3. Region: always overwrite from the citizen application's Division
+                                    var regionCode = citizenApplication.Division;
+                                    payload["Region"] = regionCode == 1 ? "Jammu"
+                                                    : regionCode == 2 ? "Kashmir"
+                                                    : "Unknown";
+
+                                    return payload;
+                                });
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex,
+                                "Error in external service call for Corrigendum {CorrigendumId}: {Message}",
+                                corrigendumId, ex.Message);
+                            // Fail-open: external API failure should not roll back the successful DB transaction
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Skipping DispatchWebServicesAsync for UDID group corrigendum {CorrigendumId}", corrigendumId);
+                    }
+                }
+
+                return Json(new { status = true, message = "Action processed successfully." });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { status = false, response = ex.Message });
+                _logger.LogError(ex, "Unhandled exception in HandleCorrigendumAction");
+                return StatusCode(500, new { status = false, response = "An internal error occurred." });
             }
         }
+
+
+        private static bool ApplyCorrigendumFieldsToFormDetails(JObject formDetails, JObject corrigendumFields, string referenceNumber)
+        {
+            bool fieldsChanged = false;
+
+            foreach (var corrProp in corrigendumFields.Properties())
+            {
+                // Skip the Files metadata object
+                if (corrProp.Name == "Files") continue;
+
+                string fieldName = corrProp.Name;
+                string? newValue = corrProp.Value["new_value"]?.ToString();
+
+                if (string.IsNullOrEmpty(newValue)) continue;
+
+                bool found = false;
+
+                // 1. Search for the field in existing formDetails (including inside additionalFields)
+                foreach (var section in formDetails.Properties())
+                {
+                    if (section.Value is JArray sectionArray)
+                    {
+                        foreach (var item in sectionArray)
+                        {
+                            if (item is JObject fieldObj)
+                            {
+                                // Check top-level field
+                                if (fieldObj["name"]?.ToString() == fieldName)
+                                {
+                                    fieldObj["value"] = newValue;
+                                    found = true;
+                                    fieldsChanged = true;
+                                    break;
+                                }
+
+                                // Check inside additionalFields (Fixes IfTemporaryDisabilityUdidCardValidUpto)
+                                if (fieldObj["additionalFields"] is JArray additionalFields)
+                                {
+                                    foreach (var addField in additionalFields)
+                                    {
+                                        if (addField is JObject addFieldObj && addFieldObj["name"]?.ToString() == fieldName)
+                                        {
+                                            addFieldObj["value"] = newValue;
+                                            found = true;
+                                            fieldsChanged = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (found) break;
+                        }
+                    }
+                    if (found) break;
+                }
+
+                // 2. If the field was NOT found, it was missing from the original formDetails.
+                // We must add it to the correct nested location (PensionType -> additionalFields)
+                // instead of appending it as a top-level field in the section.
+                if (!found)
+                {
+                    var pensionSection = formDetails["Pension Type"] as JArray;
+                    if (pensionSection != null)
+                    {
+                        var pensionTypeField = pensionSection.FirstOrDefault(f => f["name"]?.ToString() == "PensionType") as JObject;
+
+                        if (pensionTypeField != null)
+                        {
+                            if (pensionTypeField["additionalFields"] == null)
+                            {
+                                pensionTypeField["additionalFields"] = new JArray();
+                            }
+
+                            var addFields = pensionTypeField["additionalFields"] as JArray;
+
+                            // Double-check it's not already there
+                            bool alreadyExists = false;
+                            foreach (var af in addFields!)
+                            {
+                                if (af["name"]?.ToString() == fieldName)
+                                {
+                                    af["value"] = newValue;
+                                    alreadyExists = true;
+                                    fieldsChanged = true;
+                                    break;
+                                }
+                            }
+
+                            // Inject missing fields (like UdidCardNumber) into the correct nested structure
+                            if (!alreadyExists)
+                            {
+                                var newAddField = new JObject
+                                {
+                                    ["name"] = fieldName,
+                                    ["label"] = corrProp.Value["label"]?.ToString() ?? fieldName,
+                                    ["value"] = newValue
+                                };
+                                addFields.Add(newAddField);
+                                fieldsChanged = true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: If "Pension Type" section doesn't exist for some reason, 
+                        // add to the first available section to prevent data loss.
+                        var firstSection = formDetails.Properties().FirstOrDefault()?.Value as JArray;
+                        if (firstSection != null)
+                        {
+                            firstSection.Add(new JObject
+                            {
+                                ["name"] = fieldName,
+                                ["label"] = corrProp.Value["label"]?.ToString() ?? fieldName,
+                                ["value"] = newValue
+                            });
+                            fieldsChanged = true;
+                        }
+                    }
+                }
+            }
+
+            return fieldsChanged;
+        }
+
 
         [HttpPost]
         public async Task<IActionResult> UpdateCorrigendumPdf([FromForm] IFormCollection form)
@@ -956,16 +1304,29 @@ namespace SahayataNidhi.Controllers.Officer
                 string withheldType = form["WithheldType"].ToString();
                 string withheldReason = form["WithheldReason"].ToString();
                 string action = form["Action"].ToString();
+
                 bool isWithheld = true;
+                if (form.ContainsKey("IsWithheld"))
+                {
+                    var rawIsWithheld = form["IsWithheld"].ToString();
+                    if (bool.TryParse(rawIsWithheld, out var parsed))
+                        isWithheld = parsed;
+                }
 
                 if (string.IsNullOrEmpty(withheldType) || string.IsNullOrEmpty(withheldReason) || string.IsNullOrEmpty(action))
                     return BadRequest(new { status = false, message = "All required fields must be filled." });
 
-                var existingApplication = dbcontext.WithheldApplications
-                    .FirstOrDefault(wa => wa.Referencenumber == referenceNumber && wa.Serviceid == serviceId);
+                var existingRecords = dbcontext.WithheldApplications
+                    .Where(wa => wa.Referencenumber == referenceNumber && wa.Serviceid == serviceId)
+                    .ToList();
 
-                if (existingApplication != null)
-                    return BadRequest(new { status = false, message = "Application already exists." });
+                var activeRecord = existingRecords.FirstOrDefault(IsWithheldRecordActive);
+                if (activeRecord != null)
+                    return BadRequest(new
+                    {
+                        status = false,
+                        message = "An active withheld record already exists for this application. Update it instead of creating a new one."
+                    });
 
                 var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
                 if (service == null)
@@ -1003,7 +1364,6 @@ namespace SahayataNidhi.Controllers.Officer
                 {
                     if (isLastPlayer)
                         return BadRequest(new { status = false, message = "Last player cannot forward, must approve." });
-
                     if (!canWithhold)
                         return BadRequest(new { status = false, message = "You don't have 'canWithhold' authority to forward." });
                 }
@@ -1025,9 +1385,7 @@ namespace SahayataNidhi.Controllers.Officer
                     {
                         var fileName = await helper.GetFilePath(file);
                         if (!string.IsNullOrEmpty(fileName) && fileName != "No file provided.")
-                        {
                             fileNames.Add(fileName);
-                        }
                     }
                 }
 
@@ -1043,65 +1401,71 @@ namespace SahayataNidhi.Controllers.Officer
 
                 string location = formDetailsJObject["Location"]?.ToString() ?? "";
 
-                var workflowStatus = new List<dynamic>();
-                for (int i = 0; i < workflow.Count; i++)
+                // ─────────────────────────────────────────────────────────────────
+                // Build withheld workflow (Aligned with SubmitDocumentChange logic)
+                // ─────────────────────────────────────────────────────────────────
+                var filteredWorkflow = new JArray();
+                foreach (var player in workflow)
                 {
-                    var status = "pending";
-                    var completedAt = (string)null!;
-                    var remarks = (string)null!;
-
-                    if (i == currentPlayerId)
+                    filteredWorkflow.Add(new JObject
                     {
-                        if (action == "approve")
-                        {
-                            status = "approved";
-                            completedAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
-                            remarks = withheldReason;
-                        }
-                        else if (action == "forward")
-                        {
-                            status = "forwarded";
-                            completedAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
-                            remarks = withheldReason;
-                        }
-                    }
-
-                    workflowStatus.Add(new
-                    {
-                        designation = workflow[i].designation,
-                        playerId = workflow[i].playerId,
-                        status = status,
-                        completedAt = completedAt,
-                        remarks = remarks
+                        ["designation"] = player["designation"],
+                        ["playerId"] = player["playerId"],
+                        ["status"] = player["status"]?.ToString() ?? "",
+                        ["completedAt"] = player["completedAt"]?.ToString() ?? "",
+                        ["remarks"] = player["remarks"]?.ToString() ?? "",
+                        ["canPull"] = player["canPull"]?.ToString() ?? "false"
                     });
                 }
 
-                var history = new List<dynamic>
+                int newCurrentPlayer = 0;
+
+                if (filteredWorkflow.Count > 0)
                 {
-                    new
+                    if (action == "approve")
                     {
-                        officer = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetailsJObject),
-                        status = action == "approve" ? "approved" : "forwarded",
-                        remarks = withheldReason,
-                        actionTakenOn = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt"),
-                        playerId = currentPlayerId
+                        // Update the CURRENT player
+                        filteredWorkflow[currentPlayerId]["status"] = "approved";
+                        filteredWorkflow[currentPlayerId]["remarks"] = withheldReason;
+                        filteredWorkflow[currentPlayerId]["completedAt"] = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
+                        newCurrentPlayer = currentPlayerId;
                     }
+                    else if (action == "forward")
+                    {
+                        // Update the CURRENT player
+                        filteredWorkflow[currentPlayerId]["status"] = "forwarded";
+                        filteredWorkflow[currentPlayerId]["canPull"] = "true";
+                        filteredWorkflow[currentPlayerId]["remarks"] = withheldReason;
+                        filteredWorkflow[currentPlayerId]["completedAt"] = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
+
+                        // Update the NEXT player
+                        if (currentPlayerId + 1 < filteredWorkflow.Count)
+                        {
+                            filteredWorkflow[currentPlayerId + 1]["status"] = "pending";
+                            newCurrentPlayer = currentPlayerId + 1;
+                        }
+                    }
+                }
+
+                var history = new
+                {
+                    officer = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetailsJObject),
+                    status = action == "approve" ? "approved" : "forwarded",
+                    remarks = withheldReason,
+                    actionTakenOn = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt"),
+                    playerId = currentPlayerId
                 };
 
-                int nextPlayerId = currentPlayerId;
-                if (action == "forward")
-                {
-                    nextPlayerId = currentPlayerId + 1;
-                }
+                List<dynamic> HistoryList = new List<dynamic> { history };
 
                 var newApplication = new WithheldApplications
                 {
                     Serviceid = serviceId,
                     Referencenumber = referenceNumber,
                     Location = location,
-                    Workflow = JsonConvert.SerializeObject(workflowStatus),
-                    Currentplayer = nextPlayerId,
-                    History = JsonConvert.SerializeObject(history),
+                    Workflow = JsonConvert.SerializeObject(filteredWorkflow),
+                    Currentplayer = newCurrentPlayer,
+                    History = JsonConvert.SerializeObject(HistoryList),
                     Iswithheld = isWithheld,
                     Withheldtype = withheldType,
                     Withheldreason = withheldReason,
@@ -1110,59 +1474,59 @@ namespace SahayataNidhi.Controllers.Officer
                     Files = fileNames.Count > 0 ? JsonConvert.SerializeObject(fileNames) : null,
                 };
 
+                _logger.LogWarning(
+                    "WITHHELD CREATE DEBUG — form has IsWithheld key: {HasKey}, raw value: '{Raw}', parsed isWithheld: {Final}, action: '{Action}'",
+                    form.ContainsKey("IsWithheld"),
+                    form.ContainsKey("IsWithheld") ? form["IsWithheld"].ToString() : "<missing>",
+                    isWithheld,
+                    action);
+
                 dbcontext.WithheldApplications.Add(newApplication);
                 await dbcontext.SaveChangesAsync();
 
-                // 🔹 Call external API only on final approval
+                InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, serviceId);
+
                 if (action == "approve")
                 {
-                    try
-                    {
-                        var webService = dbcontext.Webservice
-                            .FirstOrDefault(ws => ws.Serviceid == serviceId && ws.Isactive);
+                    var citizenDivision = citizenApp.Division;
 
-                        if (webService != null)
+                    await DispatchWebServicesAsync(
+                        "WITHHELD_APPROVED",
+                        null,
+                        JArray.Parse(newApplication.Workflow!),
+                        newApplication,
+                        serviceId,
+                        payload =>
                         {
-                            var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction ?? "[]");
+                            payload["Region"] = citizenDivision == 1 ? "Jammu"
+                                              : citizenDivision == 2 ? "Kashmir"
+                                              : "Unknown";
 
-                            if (onAction != null && onAction.Contains("Withheld"))
+                            var rawIsWithheld = payload["IsWithhel"];
+                            if (rawIsWithheld != null && rawIsWithheld.Type == JTokenType.Boolean)
+                                payload["IsWithhel"] = rawIsWithheld.Value<bool>() ? "YES" : "NO";
+
+                            payload["Remarks"] = withheldReason ?? "";
+
+                            var approvedOn = payload["ApprovedOn"];
+                            if (!IsEmptyOrMissing(approvedOn))
                             {
-                                var fieldMappings = JObject.Parse(webService.Fieldmappings ?? "{}");
-
-                                if (fieldMappings["Withheld"] is JObject withheldMapping)
+                                var s = approvedOn!.ToString();
+                                if (!System.Text.RegularExpressions.Regex.IsMatch(s, @"^\d{4}-\d{2}-\d{2}$"))
                                 {
-                                    // 🔹 Deserialize endpoint
-                                    string endpoint = JsonConvert.DeserializeObject<string>(webService.Apiendpoint)
-                                                      ?? webService.Apiendpoint?.Trim('"')!;
-
-                                    // 🔹 Workflow column JSON
-                                    var columnWorkFlow = JArray.Parse(existingApplication!.Workflow ?? newApplication.Workflow!);
-
-                                    // 🔹 Build payload
-                                    var payload = MapServiceFieldsFromForm(
-                                        null,
-                                        withheldMapping,
-                                        columnWorkFlow,
-                                        existingApplication ?? newApplication
-                                    );
-
-
-                                    // 🔹 Send API
-                                    await SendApiRequestAsync(
-                                        endpoint,
-                                        payload,
-                                        webService.Headers!
-                                    );
-
+                                    if (DateOnly.TryParse(s, out var d) && d != DateOnly.MinValue)
+                                        payload["ApprovedOn"] = d.ToString("yyyy-MM-dd");
+                                    else if (DateTime.TryParse(s, out var dt) && dt.Year > 1900)
+                                        payload["ApprovedOn"] = dt.ToString("yyyy-MM-dd");
                                 }
                             }
-                        }
-                    }
-                    catch (Exception apiEx)
-                    {
-                        Console.WriteLine("API ERROR: " + apiEx.Message);
-                        // Optional: Log but don't break main flow
-                    }
+                            else
+                            {
+                                payload["ApprovedOn"] = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                            }
+
+                            return payload;
+                        });
                 }
 
                 return Ok(new
@@ -1192,18 +1556,20 @@ namespace SahayataNidhi.Controllers.Officer
                 if (!int.TryParse(form["Serviceid"], out int serviceId) || serviceId <= 0)
                     return BadRequest(new { status = false, message = "Valid Serviceid is required." });
 
-                if (!bool.TryParse(form["Iswithheld"], out bool isWithheld))
-                    return BadRequest(new { status = false, message = "Invalid Iswithheld value." });
+                if (!bool.TryParse(form["IsWithheld"], out bool isWithheld))
+                    return BadRequest(new { status = false, message = "Invalid IsWithheld value." });
 
                 string withheldType = form["WithheldType"].ToString();
                 string withheldReason = form["WithheldReason"].ToString();
                 string action = form["Action"].ToString();
 
                 var application = dbcontext.WithheldApplications
-                    .FirstOrDefault(wa => wa.Referencenumber == referenceNumber && wa.Serviceid == serviceId);
+                    .Where(wa => wa.Referencenumber == referenceNumber && wa.Serviceid == serviceId)
+                    .ToList()
+                    .FirstOrDefault(IsWithheldRecordActive);
 
                 if (application == null)
-                    return NotFound(new { status = false, message = "Application not found." });
+                    return NotFound(new { status = false, message = "No active withheld application to update." });
 
                 var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
                 if (service == null)
@@ -1231,12 +1597,18 @@ namespace SahayataNidhi.Controllers.Officer
                 int currentPlayerId = (int)currentOfficer.playerId;
                 bool isLastPlayer = currentPlayerId == workflow.Count - 1;
 
+                // 👇 Compute next/previous player indices once, up front.
+                int nextPlayerId = currentPlayerId + 1;   // valid only for forward
+                int previousPlayerId = currentPlayerId - 1;   // valid only for return
+
                 bool canWithhold = (bool?)currentOfficer.canWithhold ?? false;
                 bool canDirectWithheld = (bool?)currentOfficer.canDirectWithheld ?? false;
 
+                // Who originally withheld (or approved) — used in release logic.
                 bool isWithholdingOfficer = false;
                 var historyList = JsonConvert.DeserializeObject<List<dynamic>>(application.History ?? "[]");
-                var withheldEntry = historyList?.LastOrDefault(h => h.status == "withheld" || h.status == "approved");
+                var withheldEntry = historyList?.LastOrDefault(h =>
+                    h.status == "withheld" || h.status == "approved");
                 if (withheldEntry != null && withheldEntry!.ContainsKey("playerId"))
                 {
                     int withheldPlayerId = (int)withheldEntry!.playerId;
@@ -1246,6 +1618,7 @@ namespace SahayataNidhi.Controllers.Officer
                 if (application.Currentplayer != currentPlayerId)
                     return BadRequest(new { status = false, message = "You are not the current player for this application." });
 
+                // ── Authority checks ──────────────────────────────────────────────
                 if (action == "approve")
                 {
                     if (!isWithheld)
@@ -1259,11 +1632,35 @@ namespace SahayataNidhi.Controllers.Officer
                             return BadRequest(new { status = false, message = "You don't have authority to approve withheld." });
                     }
                 }
+                else if (action == "forward")
+                {
+                    if (isLastPlayer)
+                        return BadRequest(new { status = false, message = "Last player cannot forward, must approve." });
 
+                    if (!canWithhold)
+                        return BadRequest(new { status = false, message = "You don't have 'canWithhold' authority to forward." });
+                }
+                else if (action == "return")
+                {
+                    if (currentPlayerId <= 0)
+                        return BadRequest(new { status = false, message = "Cannot return further — already at first player." });
+                }
+                else
+                {
+                    return BadRequest(new { status = false, message = "Invalid action." });
+                }
+
+                // ── Files: filter existing BEFORE appending new ones ──────────────
                 var existingFiles = new List<string>();
                 if (!string.IsNullOrEmpty(application.Files))
-                {
                     existingFiles = JsonConvert.DeserializeObject<List<string>>(application.Files) ?? new List<string>();
+
+                var existingFilesFromForm = form["ExistingFiles"];
+                if (!StringValues.IsNullOrEmpty(existingFilesFromForm))
+                {
+                    var filesToKeep = existingFilesFromForm.ToString()
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries);
+                    existingFiles = existingFiles.Where(f => filesToKeep.Contains(f)).ToList();
                 }
 
                 var newFiles = form.Files.GetFiles("Files");
@@ -1273,17 +1670,8 @@ namespace SahayataNidhi.Controllers.Officer
                     {
                         var fileName = await helper.GetFilePath(file);
                         if (!string.IsNullOrEmpty(fileName) && fileName != "No file provided.")
-                        {
                             existingFiles.Add(fileName);
-                        }
                     }
-                }
-
-                var existingFilesFromForm = form["ExistingFiles"];
-                if (!StringValues.IsNullOrEmpty(existingFilesFromForm))
-                {
-                    var filesToKeep = existingFilesFromForm.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries);
-                    existingFiles = existingFiles.Where(f => filesToKeep.Contains(f)).ToList();
                 }
 
                 JObject formDetailsJObject;
@@ -1296,35 +1684,86 @@ namespace SahayataNidhi.Controllers.Officer
                     return BadRequest(new { status = false, message = "Invalid form details." });
                 }
 
+                // ── Load existing workflow JSON (or seed a fresh one) ─────────────
                 List<dynamic> workflowStatus;
                 try
                 {
                     workflowStatus = JsonConvert.DeserializeObject<List<dynamic>>(application.Workflow ?? "[]")!;
+                    if (workflowStatus == null || workflowStatus.Count == 0)
+                        throw new JsonException("empty");
                 }
                 catch
                 {
                     workflowStatus = new List<dynamic>();
-
                     for (int i = 0; i < workflow.Count; i++)
                     {
                         workflowStatus.Add(new
                         {
                             designation = workflow[i].designation,
                             playerId = workflow[i].playerId,
-                            status = "pending",
+                            status = "",
                             completedAt = (string)null!,
                             remarks = (string)null!
                         });
                     }
+                    // seed current as pending
+                    if (workflowStatus.Count > currentPlayerId)
+                        workflowStatus[currentPlayerId].status = "pending";
                 }
 
+                // ─────────────────────────────────────────────────────────────────
+                // Apply the transition.
+                // Aligned with Corrigendum logic: forward, return, approve (instead of sanction/verified), reject.
+                // Invariant: after the transition, at most ONE player is "pending".
+                // ─────────────────────────────────────────────────────────────────
                 if (workflowStatus.Count > currentPlayerId)
                 {
-                    workflowStatus[currentPlayerId].status = action == "approve" ? "approved" : "forwarded";
-                    workflowStatus[currentPlayerId].completedAt = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
-                    workflowStatus[currentPlayerId].remarks = withheldReason;
+                    var acting = workflowStatus[currentPlayerId] as JObject;
+
+                    if (action == "forward")
+                    {
+                        acting!["status"] = "forwarded";
+                        acting["canPull"] = true;
+                        if (currentPlayerId + 1 < workflowStatus.Count)
+                        {
+                            var next = workflowStatus[currentPlayerId + 1] as JObject;
+                            next!["status"] = "pending";
+                            next["remarks"] = "";
+                            next["completedAt"] = "";
+                            application.Currentplayer = currentPlayerId + 1;
+                        }
+                    }
+                    else if (action == "approve")
+                    {
+                        acting!["status"] = "approved";
+                        application.Status = "Approved";
+                    }
+                    else if (action == "return")
+                    {
+                        acting!["status"] = "returned";
+                        acting["canPull"] = true;
+                        if (currentPlayerId > 0)
+                        {
+                            var prev = workflowStatus[currentPlayerId - 1] as JObject;
+                            prev!["status"] = "pending";
+                            prev["remarks"] = "";
+                            prev["completedAt"] = "";
+                            application.Currentplayer = currentPlayerId - 1;
+                        }
+                    }
+                    else if (action == "reject")
+                    {
+                        acting!["status"] = "rejected";
+                        application.Status = "Rejected";
+                    }
+
+                    // Common updates for the acting player, matching Corrigendum exactly
+                    acting!["remarks"] = withheldReason;
+                    acting["completedAt"] = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt");
+                    application.Workflow = JsonConvert.SerializeObject(workflowStatus);
                 }
 
+                // ── Append history ────────────────────────────────────────────────
                 List<dynamic> history;
                 try
                 {
@@ -1340,20 +1779,15 @@ namespace SahayataNidhi.Controllers.Officer
                 {
                     historyStatus = "forwarded";
                     if (!isWithheld && application.Iswithheld)
-                    {
                         withheldReason = $"Request to release: {withheldReason}";
-                    }
+                }
+                else if (action == "return")
+                {
+                    historyStatus = "returned";
                 }
                 else if (action == "approve")
                 {
-                    if (isWithheld)
-                    {
-                        historyStatus = "withheld";
-                    }
-                    else
-                    {
-                        historyStatus = "released";
-                    }
+                    historyStatus = isWithheld ? "withheld" : "released";
                 }
                 else
                 {
@@ -1365,89 +1799,65 @@ namespace SahayataNidhi.Controllers.Officer
                     officer = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetailsJObject),
                     status = historyStatus,
                     remarks = withheldReason,
-                    actionTakenOn = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt"),
+                    actionTakenOn = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt"), // Aligned date format
                     playerId = currentPlayerId
                 });
 
-                int nextPlayerId = currentPlayerId;
-                if (action == "forward")
-                {
-                    nextPlayerId = currentPlayerId + 1;
-                }
+                // ── Determine new current player on the app row ───────────────────
+                int newCurrentPlayer = currentPlayerId;
+                if (action == "forward") newCurrentPlayer = nextPlayerId;
+                else if (action == "return") newCurrentPlayer = previousPlayerId;
 
                 application.Withheldtype = withheldType;
                 application.Withheldreason = withheldReason;
                 application.Iswithheld = isWithheld;
-                application.Currentplayer = nextPlayerId;
+                application.Currentplayer = newCurrentPlayer;
                 application.History = JsonConvert.SerializeObject(history);
                 application.Workflow = JsonConvert.SerializeObject(workflowStatus);
                 application.Status = action == "approve" ? "Approved" : "Initiated";
                 application.Files = existingFiles.Count > 0 ? JsonConvert.SerializeObject(existingFiles) : null;
 
                 if (isWithheld && action == "approve")
-                {
                     application.Withheldon = DateOnly.FromDateTime(DateTime.Now);
-                }
                 else if (!isWithheld && action == "approve")
-                {
-                    application.Withheldon = DateOnly.MinValue;
-                }
+                    application.Withheldon = null;
 
                 await dbcontext.SaveChangesAsync();
 
+                InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, serviceId);
 
                 if (action == "approve")
                 {
-                    try
-                    {
-                        var webService = dbcontext.Webservice
-                            .FirstOrDefault(ws => ws.Serviceid == serviceId && ws.Isactive);
+                    var citizenDivision = citizenApp.Division;
+                    var finalWithheldReason = withheldReason;
+                    var finalIsWithheld = isWithheld;
+                    var finalWithheldOn = application.Withheldon;
 
-                        if (webService != null)
+                    await DispatchWebServicesAsync(
+                        "WITHHELD_APPROVED",
+                        null,
+                        JArray.Parse(application.Workflow!),
+                        application,
+                        serviceId,
+                        payload =>
                         {
-                            var onAction = JsonConvert.DeserializeObject<List<string>>(webService.Onaction ?? "[]");
+                            payload["Region"] = citizenDivision == 1 ? "Jammu"
+                                              : citizenDivision == 2 ? "Kashmir"
+                                              : "Unknown";
 
-                            if (onAction != null && onAction.Contains("Withheld"))
-                            {
-                                var fieldMappings = JObject.Parse(webService.Fieldmappings ?? "{}");
+                            payload["IsWithhel"] = finalIsWithheld ? "YES" : "NO";
+                            payload["Remarks"] = finalWithheldReason ?? "";
 
-                                if (fieldMappings["Withheld"] is JObject withheldMapping)
-                                {
-                                    // 🔹 Deserialize endpoint
-                                    string endpoint = JsonConvert.DeserializeObject<string>(webService.Apiendpoint)
-                                                      ?? webService.Apiendpoint?.Trim('"')!;
+                            if (finalWithheldOn.HasValue && finalWithheldOn.Value != DateOnly.MinValue)
+                                payload["ApprovedOn"] = finalWithheldOn.Value.ToString("yyyy-MM-dd");
+                            else if (finalIsWithheld)
+                                payload["ApprovedOn"] = DateTime.UtcNow.ToString("yyyy-MM-dd");
+                            else
+                                payload.Remove("ApprovedOn");
 
-                                    // 🔹 Workflow column JSON
-                                    var columnWorkFlow = JArray.Parse(application!.Workflow);
-
-                                    // 🔹 Build payload
-                                    var payload = MapServiceFieldsFromForm(
-                                        null,
-                                        withheldMapping,
-                                        columnWorkFlow,
-                                        application
-                                    );
-
-
-                                    // 🔹 Send API
-                                    await SendApiRequestAsync(
-                                        endpoint,
-                                        payload,
-                                        webService.Headers!
-                                    );
-
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception apiEx)
-                    {
-                        Console.WriteLine("API ERROR: " + apiEx.Message);
-                        // Optional: Log but don't break main flow
-                    }
+                            return payload;
+                        });
                 }
-
-
 
                 return Ok(new
                 {
@@ -1461,8 +1871,8 @@ namespace SahayataNidhi.Controllers.Officer
                 return StatusCode(500, new { status = false, message = "Failed to update application: " + ex.Message });
             }
         }
-
-
+    
+    
         [HttpPost]
         public async Task<IActionResult> UpdateAadhaarToken([FromForm] IFormCollection form)
         {

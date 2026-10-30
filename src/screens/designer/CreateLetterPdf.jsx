@@ -1,4 +1,5 @@
-  import React, {
+import GovPageHeader from "../../components/gov/GovPageHeader";
+import React, {
     useState,
     useEffect,
     useMemo,
@@ -634,12 +635,7 @@
         >
           <Row>
             <Col md={6}>
-              <Typography
-                variant="h4"
-                sx={{ color: "grey.800", mb: 4, fontWeight: "bold" }}
-              >
-                Configure Letter
-              </Typography>
+              <GovPageHeader title="Configure Letter" hindiTitle="पत्र कॉन्फ़िगर करें" />
 
               <Box sx={{ mb: 4 }}>
                 <FormControl fullWidth sx={{ mb: 2 }}>

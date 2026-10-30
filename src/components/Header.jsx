@@ -174,7 +174,9 @@ const Header = () => {
                 <MenuItem onClick={increaseFont}>A+</MenuItem>
               </Select>
 
-              <GoogleTranslateWidget />
+              <Box translate="no" className="notranslate">
+                <GoogleTranslateWidget />
+              </Box>
             </Box>
           </Box>
         </Container>
@@ -231,7 +233,7 @@ const Header = () => {
                 >
                   <Box
                     component="img"
-                    src={`${API_BASE}/assets/images/emblem.png`}
+                    src={`/assets/images/emblem.png`}
                     alt="Gov Emblem"
                     sx={{
                       width: "70%", // scale inside shaded box
@@ -304,7 +306,7 @@ const Header = () => {
               >
                 <Box
                   component="img"
-                  src={`${API_BASE}/assets/images/swach-bharat.png`}
+                  src={`/assets/images/swach-bharat.png`}
                   alt="Swachh Bharat"
                   sx={{
                     height: { xs: "50px", sm: "60px", md: "100px" }, // responsive heights

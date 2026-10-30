@@ -35,9 +35,11 @@ public partial class SwdjkContext : DbContext
 
     public virtual DbSet<CitizenApplications> CitizenApplications { get; set; }
 
-    public virtual DbSet<CitizenApplicationsLegacy> CitizenApplicationsLegacy { get; set; }
+    public virtual DbSet<CitiznenApplicationsLegacy> CitiznenApplicationsLegacy { get; set; }
 
     public virtual DbSet<Corrigendum> Corrigendum { get; set; }
+
+    public virtual DbSet<DashboardStatistics> DashboardStatistics { get; set; }
 
     public virtual DbSet<Departments> Departments { get; set; }
 
@@ -75,6 +77,8 @@ public partial class SwdjkContext : DbContext
 
     public virtual DbSet<Services> Services { get; set; }
 
+    public virtual DbSet<Smssettings> Smssettings { get; set; }
+
     public virtual DbSet<StatusCountsSnapshot> StatusCountsSnapshot { get; set; }
 
     public virtual DbSet<Tehsil> Tehsil { get; set; }
@@ -92,6 +96,8 @@ public partial class SwdjkContext : DbContext
     public virtual DbSet<Wards> Wards { get; set; }
 
     public virtual DbSet<Webservice> Webservice { get; set; }
+
+    public virtual DbSet<WebserviceLogs> WebserviceLogs { get; set; }
 
     public virtual DbSet<WithheldApplications> WithheldApplications { get; set; }
 
@@ -371,6 +377,8 @@ public partial class SwdjkContext : DbContext
 
             entity.HasIndex(e => new { e.Referencenumber, e.Status, e.LatestWfStatus, e.LatestWfDesignation }, "idx_active_applications").HasFilter("(status <> ALL (ARRAY['Sanctioned'::text, 'Rejected'::text, 'Initiated'::text]))");
 
+            entity.HasIndex(e => e.ApplId, "idx_ca_appl_id");
+
             entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.Status }, "idx_ca_service_datatype_status").HasFilter("(formdetails_flat IS NOT NULL)");
 
             entity.HasIndex(e => new { e.Serviceid, e.LatestWfStatus }, "idx_ca_service_status").HasFilter("(workflow IS NOT NULL)");
@@ -380,6 +388,8 @@ public partial class SwdjkContext : DbContext
             entity.HasIndex(e => new { e.Serviceid, e.LatestWfStatus, e.LatestWfDesignation }, "idx_ca_service_status_desig").HasFilter("(workflow IS NOT NULL)");
 
             entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.LatestWfStatus }, "idx_ca_serviceid_workflow_notnull").HasFilter("(workflow IS NOT NULL)");
+
+            entity.HasIndex(e => e.WorkflowMap, "idx_citizen_app_workflow_map").HasMethod("gin");
 
             entity.HasIndex(e => e.CitizenId, "idx_citizen_id");
 
@@ -429,7 +439,7 @@ public partial class SwdjkContext : DbContext
                 .HasColumnType("jsonb")
                 .HasColumnName("formdetails_flat");
             entity.Property(e => e.LatestWfCompletedAt)
-                .HasMaxLength(20)
+                .HasMaxLength(50)
                 .HasColumnName("latest_wf_completed_at");
             entity.Property(e => e.LatestWfDesignation)
                 .HasMaxLength(100)
@@ -445,48 +455,18 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Workflow)
                 .HasColumnType("jsonb")
                 .HasColumnName("workflow");
+            entity.Property(e => e.WorkflowMap)
+                .HasColumnType("jsonb")
+                .HasColumnName("workflow_map");
         });
 
-        modelBuilder.Entity<CitizenApplicationsLegacy>(entity =>
+        modelBuilder.Entity<CitiznenApplicationsLegacy>(entity =>
         {
-            entity.HasKey(e => e.Referencenumber).HasName("citizen_applications_legacy_pkey");
+            entity.HasKey(e => e.Referencenumber).HasName("citiznen_applications_legacy_pkey");
 
-            entity.ToTable("citizen_applications_legacy");
+            entity.ToTable("citiznen_applications_legacy");
 
-            entity.HasIndex(e => new { e.Serviceid, e.Datatype }, "idx_citizen_applications_legacy_active")
-                .HasFilter("(status <> 'Incomplete'::text)")
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
-
-            entity.HasIndex(e => e.ApplId, "idx_citizen_applications_legacy_appl_id")
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
-
-            entity.HasIndex(e => e.CreatedAt, "idx_citizen_applications_legacy_created_at")
-                .IsDescending()
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
-
-            entity.HasIndex(e => new { e.Serviceid, e.Datatype, e.Status }, "idx_citizen_applications_legacy_service_datatype")
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
-
-            entity.HasIndex(e => new { e.Serviceid, e.Status }, "idx_citizen_applications_legacy_service_status")
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
-
-            entity.HasIndex(e => e.Status, "idx_citizen_applications_legacy_status")
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
-
-            entity.HasIndex(e => e.Workflow, "idx_citizen_applications_legacy_workflow_gin")
-                .HasMethod("gin")
-                .HasAnnotation("Npgsql:StorageParameter:fastupdate", "true")
-                .HasAnnotation("Npgsql:StorageParameter:gin_pending_list_limit", "4194304");
-
-            entity.HasIndex(e => e.Serviceid, "ix_citizen_applications_legacy_serviceid")
-                .HasAnnotation("Npgsql:StorageParameter:deduplicate_items", "true")
-                .HasAnnotation("Npgsql:StorageParameter:fillfactor", "100");
+            entity.HasIndex(e => e.WorkflowMap, "idx_citiznen_app_workflow_map").HasMethod("gin");
 
             entity.Property(e => e.Referencenumber)
                 .HasMaxLength(50)
@@ -506,9 +486,22 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Districtuidforbank)
                 .HasMaxLength(6)
                 .HasColumnName("districtuidforbank");
+            entity.Property(e => e.Division).HasColumnName("division");
             entity.Property(e => e.Formdetails)
                 .HasColumnType("jsonb")
                 .HasColumnName("formdetails");
+            entity.Property(e => e.FormdetailsFlat)
+                .HasColumnType("jsonb")
+                .HasColumnName("formdetails_flat");
+            entity.Property(e => e.LatestWfCompletedAt)
+                .HasMaxLength(50)
+                .HasColumnName("latest_wf_completed_at");
+            entity.Property(e => e.LatestWfDesignation)
+                .HasMaxLength(100)
+                .HasColumnName("latest_wf_designation");
+            entity.Property(e => e.LatestWfStatus)
+                .HasMaxLength(50)
+                .HasColumnName("latest_wf_status");
             entity.Property(e => e.Referencenumberalphanumeric)
                 .HasMaxLength(50)
                 .HasColumnName("referencenumberalphanumeric");
@@ -517,6 +510,9 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Workflow)
                 .HasColumnType("jsonb")
                 .HasColumnName("workflow");
+            entity.Property(e => e.WorkflowMap)
+                .HasColumnType("jsonb")
+                .HasColumnName("workflow_map");
         });
 
         modelBuilder.Entity<Corrigendum>(entity =>
@@ -602,6 +598,56 @@ public partial class SwdjkContext : DbContext
                 .HasForeignKey(d => d.Referencenumber)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_corrigendum_citizen_applications");
+        });
+
+        modelBuilder.Entity<DashboardStatistics>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("dashboard_statistics_pkey");
+
+            entity.ToTable("dashboard_statistics");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Location }, "uq_dashboard_statistics_service_location").IsUnique();
+
+            entity.Property(e => e.Id)
+                .UseIdentityAlwaysColumn()
+                .HasColumnName("id");
+            entity.Property(e => e.CorrectionCounts)
+                .HasDefaultValueSql("'{\"total\": 0, \"pending\": 0, \"rejected\": 0, \"returned\": 0, \"verified\": 0, \"forwarded\": 0, \"forwardedverified\": 0}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("correction_counts");
+            entity.Property(e => e.CorrigendumCounts)
+                .HasDefaultValueSql("'{\"total\": 0, \"pending\": 0, \"rejected\": 0, \"returned\": 0, \"forwarded\": 0, \"sanctioned\": 0, \"forwardedsanctioned\": 0}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("corrigendum_counts");
+            entity.Property(e => e.LegacyCounts)
+                .HasDefaultValueSql("'{\"total\": 0, \"pending\": 0, \"rejected\": 0, \"returned\": 0, \"forwarded\": 0, \"sanctioned\": 0, \"returnedtoedit\": 0, \"forwardedsanctioned\": 0}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("legacy_counts");
+            entity.Property(e => e.Location)
+                .HasDefaultValueSql("'{}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("location");
+            entity.Property(e => e.MainCounts)
+                .HasDefaultValueSql("'{\"total\": 0, \"pending\": 0, \"rejected\": 0, \"returned\": 0, \"forwarded\": 0, \"sanctioned\": 0, \"returnedtoedit\": 0, \"forwardedsanctioned\": 0}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("main_counts");
+            entity.Property(e => e.ServiceSpecificCounts)
+                .HasDefaultValueSql("'{}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("service_specific_counts");
+            entity.Property(e => e.Serviceid).HasColumnName("serviceid");
+            entity.Property(e => e.ShiftedCounts)
+                .HasDefaultValue(0L)
+                .HasColumnName("shifted_counts");
+            entity.Property(e => e.WithheldCounts)
+                .HasDefaultValueSql("'{\"total\": 0, \"pending\": 0, \"approved\": 0, \"rejected\": 0, \"returned\": 0, \"forwarded\": 0, \"forwardedapproved\": 0}'::jsonb")
+                .HasColumnType("jsonb")
+                .HasColumnName("withheld_counts");
+
+            entity.HasOne(d => d.Service).WithMany(p => p.DashboardStatistics)
+                .HasForeignKey(d => d.Serviceid)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_dashboard_statistics_services");
         });
 
         modelBuilder.Entity<Departments>(entity =>
@@ -1011,6 +1057,8 @@ public partial class SwdjkContext : DbContext
 
             entity.ToTable("reports");
 
+            entity.HasIndex(e => e.ServiceId, "idx_reports_service_id");
+
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Columns)
                 .HasColumnType("jsonb")
@@ -1029,6 +1077,7 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Name)
                 .HasMaxLength(200)
                 .HasColumnName("name");
+            entity.Property(e => e.ServiceId).HasColumnName("service_id");
             entity.Property(e => e.Tablename)
                 .HasMaxLength(200)
                 .HasColumnName("tablename");
@@ -1095,6 +1144,9 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Nameshort)
                 .HasMaxLength(50)
                 .HasColumnName("nameshort");
+            entity.Property(e => e.Notificationconfig)
+                .HasColumnType("jsonb")
+                .HasColumnName("notificationconfig");
             entity.Property(e => e.Officereditablefield)
                 .HasColumnType("jsonb")
                 .HasColumnName("officereditablefield");
@@ -1108,6 +1160,31 @@ public partial class SwdjkContext : DbContext
                 .HasDefaultValueSql("'{\"isLimited\": false, \"limitType\": \"\", \"limitCount\": 0}'::jsonb")
                 .HasColumnType("jsonb")
                 .HasColumnName("submissionlimitconfig");
+        });
+
+        modelBuilder.Entity<Smssettings>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("smssettings_pkey");
+
+            entity.ToTable("smssettings");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Apikey).HasColumnName("apikey");
+            entity.Property(e => e.Apiurl).HasColumnName("apiurl");
+            entity.Property(e => e.Bodytemplate).HasColumnName("bodytemplate");
+            entity.Property(e => e.Enabled)
+                .HasDefaultValue(false)
+                .HasColumnName("enabled");
+            entity.Property(e => e.Httpmethod)
+                .HasDefaultValueSql("'POST'::text")
+                .HasColumnName("httpmethod");
+            entity.Property(e => e.Keylocation)
+                .HasDefaultValueSql("'header'::text")
+                .HasColumnName("keylocation");
+            entity.Property(e => e.Keyname).HasColumnName("keyname");
+            entity.Property(e => e.Providername).HasColumnName("providername");
+            entity.Property(e => e.Senderid).HasColumnName("senderid");
+            entity.Property(e => e.Successindicator).HasColumnName("successindicator");
         });
 
         modelBuilder.Entity<StatusCountsSnapshot>(entity =>
@@ -1309,6 +1386,12 @@ public partial class SwdjkContext : DbContext
 
             entity.ToTable("users");
 
+            entity.HasIndex(e => e.Email, "idx_users_email").IsUnique();
+
+            entity.HasIndex(e => new { e.Usertype, e.Isemailvalid }, "idx_users_type_valid").HasFilter("((usertype)::text = 'Citizen'::text)");
+
+            entity.HasIndex(e => e.Username, "idx_users_username").IsUnique();
+
             entity.Property(e => e.Userid).HasColumnName("userid");
             entity.Property(e => e.Additionaldetails)
                 .HasColumnType("jsonb")
@@ -1397,9 +1480,7 @@ public partial class SwdjkContext : DbContext
             entity.ToTable("webservice");
 
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.Apiendpoint)
-                .HasColumnType("jsonb")
-                .HasColumnName("apiendpoint");
+            entity.Property(e => e.Apiendpoint).HasColumnName("apiendpoint");
             entity.Property(e => e.Createdat)
                 .HasMaxLength(100)
                 .HasColumnName("createdat");
@@ -1413,9 +1494,18 @@ public partial class SwdjkContext : DbContext
             entity.Property(e => e.Isactive)
                 .HasDefaultValue(false)
                 .HasColumnName("isactive");
+            entity.Property(e => e.Maxattempts)
+                .HasDefaultValue(3)
+                .HasColumnName("maxattempts");
             entity.Property(e => e.Onaction)
                 .HasColumnType("jsonb")
                 .HasColumnName("onaction");
+            entity.Property(e => e.Retrydelayseconds)
+                .HasDefaultValue(5)
+                .HasColumnName("retrydelayseconds");
+            entity.Property(e => e.Retryenabled)
+                .HasDefaultValue(true)
+                .HasColumnName("retryenabled");
             entity.Property(e => e.Serviceid).HasColumnName("serviceid");
             entity.Property(e => e.Updatedat)
                 .HasMaxLength(100)
@@ -1428,6 +1518,51 @@ public partial class SwdjkContext : DbContext
                 .HasForeignKey(d => d.Serviceid)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_webservice_services");
+        });
+
+        modelBuilder.Entity<WebserviceLogs>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("webservice_logs_pkey");
+
+            entity.ToTable("webservice_logs");
+
+            entity.HasIndex(e => e.Executionid, "ix_webservice_logs_executionid");
+
+            entity.HasIndex(e => new { e.Serviceid, e.Triggername }, "ix_webservice_logs_serviceid_trigger");
+
+            entity.HasIndex(e => new { e.Webserviceid, e.Createdat }, "ix_webservice_logs_webserviceid_createdat").IsDescending(false, true);
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Attemptnumber).HasColumnName("attemptnumber");
+            entity.Property(e => e.Createdat)
+                .HasDefaultValueSql("now()")
+                .HasColumnName("createdat");
+            entity.Property(e => e.Durationms).HasColumnName("durationms");
+            entity.Property(e => e.Errormessage).HasColumnName("errormessage");
+            entity.Property(e => e.Executionid).HasColumnName("executionid");
+            entity.Property(e => e.Issuccess).HasColumnName("issuccess");
+            entity.Property(e => e.Referencenumber)
+                .HasMaxLength(100)
+                .HasColumnName("referencenumber");
+            entity.Property(e => e.Requestbody).HasColumnName("requestbody");
+            entity.Property(e => e.Requestheaders).HasColumnName("requestheaders");
+            entity.Property(e => e.Requestmethod)
+                .HasMaxLength(10)
+                .HasDefaultValueSql("'POST'::character varying")
+                .HasColumnName("requestmethod");
+            entity.Property(e => e.Requesturl).HasColumnName("requesturl");
+            entity.Property(e => e.Responsebody).HasColumnName("responsebody");
+            entity.Property(e => e.Responseheaders).HasColumnName("responseheaders");
+            entity.Property(e => e.Responsestatuscode).HasColumnName("responsestatuscode");
+            entity.Property(e => e.Serviceid).HasColumnName("serviceid");
+            entity.Property(e => e.Triggername)
+                .HasMaxLength(100)
+                .HasColumnName("triggername");
+            entity.Property(e => e.Webserviceid).HasColumnName("webserviceid");
+
+            entity.HasOne(d => d.Webservice).WithMany(p => p.WebserviceLogs)
+                .HasForeignKey(d => d.Webserviceid)
+                .HasConstraintName("fk_webservice_logs_webservice");
         });
 
         modelBuilder.Entity<WithheldApplications>(entity =>
@@ -1477,7 +1612,7 @@ public partial class SwdjkContext : DbContext
                 .HasDefaultValue(false)
                 .HasColumnName("iswithheld");
             entity.Property(e => e.LatestWfCompletedAt)
-                .HasMaxLength(20)
+                .HasMaxLength(50)
                 .HasColumnName("latest_wf_completed_at");
             entity.Property(e => e.LatestWfDesignation)
                 .HasMaxLength(100)

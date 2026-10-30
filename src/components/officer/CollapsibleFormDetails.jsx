@@ -33,6 +33,41 @@ const buttonStyles = {
   },
 };
 
+const calculateAge = (dateOfBirth) => {
+  if (!dateOfBirth) return "--";
+
+  const str = String(dateOfBirth).trim();
+  let dob;
+
+  // Handle YYYY-MM-DD / ISO format
+  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(str)) {
+    dob = new Date(str);
+  } else {
+    // Handle DD/MM/YYYY or DD-MM-YYYY
+    const parts = str.split(/[/.-]/).map(Number);
+
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      dob = new Date(year, month - 1, day);
+    } else {
+      dob = new Date(str);
+    }
+  }
+
+  if (Number.isNaN(dob.getTime())) return "--";
+
+  const today = new Date();
+
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age--;
+  }
+
+  return age >= 0 ? `${age} years` : "--";
+};
+
 // Recursive function to flatten fields and nested additionalFields
 const flattenFields = (fields) => {
   return fields.reduce((acc, field) => {
@@ -46,6 +81,28 @@ const flattenFields = (fields) => {
     }
     return acc;
   }, []);
+};
+
+// ✅ Priority for ordering: entries with a real `File` path come first,
+//    entries with only `FileId` come last, everything else stays in between
+//    and preserves its original relative order (Array.sort is stable in ES2019+).
+const getFilePriority = (field) => {
+  const hasFile =
+    field &&
+    field.File !== undefined &&
+    field.File !== null &&
+    field.File !== "";
+  if (hasFile) return 0;
+
+  const hasFileId =
+    field && field.FileId !== undefined && field.FileId !== null;
+  if (hasFileId) return 2;
+
+  return 1;
+};
+
+const sortFieldsByFilePriority = (fields) => {
+  return [...fields].sort((a, b) => getFilePriority(a) - getFilePriority(b));
 };
 
 // Mask private field value based on field name
@@ -180,15 +237,31 @@ export const CollapsibleFormDetails = ({
                 <Row className="g-3">
                   {Object.entries(section).map(([sectionName, fields]) => {
                     const allFields = flattenFields(fields);
+                    // ✅ Reorder: entries with a real File come first,
+                    //    entries with only FileId come last.
+                    const orderedFields = sortFieldsByFilePriority(allFields);
 
-                    return allFields.map(
-                      (field, fieldIndex) =>
-                        field.name !== "SameAsPresent" && (
-                          <Col
-                            xs={12}
-                            md={6}
-                            key={`${sectionName}-${field.name}-${fieldIndex}`}
-                          >
+                    return orderedFields.map((field, fieldIndex) => {
+                      if (field.name === "SameAsPresent") return null;
+
+                      const isDateOfBirth =
+                        field.name?.toLowerCase() === "dateofbirth";
+
+                      // Detect the three shapes a document entry can take
+                      const hasFilePath =
+                        field.File &&
+                        field.File !== "" &&
+                        typeof field.File === "string";
+                      const hasFileIdOnly =
+                        !hasFilePath &&
+                        field.FileId !== undefined &&
+                        field.FileId !== null;
+
+                      return (
+                        <React.Fragment
+                          key={`${sectionName}-${field.name}-${fieldIndex}`}
+                        >
+                          <Col xs={12} md={6}>
                             <Box
                               sx={{ display: "flex", flexDirection: "column" }}
                             >
@@ -203,7 +276,7 @@ export const CollapsibleFormDetails = ({
                                 {field.label || field.name}
                               </Typography>
 
-                              {field.File && field.File !== "" ? (
+                              {hasFilePath ? (
                                 /\.(jpg|jpeg|png|gif)$/i.test(field.File) ? (
                                   <Box
                                     component="img"
@@ -238,16 +311,54 @@ export const CollapsibleFormDetails = ({
                                     >
                                       View Document
                                     </Button>
+
                                     {field.Enclosure && (
                                       <Typography
                                         variant="caption"
-                                        sx={{ mt: 1, color: "#757575" }}
+                                        sx={{
+                                          mt: 1,
+                                          color: "#757575",
+                                          display: "block",
+                                        }}
                                       >
                                         Enclosure: {field.Enclosure}
                                       </Typography>
                                     )}
                                   </Box>
                                 )
+                              ) : hasFileIdOnly ? (
+                                // ✅ Legacy reference (FileId / EnclosureId only).
+                                //    No path is available on this response — show
+                                //    a compact placeholder so the row is honest.
+                                <Box sx={{ mt: 1 }}>
+                                  <Typography
+                                    variant="body2"
+                                    sx={{
+                                      border: "1px dashed #B0BEC5",
+                                      borderRadius: "8px",
+                                      p: 2,
+                                      color: "#757575",
+                                      fontStyle: "italic",
+                                    }}
+                                  >
+                                    Document reference available (ID:{" "}
+                                    {field.FileId}). Open the full record to
+                                    view the file.
+                                  </Typography>
+
+                                  {field.EnclosureId && (
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        mt: 1,
+                                        color: "#757575",
+                                        display: "block",
+                                      }}
+                                    >
+                                      Enclosure ID: {field.EnclosureId}
+                                    </Typography>
+                                  )}
+                                </Box>
                               ) : privateFields.includes(field.name) ? (
                                 <Box
                                   sx={{
@@ -269,9 +380,10 @@ export const CollapsibleFormDetails = ({
                                     }}
                                   >
                                     {fieldVisibility[field.name]
-                                      ? field.value ?? "--"
+                                      ? (field.value ?? "--")
                                       : maskValue(field.value, field.name)}
                                   </Typography>
+
                                   <IconButton
                                     onClick={() =>
                                       toggleFieldVisibility(field.name)
@@ -304,13 +416,48 @@ export const CollapsibleFormDetails = ({
                                     ? field.value && field.value.length > 0
                                       ? "Verified"
                                       : "Not Verified"
-                                    : field.value ?? "--"}
+                                    : (field.value ?? "--")}
                                 </Typography>
                               )}
                             </Box>
                           </Col>
-                        ),
-                    );
+
+                          {isDateOfBirth && (
+                            <Col xs={12} md={6}>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                }}
+                              >
+                                <Typography
+                                  variant="subtitle2"
+                                  sx={{
+                                    fontWeight: 500,
+                                    color: "#616161",
+                                    mb: 1,
+                                  }}
+                                >
+                                  Age
+                                </Typography>
+
+                                <Typography
+                                  variant="body1"
+                                  sx={{
+                                    border: "1px solid #E0E0E0",
+                                    borderRadius: "8px",
+                                    p: 2,
+                                    color: field.value ? "#212121" : "#B0BEC5",
+                                  }}
+                                >
+                                  {calculateAge(field.value)}
+                                </Typography>
+                              </Box>
+                            </Col>
+                          )}
+                        </React.Fragment>
+                      );
+                    });
                   })}
                 </Row>
                 {index < sections.length - 1 && (
