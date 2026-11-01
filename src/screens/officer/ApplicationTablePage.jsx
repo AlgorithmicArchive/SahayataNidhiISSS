@@ -220,6 +220,11 @@ export default function ApplicationTablePage() {
         setPullRow(row.original);
         setPullConfirmOpen(true);
       },
+      // ✅ ADD THIS NEW HANDLER FOR WITHHELD APPLICATIONS
+      pullWithheldApplication: async (row) => {
+        setPullRow(row.original);
+        setPullConfirmOpen(true);
+      },
       handleViewCorrigendumApplication: (row) =>
         navigate("/officer/viewcorrigendumdetails", {
           state: {
@@ -745,9 +750,11 @@ export default function ApplicationTablePage() {
   }, [pendingRejectRows, processAllIds]);
 
   // ── Pull flow ───────────────────────────────────────────────────────
+  // ── Pull flow ───────────────────────────────────────────────────────
   const handlePullApplication = async () => {
     try {
       let response;
+
       if (
         applicationType === "Corrigendum" ||
         applicationType === "Correction" ||
@@ -759,6 +766,19 @@ export default function ApplicationTablePage() {
               params: { corrigendumId: pullRow.applicationId },
             }),
           "Pulling corrigendum…",
+        );
+      }
+      // ✅ ADD THIS BLOCK TO HANDLE WITHHELD APPLICATIONS
+      else if (
+        url.includes("WithheldApplications") ||
+        tableTitle?.toLowerCase().includes("withheld")
+      ) {
+        response = await withLoader(
+          () =>
+            axiosInstance.get("/Officer/PullWithheldApplication", {
+              params: { withheldId: pullRow.withheldId },
+            }),
+          "Pulling withheld application…",
         );
       } else {
         response = await withLoader(

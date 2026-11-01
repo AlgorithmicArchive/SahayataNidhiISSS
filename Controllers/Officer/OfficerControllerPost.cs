@@ -1414,7 +1414,7 @@ namespace SahayataNidhi.Controllers.Officer
                         ["status"] = player["status"]?.ToString() ?? "",
                         ["completedAt"] = player["completedAt"]?.ToString() ?? "",
                         ["remarks"] = player["remarks"]?.ToString() ?? "",
-                        ["canPull"] = player["canPull"]?.ToString() ?? "false"
+                        ["canPull"] = false // ✅ Explicitly initialize as false
                     });
                 }
 
@@ -1434,7 +1434,7 @@ namespace SahayataNidhi.Controllers.Officer
                     {
                         // Update the CURRENT player
                         filteredWorkflow[currentPlayerId]["status"] = "forwarded";
-                        filteredWorkflow[currentPlayerId]["canPull"] = "true";
+                        filteredWorkflow[currentPlayerId]["canPull"] = true; // ✅ Set to true when forwarding
                         filteredWorkflow[currentPlayerId]["remarks"] = withheldReason;
                         filteredWorkflow[currentPlayerId]["completedAt"] = DateTime.Now.ToString("dd MMM yyyy hh:mm:ss tt");
 
@@ -1597,14 +1597,12 @@ namespace SahayataNidhi.Controllers.Officer
                 int currentPlayerId = (int)currentOfficer.playerId;
                 bool isLastPlayer = currentPlayerId == workflow.Count - 1;
 
-                // 👇 Compute next/previous player indices once, up front.
-                int nextPlayerId = currentPlayerId + 1;   // valid only for forward
-                int previousPlayerId = currentPlayerId - 1;   // valid only for return
+                int nextPlayerId = currentPlayerId + 1;
+                int previousPlayerId = currentPlayerId - 1;
 
                 bool canWithhold = (bool?)currentOfficer.canWithhold ?? false;
                 bool canDirectWithheld = (bool?)currentOfficer.canDirectWithheld ?? false;
 
-                // Who originally withheld (or approved) — used in release logic.
                 bool isWithholdingOfficer = false;
                 var historyList = JsonConvert.DeserializeObject<List<dynamic>>(application.History ?? "[]");
                 var withheldEntry = historyList?.LastOrDefault(h =>
@@ -1618,7 +1616,6 @@ namespace SahayataNidhi.Controllers.Officer
                 if (application.Currentplayer != currentPlayerId)
                     return BadRequest(new { status = false, message = "You are not the current player for this application." });
 
-                // ── Authority checks ──────────────────────────────────────────────
                 if (action == "approve")
                 {
                     if (!isWithheld)
@@ -1650,7 +1647,6 @@ namespace SahayataNidhi.Controllers.Officer
                     return BadRequest(new { status = false, message = "Invalid action." });
                 }
 
-                // ── Files: filter existing BEFORE appending new ones ──────────────
                 var existingFiles = new List<string>();
                 if (!string.IsNullOrEmpty(application.Files))
                     existingFiles = JsonConvert.DeserializeObject<List<string>>(application.Files) ?? new List<string>();
@@ -1684,7 +1680,6 @@ namespace SahayataNidhi.Controllers.Officer
                     return BadRequest(new { status = false, message = "Invalid form details." });
                 }
 
-                // ── Load existing workflow JSON (or seed a fresh one) ─────────────
                 List<dynamic> workflowStatus;
                 try
                 {
@@ -1697,25 +1692,23 @@ namespace SahayataNidhi.Controllers.Officer
                     workflowStatus = new List<dynamic>();
                     for (int i = 0; i < workflow.Count; i++)
                     {
-                        workflowStatus.Add(new
+                        // ✅ FIX: Use JObject so the 'as JObject' cast works later, and include canPull
+                        workflowStatus.Add(new JObject
                         {
-                            designation = workflow[i].designation,
-                            playerId = workflow[i].playerId,
-                            status = "",
-                            completedAt = (string)null!,
-                            remarks = (string)null!
+                            ["designation"] = workflow[i].designation?.ToString() ?? "",
+                            ["playerId"] = workflow[i].playerId,
+                            ["status"] = "",
+                            ["completedAt"] = "",
+                            ["remarks"] = "",
+                            ["canPull"] = false
                         });
                     }
-                    // seed current as pending
                     if (workflowStatus.Count > currentPlayerId)
-                        workflowStatus[currentPlayerId].status = "pending";
+                    {
+                        workflowStatus[currentPlayerId]["status"] = "pending";
+                    }
                 }
 
-                // ─────────────────────────────────────────────────────────────────
-                // Apply the transition.
-                // Aligned with Corrigendum logic: forward, return, approve (instead of sanction/verified), reject.
-                // Invariant: after the transition, at most ONE player is "pending".
-                // ─────────────────────────────────────────────────────────────────
                 if (workflowStatus.Count > currentPlayerId)
                 {
                     var acting = workflowStatus[currentPlayerId] as JObject;
@@ -1723,7 +1716,7 @@ namespace SahayataNidhi.Controllers.Officer
                     if (action == "forward")
                     {
                         acting!["status"] = "forwarded";
-                        acting["canPull"] = true;
+                        acting["canPull"] = true; // ✅ Set canPull to true
                         if (currentPlayerId + 1 < workflowStatus.Count)
                         {
                             var next = workflowStatus[currentPlayerId + 1] as JObject;
@@ -1741,7 +1734,7 @@ namespace SahayataNidhi.Controllers.Officer
                     else if (action == "return")
                     {
                         acting!["status"] = "returned";
-                        acting["canPull"] = true;
+                        acting["canPull"] = true; // ✅ Set canPull to true
                         if (currentPlayerId > 0)
                         {
                             var prev = workflowStatus[currentPlayerId - 1] as JObject;
@@ -1757,13 +1750,11 @@ namespace SahayataNidhi.Controllers.Officer
                         application.Status = "Rejected";
                     }
 
-                    // Common updates for the acting player, matching Corrigendum exactly
                     acting!["remarks"] = withheldReason;
                     acting["completedAt"] = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt");
                     application.Workflow = JsonConvert.SerializeObject(workflowStatus);
                 }
 
-                // ── Append history ────────────────────────────────────────────────
                 List<dynamic> history;
                 try
                 {
@@ -1799,11 +1790,10 @@ namespace SahayataNidhi.Controllers.Officer
                     officer = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetailsJObject),
                     status = historyStatus,
                     remarks = withheldReason,
-                    actionTakenOn = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt"), // Aligned date format
+                    actionTakenOn = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt"),
                     playerId = currentPlayerId
                 });
 
-                // ── Determine new current player on the app row ───────────────────
                 int newCurrentPlayer = currentPlayerId;
                 if (action == "forward") newCurrentPlayer = nextPlayerId;
                 else if (action == "return") newCurrentPlayer = previousPlayerId;
@@ -1871,8 +1861,7 @@ namespace SahayataNidhi.Controllers.Officer
                 return StatusCode(500, new { status = false, message = "Failed to update application: " + ex.Message });
             }
         }
-    
-    
+
         [HttpPost]
         public async Task<IActionResult> UpdateAadhaarToken([FromForm] IFormCollection form)
         {

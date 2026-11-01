@@ -372,6 +372,99 @@ namespace SahayataNidhi.Controllers.Officer
             return Json(new { status = true, message = "Corrigendum pulled successfully." });
         }
 
+        [HttpGet]
+        public IActionResult PullWithheldApplication(int withheldId)
+        {
+            var officer = GetOfficerDetails();
+            if (officer == null)
+            {
+                return Json(new { status = false, message = "Officer details not found." });
+            }
+
+            var withheldApp = dbcontext.WithheldApplications.FirstOrDefault(wa => wa.WithheldId == withheldId);
+            if (withheldApp == null)
+            {
+                return Json(new { status = false, message = "Withheld application not found." });
+            }
+
+            var players = JArray.Parse(withheldApp.Workflow ?? "[]");
+            var currentPlayer = players.FirstOrDefault(p => (string)p["designation"]! == officer.Role);
+
+            if (currentPlayer == null)
+            {
+                return Json(new { status = false, message = "You are not part of this workflow." });
+            }
+
+            string status = (string)currentPlayer["status"]!;
+
+            // ★ Security Check: Verify the officer actually has pull rights (Handles both boolean and string "true")
+            var canPullToken = currentPlayer["canPull"];
+            bool canPull = false;
+            if (canPullToken != null)
+            {
+                if (canPullToken.Type == JTokenType.Boolean)
+                    canPull = (bool)canPullToken;
+                else if (canPullToken.Type == JTokenType.String)
+                    bool.TryParse(canPullToken.ToString(), out canPull);
+            }
+
+            if (!canPull)
+            {
+                return Json(new { status = false, message = "You are not authorized to pull this withheld application." });
+            }
+
+            // ★ State Transitions
+            if (status == "forwarded")
+            {
+                var nextPlayer = players.FirstOrDefault(p => (int)p["playerId"]! == ((int)currentPlayer["playerId"]! + 1));
+                if (nextPlayer != null)
+                {
+                    nextPlayer["status"] = "";
+                    nextPlayer["completedAt"] = "";
+                    nextPlayer["remarks"] = "";
+                }
+                currentPlayer["status"] = "pending";
+                currentPlayer["canPull"] = false;
+            }
+            else if (status == "returned")
+            {
+                var prevPlayer = players.FirstOrDefault(p => (int)p["playerId"]! == ((int)currentPlayer["playerId"]! - 1));
+                if (prevPlayer != null)
+                {
+                    prevPlayer["status"] = "forwarded";
+                    prevPlayer["canPull"] = true;
+                }
+                currentPlayer["status"] = "pending";
+                currentPlayer["canPull"] = false;
+            }
+            else
+            {
+                return Json(new { status = false, message = "Application cannot be pulled in its current state." });
+            }
+
+            withheldApp.Workflow = players.ToString();
+            withheldApp.Currentplayer = (int)currentPlayer["playerId"]!;
+
+            dbcontext.SaveChanges();
+
+            InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, withheldApp.Serviceid);
+
+            helper.InsertHistory(
+                withheldApp.Referencenumber,
+                "Pulled Withheld Application",
+                (string)currentPlayer["designation"]!,
+                $"Pulled back to pending from {status}",
+                officer.AccessLevel!,
+                (int)officer.AccessCode!
+            );
+
+            return Json(new { status = true, message = "Withheld application pulled successfully." });
+        }       // ★ Add this DTO class at the bottom of your controller (or in your Models folder)
+        public class PullWithheldRequest
+        {
+            public string ReferenceNumber { get; set; } = "";
+            public int ServiceId { get; set; }
+        }
 
         [HttpPost]
         public async Task<IActionResult> HandleAction([FromForm] IFormCollection form)

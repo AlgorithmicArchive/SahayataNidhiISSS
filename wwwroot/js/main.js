@@ -64934,6 +64934,25 @@ function ApplicationTablePage() {
         }
         return pullCorrigendum;
       }(),
+      // ✅ ADD THIS NEW HANDLER FOR WITHHELD APPLICATIONS
+      pullWithheldApplication: function () {
+        var _pullWithheldApplication = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee8(row) {
+          return regenerator_default().wrap(function (_context8) {
+            while (1) switch (_context8.prev = _context8.next) {
+              case 0:
+                setPullRow(row.original);
+                setPullConfirmOpen(true);
+              case 1:
+              case "end":
+                return _context8.stop();
+            }
+          }, _callee8);
+        }));
+        function pullWithheldApplication(_x7) {
+          return _pullWithheldApplication.apply(this, arguments);
+        }
+        return pullWithheldApplication;
+      }(),
       handleViewCorrigendumApplication: function handleViewCorrigendumApplication(row) {
         return navigate("/officer/viewcorrigendumdetails", {
           state: {
@@ -64945,15 +64964,15 @@ function ApplicationTablePage() {
       },
       // ── FIXED: fetch the PDF bytes before opening the modal ─────────────
       handleViewPdf: function () {
-        var _handleViewPdf = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee9(row, action) {
+        var _handleViewPdf = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee0(row, action) {
           var _row$original, referenceNumber, appType, actType, corrigendumId, filename, fetchedBlob, _t6;
-          return regenerator_default().wrap(function (_context9) {
-            while (1) switch (_context9.prev = _context9.next) {
+          return regenerator_default().wrap(function (_context0) {
+            while (1) switch (_context0.prev = _context0.next) {
               case 0:
                 _row$original = row.original, referenceNumber = _row$original.referenceNumber, appType = _row$original.applicationType;
                 actType = action.type, corrigendumId = action.corrigendumId; // Navigation-only actions — no PDF involved.
                 if (!(actType === "handleViewCorrigendumApplication")) {
-                  _context9.next = 1;
+                  _context0.next = 1;
                   break;
                 }
                 navigate("/officer/viewcorrigendumdetails", {
@@ -64963,7 +64982,7 @@ function ApplicationTablePage() {
                     type: appType
                   }
                 });
-                return _context9.abrupt("return");
+                return _context0.abrupt("return");
               case 1:
                 if (actType === "DownloadSL") {
                   filename = "".concat(referenceNumber.replace(/\//g, "_"), "_SanctionLetter.pdf");
@@ -64977,23 +64996,23 @@ function ApplicationTablePage() {
                   filename = "".concat(corrigendumId.replace(/\//g, "_"), "_").concat(appType, "_SanctionLetter.pdf");
                 }
                 if (filename) {
-                  _context9.next = 2;
+                  _context0.next = 2;
                   break;
                 }
                 react_toastify_dist/* toast */.oR.error("Unknown document type.", {
                   position: "top-right",
                   theme: "colored"
                 });
-                return _context9.abrupt("return");
+                return _context0.abrupt("return");
               case 2:
-                _context9.prev = 2;
-                _context9.next = 3;
-                return withLoader(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee8() {
+                _context0.prev = 2;
+                _context0.next = 3;
+                return withLoader(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee9() {
                   var pdfR, blob;
-                  return regenerator_default().wrap(function (_context8) {
-                    while (1) switch (_context8.prev = _context8.next) {
+                  return regenerator_default().wrap(function (_context9) {
+                    while (1) switch (_context9.prev = _context9.next) {
                       case 0:
-                        _context8.next = 1;
+                        _context9.next = 1;
                         return axiosConfig.get("/Base/DisplayFile", {
                           params: {
                             filename: filename
@@ -65001,38 +65020,38 @@ function ApplicationTablePage() {
                           responseType: "blob"
                         });
                       case 1:
-                        pdfR = _context8.sent;
+                        pdfR = _context9.sent;
                         blob = new Blob([pdfR.data], {
                           type: "application/pdf"
                         });
-                        _context8.next = 2;
+                        _context9.next = 2;
                         return isValidPdf(blob);
                       case 2:
-                        if (_context8.sent) {
-                          _context8.next = 3;
+                        if (_context9.sent) {
+                          _context9.next = 3;
                           break;
                         }
                         throw new Error("Could not load \"".concat(filename, "\" (server returned non-PDF)."));
                       case 3:
-                        return _context8.abrupt("return", blob);
+                        return _context9.abrupt("return", blob);
                       case 4:
                       case "end":
-                        return _context8.stop();
+                        return _context9.stop();
                     }
-                  }, _callee8);
+                  }, _callee9);
                 })), "Loading document\u2026");
               case 3:
-                fetchedBlob = _context9.sent;
+                fetchedBlob = _context0.sent;
                 setPdfBlob(fetchedBlob);
                 setPdfUrl(filename);
                 setIsSignedPdf(true);
                 setCurrentApplicationId(referenceNumber);
                 setPdfModalOpen(true);
-                _context9.next = 5;
+                _context0.next = 5;
                 break;
               case 4:
-                _context9.prev = 4;
-                _t6 = _context9["catch"](2);
+                _context0.prev = 4;
+                _t6 = _context0["catch"](2);
                 react_toastify_dist/* toast */.oR.error("Error preparing PDF: ".concat(_t6.message), {
                   position: "top-right",
                   theme: "colored",
@@ -65040,11 +65059,11 @@ function ApplicationTablePage() {
                 });
               case 5:
               case "end":
-                return _context9.stop();
+                return _context0.stop();
             }
-          }, _callee9, null, [[2, 4]]);
+          }, _callee0, null, [[2, 4]]);
         }));
-        function handleViewPdf(_x7, _x8) {
+        function handleViewPdf(_x8, _x9) {
           return _handleViewPdf.apply(this, arguments);
         }
         return handleViewPdf;
@@ -65069,10 +65088,10 @@ function ApplicationTablePage() {
         });
       },
       sendExpirationEmail: function () {
-        var _sendExpirationEmail = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee0(row) {
+        var _sendExpirationEmail = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee1(row) {
           var _row$original2, referenceNumber, expiryDate, expirationDate, formdata, response, _t7;
-          return regenerator_default().wrap(function (_context0) {
-            while (1) switch (_context0.prev = _context0.next) {
+          return regenerator_default().wrap(function (_context1) {
+            while (1) switch (_context1.prev = _context1.next) {
               case 0:
                 beginLoader("Sending email…");
                 _row$original2 = row.original, referenceNumber = _row$original2.referenceNumber, expiryDate = _row$original2.expiryDate;
@@ -65080,11 +65099,11 @@ function ApplicationTablePage() {
                 formdata = new FormData();
                 formdata.append("referenceNumber", referenceNumber);
                 formdata.append("expirationDate", expirationDate);
-                _context0.prev = 1;
-                _context0.next = 2;
+                _context1.prev = 1;
+                _context1.next = 2;
                 return axiosConfig.post("/Officer/SendExpirationEmail", formdata);
               case 2:
-                response = _context0.sent;
+                response = _context1.sent;
                 if (response.data.status) {
                   react_toastify_dist/* toast */.oR.success("Expiration email sent!", {
                     position: "top-right",
@@ -65092,26 +65111,26 @@ function ApplicationTablePage() {
                   });
                   refreshTable();
                 }
-                _context0.next = 4;
+                _context1.next = 4;
                 break;
               case 3:
-                _context0.prev = 3;
-                _t7 = _context0["catch"](1);
+                _context1.prev = 3;
+                _t7 = _context1["catch"](1);
                 react_toastify_dist/* toast */.oR.error("Failed to send expiration email.", {
                   position: "top-right",
                   theme: "colored"
                 });
               case 4:
-                _context0.prev = 4;
+                _context1.prev = 4;
                 endLoader();
-                return _context0.finish(4);
+                return _context1.finish(4);
               case 5:
               case "end":
-                return _context0.stop();
+                return _context1.stop();
             }
-          }, _callee0, null, [[1, 3, 4, 5]]);
+          }, _callee1, null, [[1, 3, 4, 5]]);
         }));
-        function sendExpirationEmail(_x9) {
+        function sendExpirationEmail(_x0) {
           return _sendExpirationEmail.apply(this, arguments);
         }
         return sendExpirationEmail;
@@ -65123,16 +65142,16 @@ function ApplicationTablePage() {
 
   // ── Push to pool ────────────────────────────────────────────────────
   var handlePushToPool = (0,react.useCallback)(/*#__PURE__*/function () {
-    var _ref7 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee1(selectedRows) {
+    var _ref7 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee10(selectedRows) {
       var list, _t8;
-      return regenerator_default().wrap(function (_context1) {
-        while (1) switch (_context1.prev = _context1.next) {
+      return regenerator_default().wrap(function (_context10) {
+        while (1) switch (_context10.prev = _context10.next) {
           case 0:
             if (selectedRows !== null && selectedRows !== void 0 && selectedRows.length) {
-              _context1.next = 1;
+              _context10.next = 1;
               break;
             }
-            return _context1.abrupt("return", react_toastify_dist/* toast */.oR.error("No applications selected.", {
+            return _context10.abrupt("return", react_toastify_dist/* toast */.oR.error("No applications selected.", {
               position: "top-right",
               theme: "colored"
             }));
@@ -65140,8 +65159,8 @@ function ApplicationTablePage() {
             list = JSON.stringify(selectedRows.map(function (r) {
               return r.original.referenceNumber;
             }));
-            _context1.prev = 2;
-            _context1.next = 3;
+            _context10.prev = 2;
+            _context10.next = 3;
             return withLoader(function () {
               return axiosConfig.post("/Officer/UpdatePool", null, {
                 params: {
@@ -65156,77 +65175,77 @@ function ApplicationTablePage() {
               theme: "colored"
             });
             refreshTable();
-            _context1.next = 5;
+            _context10.next = 5;
             break;
           case 4:
-            _context1.prev = 4;
-            _t8 = _context1["catch"](2);
+            _context10.prev = 4;
+            _t8 = _context10["catch"](2);
             react_toastify_dist/* toast */.oR.error("Failed to push to pool.", {
               position: "top-right",
               theme: "colored"
             });
           case 5:
           case "end":
-            return _context1.stop();
+            return _context10.stop();
         }
-      }, _callee1, null, [[2, 4]]);
+      }, _callee10, null, [[2, 4]]);
     }));
-    return function (_x0) {
+    return function (_x1) {
       return _ref7.apply(this, arguments);
     };
   }(), [serviceId, refreshTable, withLoader]);
 
   // ── Sign PDF (local signing microservice) ───────────────────────────
   var signPdf = /*#__PURE__*/function () {
-    var _ref8 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee10(blob, pin) {
+    var _ref8 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee11(blob, pin) {
       var formData, response, _t9, _t0, _t1;
-      return regenerator_default().wrap(function (_context10) {
-        while (1) switch (_context10.prev = _context10.next) {
+      return regenerator_default().wrap(function (_context11) {
+        while (1) switch (_context11.prev = _context11.next) {
           case 0:
             formData = new FormData();
             formData.append("pdf", blob, "document.pdf");
             formData.append("pin", pin);
             formData.append("original_path", currentApplicationIdRef.current.replace(/\//g, "_") + "_SanctionLetter.pdf");
-            _context10.next = 1;
+            _context11.next = 1;
             return fetch("http://localhost:8000/sign", {
               method: "POST",
               body: formData
             });
           case 1:
-            response = _context10.sent;
+            response = _context11.sent;
             if (response.ok) {
-              _context10.next = 3;
+              _context11.next = 3;
               break;
             }
             _t9 = Error;
             _t0 = "Signing failed: ";
-            _context10.next = 2;
+            _context11.next = 2;
             return response.text();
           case 2:
-            _t1 = _t0.concat.call(_t0, _context10.sent);
+            _t1 = _t0.concat.call(_t0, _context11.sent);
             throw new _t9(_t1);
           case 3:
-            _context10.next = 4;
+            _context11.next = 4;
             return response.blob();
           case 4:
-            return _context10.abrupt("return", _context10.sent);
+            return _context11.abrupt("return", _context11.sent);
           case 5:
           case "end":
-            return _context10.stop();
+            return _context11.stop();
         }
-      }, _callee10);
+      }, _callee11);
     }));
-    return function signPdf(_x1, _x10) {
+    return function signPdf(_x10, _x11) {
       return _ref8.apply(this, arguments);
     };
   }();
 
   // ── Single application processor ────────────────────────────────────
   var processSingleId = (0,react.useCallback)(/*#__PURE__*/function () {
-    var _ref9 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee11(id) {
+    var _ref9 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee12(id) {
       var formData, hasError, fd, r, _r, pdfR, fetchedBlob, _yield$withLoader, _r2, _t10;
-      return regenerator_default().wrap(function (_context11) {
-        while (1) switch (_context11.prev = _context11.next) {
+      return regenerator_default().wrap(function (_context12) {
+        while (1) switch (_context12.prev = _context12.next) {
           case 0:
             setCurrentApplicationId(id);
             formData = new FormData();
@@ -65234,9 +65253,9 @@ function ApplicationTablePage() {
             formData.append("defaultAction", selectedAction);
             formData.append("Remarks", selectedAction === "Sanction" ? "Sanctioned" : selectedAction === "Reject" ? "Rejected" : "Returned to Inbox");
             hasError = false;
-            _context11.prev = 1;
+            _context12.prev = 1;
             if (!(selectedAction === "toInbox")) {
-              _context11.next = 4;
+              _context12.next = 4;
               break;
             }
             // "Return to Inbox" does not go through HandleAction — it is a
@@ -65244,26 +65263,26 @@ function ApplicationTablePage() {
             fd = new FormData();
             fd.append("Serviceid", serviceId);
             fd.append("list", JSON.stringify(Array.isArray(id) ? id : [id]));
-            _context11.next = 2;
+            _context12.next = 2;
             return withLoader(function () {
               return axiosConfig.post("/Officer/RemoveFromPool", fd);
             }, "Returning ".concat(id, " to inbox\u2026"));
           case 2:
-            r = _context11.sent;
+            r = _context12.sent;
             if (r.data.status) {
-              _context11.next = 3;
+              _context12.next = 3;
               break;
             }
             throw new Error(r.data.message || "Failed to remove from pool.");
           case 3:
-            _context11.next = 12;
+            _context12.next = 12;
             break;
           case 4:
             if (!(selectedAction === "Sanction")) {
-              _context11.next = 10;
+              _context12.next = 10;
               break;
             }
-            _context11.next = 5;
+            _context12.next = 5;
             return withLoader(function () {
               return axiosConfig.get("/Officer/GetSanctionLetter", {
                 params: {
@@ -65272,14 +65291,14 @@ function ApplicationTablePage() {
               });
             }, "Preparing sanction letter for ".concat(id, "\u2026"));
           case 5:
-            _r = _context11.sent;
+            _r = _context12.sent;
             if (_r.data.status) {
-              _context11.next = 6;
+              _context12.next = 6;
               break;
             }
             throw new Error(_r.data.response || "Something went wrong");
           case 6:
-            _context11.next = 7;
+            _context12.next = 7;
             return withLoader(function () {
               return axiosConfig.get("/Base/DisplayFile", {
                 params: {
@@ -65289,15 +65308,15 @@ function ApplicationTablePage() {
               });
             }, "Loading sanction letter for ".concat(id, "\u2026"));
           case 7:
-            pdfR = _context11.sent;
+            pdfR = _context12.sent;
             fetchedBlob = new Blob([pdfR.data], {
               type: "application/pdf"
             });
-            _context11.next = 8;
+            _context12.next = 8;
             return isValidPdf(fetchedBlob);
           case 8:
-            if (_context11.sent) {
-              _context11.next = 9;
+            if (_context12.sent) {
+              _context12.next = 9;
               break;
             }
             throw new Error("Sanction letter for ".concat(id, " could not be loaded (server returned non-PDF)."));
@@ -65307,50 +65326,50 @@ function ApplicationTablePage() {
             setIsSignedPdf(false);
             setPdfModalOpen(true);
             setPendingFormData(formData);
-            return _context11.abrupt("return", false);
+            return _context12.abrupt("return", false);
           case 10:
-            _context11.next = 11;
+            _context12.next = 11;
             return withLoader(function () {
               return axiosConfig.post("/Officer/HandleAction", formData);
             }, "Processing ".concat(id, "\u2026"));
           case 11:
-            _yield$withLoader = _context11.sent;
+            _yield$withLoader = _context12.sent;
             _r2 = _yield$withLoader.data;
             if (_r2.status) {
-              _context11.next = 12;
+              _context12.next = 12;
               break;
             }
             throw new Error(_r2.response || "Something went wrong");
           case 12:
-            _context11.next = 14;
+            _context12.next = 14;
             break;
           case 13:
-            _context11.prev = 13;
-            _t10 = _context11["catch"](1);
+            _context12.prev = 13;
+            _t10 = _context12["catch"](1);
             react_toastify_dist/* toast */.oR.error("Error processing ".concat(id, ": ").concat(_t10.message), {
               position: "top-right",
               theme: "colored"
             });
             hasError = true;
           case 14:
-            return _context11.abrupt("return", !hasError);
+            return _context12.abrupt("return", !hasError);
           case 15:
           case "end":
-            return _context11.stop();
+            return _context12.stop();
         }
-      }, _callee11, null, [[1, 13]]);
+      }, _callee12, null, [[1, 13]]);
     }));
-    return function (_x11) {
+    return function (_x12) {
       return _ref9.apply(this, arguments);
     };
   }(), [selectedAction, serviceId, withLoader]);
 
   // ── Batch processor ─────────────────────────────────────────────────
   var processAllIds = (0,react.useCallback)(/*#__PURE__*/function () {
-    var _ref0 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee12(ids) {
+    var _ref0 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee13(ids) {
       var successCount, i, success;
-      return regenerator_default().wrap(function (_context12) {
-        while (1) switch (_context12.prev = _context12.next) {
+      return regenerator_default().wrap(function (_context13) {
+        while (1) switch (_context13.prev = _context13.next) {
           case 0:
             setPendingIds(ids);
             setCurrentIdIndex(0);
@@ -65358,24 +65377,24 @@ function ApplicationTablePage() {
             i = 0;
           case 1:
             if (!(i < ids.length)) {
-              _context12.next = 5;
+              _context13.next = 5;
               break;
             }
             setCurrentIdIndex(i);
-            _context12.next = 2;
+            _context13.next = 2;
             return processSingleId(ids[i]);
           case 2:
-            success = _context12.sent;
+            success = _context13.sent;
             if (!(selectedAction === "Sanction" && !success)) {
-              _context12.next = 3;
+              _context13.next = 3;
               break;
             }
-            return _context12.abrupt("return");
+            return _context13.abrupt("return");
           case 3:
             if (success) successCount++;
           case 4:
             i++;
-            _context12.next = 1;
+            _context13.next = 1;
             break;
           case 5:
             setPendingIds([]);
@@ -65388,11 +65407,11 @@ function ApplicationTablePage() {
             refreshTable();
           case 6:
           case "end":
-            return _context12.stop();
+            return _context13.stop();
         }
-      }, _callee12);
+      }, _callee13);
     }));
-    return function (_x12) {
+    return function (_x13) {
       return _ref0.apply(this, arguments);
     };
   }(), [selectedAction, processSingleId, refreshTable]);
@@ -65402,55 +65421,55 @@ function ApplicationTablePage() {
   // backend inside HandleAction (same DB transaction), so we no longer issue
   // a separate RemoveFromPool call from this function.
   var signAndUpdatePdf = (0,react.useCallback)(/*#__PURE__*/function () {
-    var _ref1 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee13(pinToUse) {
+    var _ref1 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee14(pinToUse) {
       var _selected$serial_numb, blob, appId, formData, certDetails, certificates, selected, norm, dbSerial, tokenSerial, tokenHex, tokenInt, isMatch, dbAsInt, dbAsDecimal, decoded, i, signedBlob, updForm, updR, _yield$withLoader2, r, ids, idx, next, _t11;
-      return regenerator_default().wrap(function (_context13) {
-        while (1) switch (_context13.prev = _context13.next) {
+      return regenerator_default().wrap(function (_context14) {
+        while (1) switch (_context14.prev = _context14.next) {
           case 0:
-            _context13.prev = 0;
+            _context14.prev = 0;
             blob = pdfBlobRef.current;
             appId = currentApplicationIdRef.current;
             formData = pendingFormDataRef.current;
             if (blob) {
-              _context13.next = 1;
+              _context14.next = 1;
               break;
             }
             throw new Error("No PDF blob");
           case 1:
-            _context13.next = 2;
+            _context14.next = 2;
             return isValidPdf(blob);
           case 2:
-            if (_context13.sent) {
-              _context13.next = 3;
+            if (_context14.sent) {
+              _context14.next = 3;
               break;
             }
             throw new Error("Invalid PDF");
           case 3:
-            _context13.next = 4;
+            _context14.next = 4;
             return fetchCertificateDetails();
           case 4:
-            certDetails = _context13.sent;
+            certDetails = _context14.sent;
             if (certDetails) {
-              _context13.next = 5;
+              _context14.next = 5;
               break;
             }
             throw new Error("No registered DSC");
           case 5:
-            _context13.next = 6;
+            _context14.next = 6;
             return withLoader(function () {
               return fetchCertificates(pinToUse);
             }, "Reading USB token…");
           case 6:
-            certificates = _context13.sent;
+            certificates = _context14.sent;
             if (certificates !== null && certificates !== void 0 && certificates.length) {
-              _context13.next = 7;
+              _context14.next = 7;
               break;
             }
             throw new Error("No certificates on token");
           case 7:
             selected = certificates[0]; // Check expiration
             if (!(new Date(certDetails.expirationDate) < new Date())) {
-              _context13.next = 8;
+              _context14.next = 8;
               break;
             }
             throw new Error("Certificate expired");
@@ -65511,46 +65530,46 @@ function ApplicationTablePage() {
               } catch (e) {}
             }
             if (isMatch) {
-              _context13.next = 9;
+              _context14.next = 9;
               break;
             }
             console.log("❌ Mismatch! DB Serial:", certDetails.serial_number, "| Token Decimal:", selected.serial_number, "| Token Hex:", selected.serial_number_hex, "| Token Int:", selected.serial_number_int);
             throw new Error("Not the registered certificate");
           case 9:
-            _context13.next = 10;
+            _context14.next = 10;
             return withLoader(function () {
               return signPdf(blob, pinToUse, selected.serial_number_hex);
             }, "Signing PDF…");
           case 10:
-            signedBlob = _context13.sent;
+            signedBlob = _context14.sent;
             updForm = new FormData();
             updForm.append("signedPdf", signedBlob, "signed.pdf");
             updForm.append("applicationId", appId);
-            _context13.next = 11;
+            _context14.next = 11;
             return withLoader(function () {
               return axiosConfig.post("/Officer/UpdatePdf", updForm);
             }, "Uploading signed PDF for ".concat(appId, "\u2026"));
           case 11:
-            updR = _context13.sent;
+            updR = _context14.sent;
             if (updR.data.status) {
-              _context13.next = 12;
+              _context14.next = 12;
               break;
             }
             throw new Error("Failed to update PDF");
           case 12:
             if (!formData) {
-              _context13.next = 14;
+              _context14.next = 14;
               break;
             }
-            _context13.next = 13;
+            _context14.next = 13;
             return withLoader(function () {
               return axiosConfig.post("/Officer/HandleAction", formData);
             }, "Sanctioning ".concat(appId, "\u2026"));
           case 13:
-            _yield$withLoader2 = _context13.sent;
+            _yield$withLoader2 = _context14.sent;
             r = _yield$withLoader2.data;
             if (r.status) {
-              _context13.next = 14;
+              _context14.next = 14;
               break;
             }
             throw new Error(r.response || "Failed to sanction");
@@ -65572,20 +65591,20 @@ function ApplicationTablePage() {
             idx = currentIdIndexRef.current;
             next = idx + 1;
             if (!(next < ids.length)) {
-              _context13.next = 17;
+              _context14.next = 17;
               break;
             }
             setCurrentIdIndex(next);
             setCurrentApplicationId(ids[next]);
-            _context13.next = 15;
+            _context14.next = 15;
             return new Promise(function (r) {
               return setTimeout(r, 500);
             });
           case 15:
-            _context13.next = 16;
+            _context14.next = 16;
             return processSingleId(ids[next]);
           case 16:
-            _context13.next = 18;
+            _context14.next = 18;
             break;
           case 17:
             setPendingIds([]);
@@ -65598,11 +65617,11 @@ function ApplicationTablePage() {
             });
             refreshTable();
           case 18:
-            _context13.next = 20;
+            _context14.next = 20;
             break;
           case 19:
-            _context13.prev = 19;
-            _t11 = _context13["catch"](0);
+            _context14.prev = 19;
+            _t11 = _context14["catch"](0);
             react_toastify_dist/* toast */.oR.error(_t11.message, {
               position: "top-right",
               theme: "colored"
@@ -65611,80 +65630,80 @@ function ApplicationTablePage() {
             throw _t11;
           case 20:
           case "end":
-            return _context13.stop();
+            return _context14.stop();
         }
-      }, _callee13, null, [[0, 19]]);
+      }, _callee14, null, [[0, 19]]);
     }));
-    return function (_x13) {
+    return function (_x14) {
       return _ref1.apply(this, arguments);
     };
   }(), [processSingleId, refreshTable, withLoader
   // currentIdIndex / pendingIds intentionally excluded — read via refs.
   // serviceId no longer required — pool removal is server-side.
   ]);
-  var handlePinSubmit = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee14() {
+  var handlePinSubmit = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee15() {
     var _t12;
-    return regenerator_default().wrap(function (_context14) {
-      while (1) switch (_context14.prev = _context14.next) {
+    return regenerator_default().wrap(function (_context15) {
+      while (1) switch (_context15.prev = _context15.next) {
         case 0:
           if (pin) {
-            _context14.next = 1;
+            _context15.next = 1;
             break;
           }
-          return _context14.abrupt("return", react_toastify_dist/* toast */.oR.error("Please enter the PIN.", {
+          return _context15.abrupt("return", react_toastify_dist/* toast */.oR.error("Please enter the PIN.", {
             position: "top-right",
             theme: "colored"
           }));
         case 1:
-          _context14.prev = 1;
-          _context14.next = 2;
+          _context15.prev = 1;
+          _context15.next = 2;
           return signAndUpdatePdf(pin);
         case 2:
           setStoredPin(pin);
           setConfirmOpen(false);
           setPin("");
-          _context14.next = 4;
+          _context15.next = 4;
           break;
         case 3:
-          _context14.prev = 3;
-          _t12 = _context14["catch"](1);
+          _context15.prev = 3;
+          _t12 = _context15["catch"](1);
           setConfirmOpen(false);
           setPin("");
         case 4:
         case "end":
-          return _context14.stop();
+          return _context15.stop();
       }
-    }, _callee14, null, [[1, 3]]);
+    }, _callee15, null, [[1, 3]]);
   })), [pin, signAndUpdatePdf]);
-  var handleSignPdf = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee15() {
+  var handleSignPdf = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee16() {
     var isCertError, _t13;
-    return regenerator_default().wrap(function (_context15) {
-      while (1) switch (_context15.prev = _context15.next) {
+    return regenerator_default().wrap(function (_context16) {
+      while (1) switch (_context16.prev = _context16.next) {
         case 0:
           if (storedPin) {
-            _context15.next = 1;
+            _context16.next = 1;
             break;
           }
           setConfirmOpen(true);
-          return _context15.abrupt("return");
+          return _context16.abrupt("return");
         case 1:
-          _context15.prev = 1;
-          _context15.next = 2;
+          _context16.prev = 1;
+          _context16.next = 2;
           return signAndUpdatePdf(storedPin);
         case 2:
-          _context15.next = 5;
+          _context16.next = 5;
           break;
         case 3:
-          _context15.prev = 3;
-          _t13 = _context15["catch"](1);
+          _context16.prev = 3;
+          _t13 = _context16["catch"](1);
           isCertError = _t13.message.includes("No certificates") || _t13.message.includes("Not the registered") || _t13.message.includes("expired");
           if (!isCertError) {
-            _context15.next = 4;
+            _context16.next = 4;
             break;
           }
           setStoredPin(null);
           setConfirmOpen(true);
-          return _context15.abrupt("return");
+          return _context16.abrupt("return");
         case 4:
           react_toastify_dist/* toast */.oR.error("Sanctioning stopped: ".concat(_t13.message), {
             position: "top-right",
@@ -65693,41 +65712,42 @@ function ApplicationTablePage() {
           });
         case 5:
         case "end":
-          return _context15.stop();
+          return _context16.stop();
       }
-    }, _callee15, null, [[1, 3]]);
+    }, _callee16, null, [[1, 3]]);
   })), [storedPin, signAndUpdatePdf]);
 
   // ── Reject flow ─────────────────────────────────────────────────────
-  var handleRejectConfirm = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee16() {
-    return regenerator_default().wrap(function (_context16) {
-      while (1) switch (_context16.prev = _context16.next) {
+  var handleRejectConfirm = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee17() {
+    return regenerator_default().wrap(function (_context17) {
+      while (1) switch (_context17.prev = _context17.next) {
         case 0:
           setRejectConfirmOpen(false);
-          _context16.next = 1;
+          _context17.next = 1;
           return processAllIds(pendingRejectRows.map(function (r) {
             return r.original.referenceNumber;
           }));
         case 1:
         case "end":
-          return _context16.stop();
+          return _context17.stop();
       }
-    }, _callee16);
+    }, _callee17);
   })), [pendingRejectRows, processAllIds]);
 
   // ── Pull flow ───────────────────────────────────────────────────────
+  // ── Pull flow ───────────────────────────────────────────────────────
   var handlePullApplication = /*#__PURE__*/function () {
-    var _ref13 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee17() {
+    var _ref13 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee18() {
       var response, _error$response, _t14;
-      return regenerator_default().wrap(function (_context17) {
-        while (1) switch (_context17.prev = _context17.next) {
+      return regenerator_default().wrap(function (_context18) {
+        while (1) switch (_context18.prev = _context18.next) {
           case 0:
-            _context17.prev = 0;
+            _context18.prev = 0;
             if (!(applicationType === "Corrigendum" || applicationType === "Correction" || applicationType === "Amendment")) {
-              _context17.next = 2;
+              _context18.next = 2;
               break;
             }
-            _context17.next = 1;
+            _context18.next = 1;
             return withLoader(function () {
               return axiosConfig.get("/Officer/PullCorrigendum", {
                 params: {
@@ -65736,11 +65756,28 @@ function ApplicationTablePage() {
               });
             }, "Pulling corrigendum…");
           case 1:
-            response = _context17.sent;
-            _context17.next = 4;
+            response = _context18.sent;
+            _context18.next = 6;
             break;
           case 2:
-            _context17.next = 3;
+            if (!(url.includes("WithheldApplications") || tableTitle !== null && tableTitle !== void 0 && tableTitle.toLowerCase().includes("withheld"))) {
+              _context18.next = 4;
+              break;
+            }
+            _context18.next = 3;
+            return withLoader(function () {
+              return axiosConfig.get("/Officer/PullWithheldApplication", {
+                params: {
+                  withheldId: pullRow.withheldId
+                }
+              });
+            }, "Pulling withheld application…");
+          case 3:
+            response = _context18.sent;
+            _context18.next = 6;
+            break;
+          case 4:
+            _context18.next = 5;
             return withLoader(function () {
               return axiosConfig.get("/Officer/PullApplication", {
                 params: {
@@ -65748,9 +65785,9 @@ function ApplicationTablePage() {
                 }
               });
             }, "Pulling application…");
-          case 3:
-            response = _context17.sent;
-          case 4:
+          case 5:
+            response = _context18.sent;
+          case 6:
             if (response.data.status) {
               react_toastify_dist/* toast */.oR.success("Pulled successfully!", {
                 position: "top-right",
@@ -65764,20 +65801,20 @@ function ApplicationTablePage() {
                 theme: "colored"
               });
             }
-            _context17.next = 6;
+            _context18.next = 8;
             break;
-          case 5:
-            _context17.prev = 5;
-            _t14 = _context17["catch"](0);
+          case 7:
+            _context18.prev = 7;
+            _t14 = _context18["catch"](0);
             react_toastify_dist/* toast */.oR.error(((_error$response = _t14.response) === null || _error$response === void 0 || (_error$response = _error$response.data) === null || _error$response === void 0 ? void 0 : _error$response.message) || "Failed to pull.", {
               position: "top-right",
               theme: "colored"
             });
-          case 6:
+          case 8:
           case "end":
-            return _context17.stop();
+            return _context18.stop();
         }
-      }, _callee17, null, [[0, 5]]);
+      }, _callee18, null, [[0, 7]]);
     }));
     return function handlePullApplication() {
       return _ref13.apply(this, arguments);
@@ -65786,33 +65823,33 @@ function ApplicationTablePage() {
 
   // ── Execute action (from table toolbar) ─────────────────────────────
   var handleExecuteAction = (0,react.useCallback)(/*#__PURE__*/function () {
-    var _ref14 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee18(selectedRows) {
+    var _ref14 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee19(selectedRows) {
       var dscCheck, ids;
-      return regenerator_default().wrap(function (_context18) {
-        while (1) switch (_context18.prev = _context18.next) {
+      return regenerator_default().wrap(function (_context19) {
+        while (1) switch (_context19.prev = _context19.next) {
           case 0:
             if (selectedRows !== null && selectedRows !== void 0 && selectedRows.length) {
-              _context18.next = 1;
+              _context19.next = 1;
               break;
             }
-            return _context18.abrupt("return", react_toastify_dist/* toast */.oR.error("No applications selected.", {
+            return _context19.abrupt("return", react_toastify_dist/* toast */.oR.error("No applications selected.", {
               position: "top-right",
               theme: "colored"
             }));
           case 1:
             if (!(selectedAction === "Sanction")) {
-              _context18.next = 3;
+              _context19.next = 3;
               break;
             }
-            _context18.next = 2;
+            _context19.next = 2;
             return withLoader(checkDSCStatus, "Verifying DSC…");
           case 2:
-            dscCheck = _context18.sent;
+            dscCheck = _context19.sent;
             if (dscCheck.status) {
-              _context18.next = 3;
+              _context19.next = 3;
               break;
             }
-            return _context18.abrupt("return", react_toastify_dist/* toast */.oR.error("Cannot Sanction: ".concat(dscCheck.reason || "DSC invalid."), {
+            return _context19.abrupt("return", react_toastify_dist/* toast */.oR.error("Cannot Sanction: ".concat(dscCheck.reason || "DSC invalid."), {
               position: "top-right",
               autoClose: 6000,
               theme: "colored"
@@ -65822,23 +65859,23 @@ function ApplicationTablePage() {
               return i.original.referenceNumber;
             });
             if (!(selectedAction === "Reject")) {
-              _context18.next = 4;
+              _context19.next = 4;
               break;
             }
             setPendingRejectRows(selectedRows);
             setRejectConfirmOpen(true);
-            _context18.next = 5;
+            _context19.next = 5;
             break;
           case 4:
-            _context18.next = 5;
+            _context19.next = 5;
             return processAllIds(ids);
           case 5:
           case "end":
-            return _context18.stop();
+            return _context19.stop();
         }
-      }, _callee18);
+      }, _callee19);
     }));
-    return function (_x14) {
+    return function (_x15) {
       return _ref14.apply(this, arguments);
     };
   }(), [selectedAction, processAllIds, withLoader]);
