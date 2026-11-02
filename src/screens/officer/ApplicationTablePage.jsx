@@ -46,7 +46,18 @@ export default function ApplicationTablePage() {
   const tableRef = useRef(null);
   const tableInstanceRef = useRef(null);
   const [tableKey, setTableKey] = useState(0);
-  const [selectedAction, setSelectedAction] = useState("Sanction");
+
+  // ── FIX: default the action to a value that actually exists in the
+  // dropdown. When sanction is unavailable the previous "Sanction" default
+  // left the <Select> bound to a non-existent option and caused the child's
+  // isSanctionAction check to evaluate true in contexts where sanctioning
+  // was never offered.
+  const [selectedAction, setSelectedAction] = useState(
+    canSanction && dataType === "new" ? "Sanction" : "Reject",
+  );
+
+  // ── NEW: per-service sanction batch limit (fetched from the backend) ─
+  const [poolSanctionBatchLimit, setPoolSanctionBatchLimit] = useState(null);
 
   // ── Action state ────────────────────────────────────────────────────
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -100,6 +111,34 @@ export default function ApplicationTablePage() {
   useEffect(() => {
     pendingIdsRef.current = pendingIds;
   }, [pendingIds]);
+
+  // ── NEW: fetch the pool sanction batch limit for this service ──────
+  // Only fetched when the pool + sanction flow is actually available for
+  // this page. On failure the state stays null and the child's built-in
+  // default of 5 applies — same behaviour as before this change.
+  useEffect(() => {
+    if (!serviceId || !canHavePool || !canSanction || dataType !== "new") {
+      setPoolSanctionBatchLimit(null);
+      return;
+    }
+
+    let alive = true;
+    axiosInstance
+      .get("/Officer/GetPoolSanctionBatchLimit", { params: { serviceId } })
+      .then((r) => {
+        const v = r.data?.poolSanctionBatchLimit;
+        if (alive && Number.isInteger(v) && v > 0) {
+          setPoolSanctionBatchLimit(v);
+        }
+      })
+      .catch(() => {
+        /* keep null → ServerSideTable falls back to its default */
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [serviceId, canHavePool, canSanction, dataType]);
 
   // ── Scoped loader ───────────────────────────────────────────────────
   const beginLoader = useCallback((msg = "Processing…") => {
@@ -220,7 +259,6 @@ export default function ApplicationTablePage() {
         setPullRow(row.original);
         setPullConfirmOpen(true);
       },
-      // ✅ ADD THIS NEW HANDLER FOR WITHHELD APPLICATIONS
       pullWithheldApplication: async (row) => {
         setPullRow(row.original);
         setPullConfirmOpen(true);
@@ -234,12 +272,10 @@ export default function ApplicationTablePage() {
           },
         }),
 
-      // ── FIXED: fetch the PDF bytes before opening the modal ─────────────
       handleViewPdf: async (row, action) => {
         const { referenceNumber, applicationType: appType } = row.original;
         const { type: actType, corrigendumId } = action;
 
-        // Navigation-only actions — no PDF involved.
         if (actType === "handleViewCorrigendumApplication") {
           navigate("/officer/viewcorrigendumdetails", {
             state: {
@@ -251,7 +287,6 @@ export default function ApplicationTablePage() {
           return;
         }
 
-        // ── Resolve the filename on disk ──────────────────────────────────
         let filename;
         if (actType === "DownloadSL") {
           filename = `${referenceNumber.replace(/\//g, "_")}_SanctionLetter.pdf`;
@@ -260,8 +295,6 @@ export default function ApplicationTablePage() {
         } else if (actType === "DownloadCorrection") {
           filename = `${corrigendumId.replace(/\//g, "_")}_CorrectionSanctionLetter.pdf`;
         } else if (actType === "View" && corrigendumId) {
-          // Sanctioned corrigendum / correction row emitted by the backend.
-          // File on disk: {cid_underscored}_{appType}_SanctionLetter.pdf
           filename = `${corrigendumId.replace(/\//g, "_")}_${appType}_SanctionLetter.pdf`;
         }
 
@@ -273,7 +306,6 @@ export default function ApplicationTablePage() {
           return;
         }
 
-        // ── Fetch, validate, then open the modal ──────────────────────────
         try {
           const fetchedBlob = await withLoader(async () => {
             const pdfR = await axiosInstance.get("/Base/DisplayFile", {
@@ -424,8 +456,6 @@ export default function ApplicationTablePage() {
       let hasError = false;
       try {
         if (selectedAction === "toInbox") {
-          // "Return to Inbox" does not go through HandleAction — it is a
-          // pure pool operation on the backend and is still driven from here.
           const fd = new FormData();
           fd.append("Serviceid", serviceId);
           fd.append("list", JSON.stringify(Array.isArray(id) ? id : [id]));
@@ -469,9 +499,6 @@ export default function ApplicationTablePage() {
           setPendingFormData(formData);
           return false;
         } else {
-          // Reject (and any future non-sanction action).
-          // Pool removal now happens server-side inside HandleAction, so there
-          // is no follow-up client call — the operation is atomic.
           const { data: r } = await withLoader(
             () => axiosInstance.post("/Officer/HandleAction", formData),
             `Processing ${id}…`,
@@ -515,9 +542,6 @@ export default function ApplicationTablePage() {
   );
 
   // ── Sign + update flow ──────────────────────────────────────────────
-  // NOTE: pool removal for a sanctioned application is now performed by the
-  // backend inside HandleAction (same DB transaction), so we no longer issue
-  // a separate RemoveFromPool call from this function.
   const signAndUpdatePdf = useCallback(
     async (pinToUse) => {
       try {
@@ -539,38 +563,33 @@ export default function ApplicationTablePage() {
 
         const selected = certificates[0];
 
-        // Check expiration
         if (new Date(certDetails.expirationDate) < new Date()) {
           throw new Error("Certificate expired");
         }
 
-        // ── ROBUST SERIAL NUMBER MATCHING ──────────────────────────────
         const norm = (v) =>
           String(v ?? "")
             .replace(/\s+/g, "")
             .replace(/-/g, "")
             .toUpperCase();
 
-        const dbSerial = norm(certDetails.serial_number); // From C# DB
-        const tokenSerial = norm(selected.serial_number); // From Python (decimal string)
-        const tokenHex = norm(selected.serial_number_hex); // From Python (hex string)
-        const tokenInt = String(selected.serial_number_int ?? ""); // From Python (integer)
+        const dbSerial = norm(certDetails.serial_number);
+        const tokenSerial = norm(selected.serial_number);
+        const tokenHex = norm(selected.serial_number_hex);
+        const tokenInt = String(selected.serial_number_int ?? "");
 
         let isMatch = false;
 
-        // Strategy 1: Direct match (if DB stored decimal string correctly)
         if (dbSerial === tokenSerial) {
           isMatch = true;
           console.log("✅ Matched via direct decimal string comparison");
         }
 
-        // Strategy 2: Direct hex match (if DB stored hex correctly)
         if (!isMatch && dbSerial === tokenHex) {
           isMatch = true;
           console.log("✅ Matched via direct hex comparison");
         }
 
-        // Strategy 3: DB hex parsed as integer == token integer
         if (!isMatch) {
           try {
             const dbAsInt = parseInt(dbSerial, 16);
@@ -581,7 +600,6 @@ export default function ApplicationTablePage() {
           } catch (e) {}
         }
 
-        // Strategy 4: DB string parsed as decimal == token integer
         if (!isMatch) {
           try {
             const dbAsDecimal = parseInt(dbSerial, 10);
@@ -592,7 +610,6 @@ export default function ApplicationTablePage() {
           } catch (e) {}
         }
 
-        // Strategy 5: ASCII decode fallback (if DB stored "123" as "313233")
         if (!isMatch && dbSerial.length % 2 === 0 && dbSerial.length > 0) {
           try {
             let decoded = "";
@@ -621,9 +638,7 @@ export default function ApplicationTablePage() {
           );
           throw new Error("Not the registered certificate");
         }
-        // ────────────────────────────────────────────────────────────────
 
-        // Pass the hex serial to the Python app for signing
         const signedBlob = await withLoader(
           () => signPdf(blob, pinToUse, selected.serial_number_hex),
           "Signing PDF…",
@@ -638,8 +653,6 @@ export default function ApplicationTablePage() {
         if (!updR.data.status) throw new Error("Failed to update PDF");
 
         if (formData) {
-          // HandleAction atomically: applies the Sanction, updates the workflow
-          // and snapshot counts, and removes this app from the officer's pool.
           const { data: r } = await withLoader(
             () => axiosInstance.post("/Officer/HandleAction", formData),
             `Sanctioning ${appId}…`,
@@ -657,9 +670,6 @@ export default function ApplicationTablePage() {
           theme: "colored",
         });
 
-        // Always read the LATEST batch state from refs — the modal can hold
-        // a stale instance of this callback and its closure would otherwise
-        // re-serve the previous application.
         const ids = pendingIdsRef.current;
         const idx = currentIdIndexRef.current;
         const next = idx + 1;
@@ -689,13 +699,7 @@ export default function ApplicationTablePage() {
         throw error;
       }
     },
-    [
-      processSingleId,
-      refreshTable,
-      withLoader,
-      // currentIdIndex / pendingIds intentionally excluded — read via refs.
-      // serviceId no longer required — pool removal is server-side.
-    ],
+    [processSingleId, refreshTable, withLoader],
   );
 
   const handlePinSubmit = useCallback(async () => {
@@ -750,7 +754,6 @@ export default function ApplicationTablePage() {
   }, [pendingRejectRows, processAllIds]);
 
   // ── Pull flow ───────────────────────────────────────────────────────
-  // ── Pull flow ───────────────────────────────────────────────────────
   const handlePullApplication = async () => {
     try {
       let response;
@@ -767,9 +770,7 @@ export default function ApplicationTablePage() {
             }),
           "Pulling corrigendum…",
         );
-      }
-      // ✅ ADD THIS BLOCK TO HANDLE WITHHELD APPLICATIONS
-      else if (
+      } else if (
         url.includes("WithheldApplications") ||
         tableTitle?.toLowerCase().includes("withheld")
       ) {
@@ -819,6 +820,22 @@ export default function ApplicationTablePage() {
           position: "top-right",
           theme: "colored",
         });
+
+      // ── NEW: enforce the same cap the child UI is showing, so a
+      // programmatic call or a stale child instance can't sneak past it.
+      if (
+        selectedAction === "Sanction" &&
+        Number.isInteger(poolSanctionBatchLimit) &&
+        selectedRows.length > poolSanctionBatchLimit
+      ) {
+        return toast.error(
+          `Sanction batch limit is ${poolSanctionBatchLimit} application${
+            poolSanctionBatchLimit === 1 ? "" : "s"
+          } per batch.`,
+          { position: "top-center", autoClose: 4000, theme: "colored" },
+        );
+      }
+
       if (selectedAction === "Sanction") {
         const dscCheck = await withLoader(checkDSCStatus, "Verifying DSC…");
         if (!dscCheck.status)
@@ -835,7 +852,7 @@ export default function ApplicationTablePage() {
         await processAllIds(ids);
       }
     },
-    [selectedAction, processAllIds, withLoader],
+    [selectedAction, processAllIds, withLoader, poolSanctionBatchLimit],
   );
 
   const getActionOptions = React.useMemo(() => {
@@ -858,7 +875,6 @@ export default function ApplicationTablePage() {
 
   // ── Back to dashboard ───────────────────────────────────────────────
   const handleBack = () => {
-    // Signal the dashboard to re-fetch counts for this service.
     navigate("/officer/home", {
       state: { returnServiceId: serviceId },
     });
@@ -922,6 +938,10 @@ export default function ApplicationTablePage() {
             setSelectedAction={setSelectedAction}
             Title={tableTitle}
             showDownloadButtons={true}
+            // ── NEW: pass the per-service limit through. `?? undefined`
+            //    (not `null`) so the child's `= 5` default still fires
+            //    while the fetch is in flight or if it failed.
+            poolSanctionBatchLimit={poolSanctionBatchLimit ?? 5}
           />
         </Box>
       </MuiContainer>

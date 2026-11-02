@@ -64565,86 +64565,98 @@ function ApplicationTablePage() {
     _useState2 = (0,slicedToArray/* default */.A)(_useState, 2),
     tableKey = _useState2[0],
     setTableKey = _useState2[1];
-  var _useState3 = (0,react.useState)("Sanction"),
+
+  // ── FIX: default the action to a value that actually exists in the
+  // dropdown. When sanction is unavailable the previous "Sanction" default
+  // left the <Select> bound to a non-existent option and caused the child's
+  // isSanctionAction check to evaluate true in contexts where sanctioning
+  // was never offered.
+  var _useState3 = (0,react.useState)(canSanction && dataType === "new" ? "Sanction" : "Reject"),
     _useState4 = (0,slicedToArray/* default */.A)(_useState3, 2),
     selectedAction = _useState4[0],
     setSelectedAction = _useState4[1];
 
-  // ── Action state ────────────────────────────────────────────────────
-  var _useState5 = (0,react.useState)(false),
+  // ── NEW: per-service sanction batch limit (fetched from the backend) ─
+  var _useState5 = (0,react.useState)(null),
     _useState6 = (0,slicedToArray/* default */.A)(_useState5, 2),
-    confirmOpen = _useState6[0],
-    setConfirmOpen = _useState6[1];
+    poolSanctionBatchLimit = _useState6[0],
+    setPoolSanctionBatchLimit = _useState6[1];
+
+  // ── Action state ────────────────────────────────────────────────────
   var _useState7 = (0,react.useState)(false),
     _useState8 = (0,slicedToArray/* default */.A)(_useState7, 2),
-    rejectConfirmOpen = _useState8[0],
-    setRejectConfirmOpen = _useState8[1];
+    confirmOpen = _useState8[0],
+    setConfirmOpen = _useState8[1];
   var _useState9 = (0,react.useState)(false),
     _useState0 = (0,slicedToArray/* default */.A)(_useState9, 2),
-    pullConfirmOpen = _useState0[0],
-    setPullConfirmOpen = _useState0[1];
-  var _useState1 = (0,react.useState)([]),
+    rejectConfirmOpen = _useState0[0],
+    setRejectConfirmOpen = _useState0[1];
+  var _useState1 = (0,react.useState)(false),
     _useState10 = (0,slicedToArray/* default */.A)(_useState1, 2),
-    pendingRejectRows = _useState10[0],
-    setPendingRejectRows = _useState10[1];
-  var _useState11 = (0,react.useState)(""),
+    pullConfirmOpen = _useState10[0],
+    setPullConfirmOpen = _useState10[1];
+  var _useState11 = (0,react.useState)([]),
     _useState12 = (0,slicedToArray/* default */.A)(_useState11, 2),
-    pin = _useState12[0],
-    setPin = _useState12[1];
-  var _useState13 = (0,react.useState)(null),
+    pendingRejectRows = _useState12[0],
+    setPendingRejectRows = _useState12[1];
+  var _useState13 = (0,react.useState)(""),
     _useState14 = (0,slicedToArray/* default */.A)(_useState13, 2),
-    storedPin = _useState14[0],
-    setStoredPin = _useState14[1];
+    pin = _useState14[0],
+    setPin = _useState14[1];
+  var _useState15 = (0,react.useState)(null),
+    _useState16 = (0,slicedToArray/* default */.A)(_useState15, 2),
+    storedPin = _useState16[0],
+    setStoredPin = _useState16[1];
 
   // ── PDF state ───────────────────────────────────────────────────────
-  var _useState15 = (0,react.useState)(false),
-    _useState16 = (0,slicedToArray/* default */.A)(_useState15, 2),
-    pdfModalOpen = _useState16[0],
-    setPdfModalOpen = _useState16[1];
-  var _useState17 = (0,react.useState)(""),
+  var _useState17 = (0,react.useState)(false),
     _useState18 = (0,slicedToArray/* default */.A)(_useState17, 2),
-    pdfUrl = _useState18[0],
-    setPdfUrl = _useState18[1];
-  var _useState19 = (0,react.useState)(null),
+    pdfModalOpen = _useState18[0],
+    setPdfModalOpen = _useState18[1];
+  var _useState19 = (0,react.useState)(""),
     _useState20 = (0,slicedToArray/* default */.A)(_useState19, 2),
-    pdfBlob = _useState20[0],
-    setPdfBlob = _useState20[1];
-  var _useState21 = (0,react.useState)(false),
+    pdfUrl = _useState20[0],
+    setPdfUrl = _useState20[1];
+  var _useState21 = (0,react.useState)(null),
     _useState22 = (0,slicedToArray/* default */.A)(_useState21, 2),
-    isSignedPdf = _useState22[0],
-    setIsSignedPdf = _useState22[1];
+    pdfBlob = _useState22[0],
+    setPdfBlob = _useState22[1];
+  var _useState23 = (0,react.useState)(false),
+    _useState24 = (0,slicedToArray/* default */.A)(_useState23, 2),
+    isSignedPdf = _useState24[0],
+    setIsSignedPdf = _useState24[1];
 
   // ── Batch/sanction state ────────────────────────────────────────────
-  var _useState23 = (0,react.useState)(""),
-    _useState24 = (0,slicedToArray/* default */.A)(_useState23, 2),
-    currentApplicationId = _useState24[0],
-    setCurrentApplicationId = _useState24[1];
-  var _useState25 = (0,react.useState)([]),
+  var _useState25 = (0,react.useState)(""),
     _useState26 = (0,slicedToArray/* default */.A)(_useState25, 2),
-    pendingIds = _useState26[0],
-    setPendingIds = _useState26[1];
-  var _useState27 = (0,react.useState)(0),
+    currentApplicationId = _useState26[0],
+    setCurrentApplicationId = _useState26[1];
+  var _useState27 = (0,react.useState)([]),
     _useState28 = (0,slicedToArray/* default */.A)(_useState27, 2),
-    currentIdIndex = _useState28[0],
-    setCurrentIdIndex = _useState28[1];
-  var _useState29 = (0,react.useState)(null),
+    pendingIds = _useState28[0],
+    setPendingIds = _useState28[1];
+  var _useState29 = (0,react.useState)(0),
     _useState30 = (0,slicedToArray/* default */.A)(_useState29, 2),
-    pendingFormData = _useState30[0],
-    setPendingFormData = _useState30[1];
-  var _useState31 = (0,react.useState)({}),
+    currentIdIndex = _useState30[0],
+    setCurrentIdIndex = _useState30[1];
+  var _useState31 = (0,react.useState)(null),
     _useState32 = (0,slicedToArray/* default */.A)(_useState31, 2),
-    pullRow = _useState32[0],
-    setPullRow = _useState32[1];
+    pendingFormData = _useState32[0],
+    setPendingFormData = _useState32[1];
+  var _useState33 = (0,react.useState)({}),
+    _useState34 = (0,slicedToArray/* default */.A)(_useState33, 2),
+    pullRow = _useState34[0],
+    setPullRow = _useState34[1];
 
   // ── Loader overlay ──────────────────────────────────────────────────
-  var _useState33 = (0,react.useState)(false),
-    _useState34 = (0,slicedToArray/* default */.A)(_useState33, 2),
-    actionLoading = _useState34[0],
-    setActionLoading = _useState34[1];
-  var _useState35 = (0,react.useState)(""),
+  var _useState35 = (0,react.useState)(false),
     _useState36 = (0,slicedToArray/* default */.A)(_useState35, 2),
-    actionMessage = _useState36[0],
-    setActionMessage = _useState36[1];
+    actionLoading = _useState36[0],
+    setActionLoading = _useState36[1];
+  var _useState37 = (0,react.useState)(""),
+    _useState38 = (0,slicedToArray/* default */.A)(_useState37, 2),
+    actionMessage = _useState38[0],
+    setActionMessage = _useState38[1];
 
   // ── Refs (avoid stale closures during the multi-app batch) ──────────
   var pdfBlobRef = (0,react.useRef)(null);
@@ -64672,6 +64684,34 @@ function ApplicationTablePage() {
   (0,react.useEffect)(function () {
     pendingIdsRef.current = pendingIds;
   }, [pendingIds]);
+
+  // ── NEW: fetch the pool sanction batch limit for this service ──────
+  // Only fetched when the pool + sanction flow is actually available for
+  // this page. On failure the state stays null and the child's built-in
+  // default of 5 applies — same behaviour as before this change.
+  (0,react.useEffect)(function () {
+    if (!serviceId || !canHavePool || !canSanction || dataType !== "new") {
+      setPoolSanctionBatchLimit(null);
+      return;
+    }
+    var alive = true;
+    axiosConfig.get("/Officer/GetPoolSanctionBatchLimit", {
+      params: {
+        serviceId: serviceId
+      }
+    }).then(function (r) {
+      var _r$data;
+      var v = (_r$data = r.data) === null || _r$data === void 0 ? void 0 : _r$data.poolSanctionBatchLimit;
+      if (alive && Number.isInteger(v) && v > 0) {
+        setPoolSanctionBatchLimit(v);
+      }
+    })["catch"](function () {
+      /* keep null → ServerSideTable falls back to its default */
+    });
+    return function () {
+      alive = false;
+    };
+  }, [serviceId, canHavePool, canSanction, dataType]);
 
   // ── Scoped loader ───────────────────────────────────────────────────
   var beginLoader = (0,react.useCallback)(function () {
@@ -64934,7 +64974,6 @@ function ApplicationTablePage() {
         }
         return pullCorrigendum;
       }(),
-      // ✅ ADD THIS NEW HANDLER FOR WITHHELD APPLICATIONS
       pullWithheldApplication: function () {
         var _pullWithheldApplication = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee8(row) {
           return regenerator_default().wrap(function (_context8) {
@@ -64962,7 +65001,6 @@ function ApplicationTablePage() {
           }
         });
       },
-      // ── FIXED: fetch the PDF bytes before opening the modal ─────────────
       handleViewPdf: function () {
         var _handleViewPdf = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee0(row, action) {
           var _row$original, referenceNumber, appType, actType, corrigendumId, filename, fetchedBlob, _t6;
@@ -64970,7 +65008,7 @@ function ApplicationTablePage() {
             while (1) switch (_context0.prev = _context0.next) {
               case 0:
                 _row$original = row.original, referenceNumber = _row$original.referenceNumber, appType = _row$original.applicationType;
-                actType = action.type, corrigendumId = action.corrigendumId; // Navigation-only actions — no PDF involved.
+                actType = action.type, corrigendumId = action.corrigendumId;
                 if (!(actType === "handleViewCorrigendumApplication")) {
                   _context0.next = 1;
                   break;
@@ -64991,8 +65029,6 @@ function ApplicationTablePage() {
                 } else if (actType === "DownloadCorrection") {
                   filename = "".concat(corrigendumId.replace(/\//g, "_"), "_CorrectionSanctionLetter.pdf");
                 } else if (actType === "View" && corrigendumId) {
-                  // Sanctioned corrigendum / correction row emitted by the backend.
-                  // File on disk: {cid_underscored}_{appType}_SanctionLetter.pdf
                   filename = "".concat(corrigendumId.replace(/\//g, "_"), "_").concat(appType, "_SanctionLetter.pdf");
                 }
                 if (filename) {
@@ -65258,8 +65294,6 @@ function ApplicationTablePage() {
               _context12.next = 4;
               break;
             }
-            // "Return to Inbox" does not go through HandleAction — it is a
-            // pure pool operation on the backend and is still driven from here.
             fd = new FormData();
             fd.append("Serviceid", serviceId);
             fd.append("list", JSON.stringify(Array.isArray(id) ? id : [id]));
@@ -65417,9 +65451,6 @@ function ApplicationTablePage() {
   }(), [selectedAction, processSingleId, refreshTable]);
 
   // ── Sign + update flow ──────────────────────────────────────────────
-  // NOTE: pool removal for a sanctioned application is now performed by the
-  // backend inside HandleAction (same DB transaction), so we no longer issue
-  // a separate RemoveFromPool call from this function.
   var signAndUpdatePdf = (0,react.useCallback)(/*#__PURE__*/function () {
     var _ref1 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee14(pinToUse) {
       var _selected$serial_numb, blob, appId, formData, certDetails, certificates, selected, norm, dbSerial, tokenSerial, tokenHex, tokenInt, isMatch, dbAsInt, dbAsDecimal, decoded, i, signedBlob, updForm, updR, _yield$withLoader2, r, ids, idx, next, _t11;
@@ -65467,34 +65498,29 @@ function ApplicationTablePage() {
             }
             throw new Error("No certificates on token");
           case 7:
-            selected = certificates[0]; // Check expiration
+            selected = certificates[0];
             if (!(new Date(certDetails.expirationDate) < new Date())) {
               _context14.next = 8;
               break;
             }
             throw new Error("Certificate expired");
           case 8:
-            // ── ROBUST SERIAL NUMBER MATCHING ──────────────────────────────
             norm = function norm(v) {
               return String(v !== null && v !== void 0 ? v : "").replace(/\s+/g, "").replace(/-/g, "").toUpperCase();
             };
-            dbSerial = norm(certDetails.serial_number); // From C# DB
-            tokenSerial = norm(selected.serial_number); // From Python (decimal string)
-            tokenHex = norm(selected.serial_number_hex); // From Python (hex string)
-            tokenInt = String((_selected$serial_numb = selected.serial_number_int) !== null && _selected$serial_numb !== void 0 ? _selected$serial_numb : ""); // From Python (integer)
-            isMatch = false; // Strategy 1: Direct match (if DB stored decimal string correctly)
+            dbSerial = norm(certDetails.serial_number);
+            tokenSerial = norm(selected.serial_number);
+            tokenHex = norm(selected.serial_number_hex);
+            tokenInt = String((_selected$serial_numb = selected.serial_number_int) !== null && _selected$serial_numb !== void 0 ? _selected$serial_numb : "");
+            isMatch = false;
             if (dbSerial === tokenSerial) {
               isMatch = true;
               console.log("✅ Matched via direct decimal string comparison");
             }
-
-            // Strategy 2: Direct hex match (if DB stored hex correctly)
             if (!isMatch && dbSerial === tokenHex) {
               isMatch = true;
               console.log("✅ Matched via direct hex comparison");
             }
-
-            // Strategy 3: DB hex parsed as integer == token integer
             if (!isMatch) {
               try {
                 dbAsInt = parseInt(dbSerial, 16);
@@ -65504,8 +65530,6 @@ function ApplicationTablePage() {
                 }
               } catch (e) {}
             }
-
-            // Strategy 4: DB string parsed as decimal == token integer
             if (!isMatch) {
               try {
                 dbAsDecimal = parseInt(dbSerial, 10);
@@ -65515,8 +65539,6 @@ function ApplicationTablePage() {
                 }
               } catch (e) {}
             }
-
-            // Strategy 5: ASCII decode fallback (if DB stored "123" as "313233")
             if (!isMatch && dbSerial.length % 2 === 0 && dbSerial.length > 0) {
               try {
                 decoded = "";
@@ -65583,10 +65605,6 @@ function ApplicationTablePage() {
               position: "top-right",
               theme: "colored"
             });
-
-            // Always read the LATEST batch state from refs — the modal can hold
-            // a stale instance of this callback and its closure would otherwise
-            // re-serve the previous application.
             ids = pendingIdsRef.current;
             idx = currentIdIndexRef.current;
             next = idx + 1;
@@ -65637,10 +65655,7 @@ function ApplicationTablePage() {
     return function (_x14) {
       return _ref1.apply(this, arguments);
     };
-  }(), [processSingleId, refreshTable, withLoader
-  // currentIdIndex / pendingIds intentionally excluded — read via refs.
-  // serviceId no longer required — pool removal is server-side.
-  ]);
+  }(), [processSingleId, refreshTable, withLoader]);
   var handlePinSubmit = (0,react.useCallback)(/*#__PURE__*/(0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee15() {
     var _t12;
     return regenerator_default().wrap(function (_context15) {
@@ -65734,7 +65749,6 @@ function ApplicationTablePage() {
     }, _callee17);
   })), [pendingRejectRows, processAllIds]);
 
-  // ── Pull flow ───────────────────────────────────────────────────────
   // ── Pull flow ───────────────────────────────────────────────────────
   var handlePullApplication = /*#__PURE__*/function () {
     var _ref13 = (0,asyncToGenerator/* default */.A)(/*#__PURE__*/regenerator_default().mark(function _callee18() {
@@ -65837,16 +65851,26 @@ function ApplicationTablePage() {
               theme: "colored"
             }));
           case 1:
-            if (!(selectedAction === "Sanction")) {
-              _context19.next = 3;
+            if (!(selectedAction === "Sanction" && Number.isInteger(poolSanctionBatchLimit) && selectedRows.length > poolSanctionBatchLimit)) {
+              _context19.next = 2;
               break;
             }
-            _context19.next = 2;
-            return withLoader(checkDSCStatus, "Verifying DSC…");
+            return _context19.abrupt("return", react_toastify_dist/* toast */.oR.error("Sanction batch limit is ".concat(poolSanctionBatchLimit, " application").concat(poolSanctionBatchLimit === 1 ? "" : "s", " per batch."), {
+              position: "top-center",
+              autoClose: 4000,
+              theme: "colored"
+            }));
           case 2:
+            if (!(selectedAction === "Sanction")) {
+              _context19.next = 4;
+              break;
+            }
+            _context19.next = 3;
+            return withLoader(checkDSCStatus, "Verifying DSC…");
+          case 3:
             dscCheck = _context19.sent;
             if (dscCheck.status) {
-              _context19.next = 3;
+              _context19.next = 4;
               break;
             }
             return _context19.abrupt("return", react_toastify_dist/* toast */.oR.error("Cannot Sanction: ".concat(dscCheck.reason || "DSC invalid."), {
@@ -65854,22 +65878,22 @@ function ApplicationTablePage() {
               autoClose: 6000,
               theme: "colored"
             }));
-          case 3:
+          case 4:
             ids = selectedRows.map(function (i) {
               return i.original.referenceNumber;
             });
             if (!(selectedAction === "Reject")) {
-              _context19.next = 4;
+              _context19.next = 5;
               break;
             }
             setPendingRejectRows(selectedRows);
             setRejectConfirmOpen(true);
-            _context19.next = 5;
+            _context19.next = 6;
             break;
-          case 4:
-            _context19.next = 5;
-            return processAllIds(ids);
           case 5:
+            _context19.next = 6;
+            return processAllIds(ids);
+          case 6:
           case "end":
             return _context19.stop();
         }
@@ -65878,7 +65902,7 @@ function ApplicationTablePage() {
     return function (_x15) {
       return _ref14.apply(this, arguments);
     };
-  }(), [selectedAction, processAllIds, withLoader]);
+  }(), [selectedAction, processAllIds, withLoader, poolSanctionBatchLimit]);
   var getActionOptions = react.useMemo(function () {
     var o = [{
       value: "Reject",
@@ -65903,7 +65927,6 @@ function ApplicationTablePage() {
 
   // ── Back to dashboard ───────────────────────────────────────────────
   var handleBack = function handleBack() {
-    // Signal the dashboard to re-fetch counts for this service.
     navigate("/officer/home", {
       state: {
         returnServiceId: serviceId
@@ -65982,6 +66005,11 @@ function ApplicationTablePage() {
     setSelectedAction: setSelectedAction,
     Title: tableTitle,
     showDownloadButtons: true
+    // ── NEW: pass the per-service limit through. `?? undefined`
+    //    (not `null`) so the child's `= 5` default still fires
+    //    while the fetch is in flight or if it failed.
+    ,
+    poolSanctionBatchLimit: poolSanctionBatchLimit !== null && poolSanctionBatchLimit !== void 0 ? poolSanctionBatchLimit : 5
   }))), /*#__PURE__*/react.createElement(Dialog/* default */.A, {
     open: rejectConfirmOpen,
     onClose: function onClose() {

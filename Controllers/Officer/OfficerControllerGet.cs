@@ -4659,6 +4659,46 @@ namespace SahayataNidhi.Controllers.Officer
         }
 
 
+        public IActionResult GetPoolSanctionBatchLimit(string serviceId)
+        {
+            const int DefaultLimit = 5;
+
+            if (string.IsNullOrWhiteSpace(serviceId) || !int.TryParse(serviceId, out var id))
+                return Json(new { status = false, message = "Invalid serviceId" });
+
+            var json = dbcontext.Services
+                .AsNoTracking()
+                .Where(s => s.Serviceid == id)
+                .Select(s => s.Submissionlimitconfig)
+                .FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(json) || json.Trim() == "null")
+                return OkLimit(id, DefaultLimit);
+
+            try
+            {
+                var root = JObject.Parse(json);
+
+                // JObject.Parse("null") returns null, so guard for it explicitly.
+                var tok = root?["poolSanctionBatchLimit"];
+                if (tok != null && tok.Type != JTokenType.Null)
+                {
+                    // Value<int?>() handles Integer, Float (10.0), and numeric strings.
+                    var v = tok.ToObject<int?>();
+                    if (v is int iv && iv > 0)
+                        return OkLimit(id, iv);
+                }
+            }
+            catch (Newtonsoft.Json.JsonException)
+            {
+                // malformed JSON → fall through to default
+            }
+
+            return OkLimit(id, DefaultLimit);
+
+            IActionResult OkLimit(int sid, int limit) =>
+                Json(new { status = true, serviceId = sid, poolSanctionBatchLimit = limit });
+        }
 
 
         [HttpGet]
