@@ -369,43 +369,57 @@ namespace SahayataNidhi.Controllers
         [HttpGet]
         public IActionResult GetFormElements([FromQuery] string serviceId)
         {
-            // Validate serviceId
             if (string.IsNullOrWhiteSpace(serviceId) || !int.TryParse(serviceId, out int parsedServiceId))
-            {
                 return BadRequest(new { status = false, message = "Invalid service ID." });
-            }
 
-            // Fetch the service
             var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == parsedServiceId);
             if (service == null || string.IsNullOrWhiteSpace(service.Formelement))
-            {
                 return BadRequest(new { status = false, message = "Service not found or no form elements found." });
-            }
 
-            // Parse the JSON into a JToken
             JToken root = JToken.Parse(service.Formelement);
 
-            // Extract sections and fields
+            // ─────────────────────────────────────────────────────
+            // Helper: build one field descriptor { name, label, type, options }
+            // ─────────────────────────────────────────────────────
+            object BuildFieldInfo(JToken field)
+            {
+                var name = field["name"]?.ToString();
+                var label = field["label"]?.ToString();
+                var type = field["type"]?.ToString() ?? "text";
+
+                var options = new List<object>();
+                if (field["options"] is JArray arr)
+                {
+                    foreach (var o in arr.OfType<JObject>())
+                    {
+                        var val = o["value"]?.ToString() ?? "";
+                        var lbl = o["label"]?.ToString() ?? o["value"]?.ToString() ?? "";
+                        if (string.IsNullOrWhiteSpace(lbl) && string.IsNullOrWhiteSpace(val))
+                            continue;
+                        options.Add(new { label = lbl, value = val });
+                    }
+                }
+
+                return new { name, label, type, options };
+            }
+
             var sections = new List<object>();
             foreach (var sectionToken in root)
             {
                 var sectionName = (string)sectionToken["section"]!;
                 var sectionFields = new List<object>();
 
-                // Add top-level fields
                 var fields = sectionToken["fields"];
                 if (fields != null)
                 {
                     foreach (var field in fields)
                     {
-                        var fieldName = (string)field["name"]!;
-                        var fieldLabel = (string)field["label"]!;
+                        var fieldName = (string?)field["name"];
+                        var fieldLabel = (string?)field["label"];
                         if (!string.IsNullOrWhiteSpace(fieldName) && !string.IsNullOrWhiteSpace(fieldLabel))
-                        {
-                            sectionFields.Add(new { name = fieldName, label = fieldLabel });
-                        }
+                            sectionFields.Add(BuildFieldInfo(field));
 
-                        // Handle nested additionalFields recursively
+                        // additionalFields at depth 2
                         var additionalFields = field["additionalFields"];
                         if (additionalFields != null && additionalFields.HasValues)
                         {
@@ -415,14 +429,12 @@ namespace SahayataNidhi.Controllers
                                 {
                                     foreach (var additionalField in additionalFieldArray)
                                     {
-                                        var nestedName = (string)additionalField["name"]!;
-                                        var nestedLabel = (string)additionalField["label"]!;
+                                        var nestedName = (string?)additionalField["name"];
+                                        var nestedLabel = (string?)additionalField["label"];
                                         if (!string.IsNullOrWhiteSpace(nestedName) && !string.IsNullOrWhiteSpace(nestedLabel))
-                                        {
-                                            sectionFields.Add(new { name = nestedName, label = nestedLabel });
-                                        }
+                                            sectionFields.Add(BuildFieldInfo(additionalField));
 
-                                        // Handle further nested additionalFields
+                                        // additionalFields at depth 3
                                         var nestedAdditionalFields = additionalField["additionalFields"];
                                         if (nestedAdditionalFields != null && nestedAdditionalFields.HasValues)
                                         {
@@ -432,12 +444,10 @@ namespace SahayataNidhi.Controllers
                                                 {
                                                     foreach (var nestedField in nestedArray)
                                                     {
-                                                        var deepNestedName = (string)nestedField["name"]!;
-                                                        var deepNestedLabel = (string)nestedField["label"]!;
-                                                        if (!string.IsNullOrWhiteSpace(deepNestedName) && !string.IsNullOrWhiteSpace(deepNestedLabel))
-                                                        {
-                                                            sectionFields.Add(new { name = deepNestedName, label = deepNestedLabel });
-                                                        }
+                                                        var deepName = (string?)nestedField["name"];
+                                                        var deepLabel = (string?)nestedField["label"];
+                                                        if (!string.IsNullOrWhiteSpace(deepName) && !string.IsNullOrWhiteSpace(deepLabel))
+                                                            sectionFields.Add(BuildFieldInfo(nestedField));
                                                     }
                                                 }
                                             }
@@ -449,32 +459,17 @@ namespace SahayataNidhi.Controllers
                     }
                 }
 
-                sections.Add(new
-                {
-                    sectionName,
-                    fields = sectionFields
-                });
+                sections.Add(new { sectionName, fields = sectionFields });
             }
 
-            // Get column names from DbContext
             var entityType = dbcontext.Model.FindEntityType(typeof(CitizenApplications));
             if (entityType == null)
-            {
                 return BadRequest(new { status = false, message = "Entity not found in DbContext." });
-            }
 
-            var columnNames = entityType.GetProperties()
-                .Select(p => p.GetColumnName())
-                .ToList();
+            var columnNames = entityType.GetProperties().Select(p => p.GetColumnName()).ToList();
 
-            return Json(new
-            {
-                status = true,
-                sections,
-                columnNames
-            });
+            return Json(new { status = true, sections, columnNames });
         }
-
         [HttpGet]
         public IActionResult GetFormElementsForEmail(string serviceId)
         {

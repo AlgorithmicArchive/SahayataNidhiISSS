@@ -1210,6 +1210,8 @@ namespace SahayataNidhi.Controllers
             [Column("permanent_district")] public string? PermanentDistrict { get; set; }
             [Column("permanent_tehsil")] public string? PermanentTehsil { get; set; }
             [Column("pension_type")] public string? PensionType { get; set; }
+            [Column("gender")] public string? Gender { get; set; }        // NEW
+            [Column("category")] public string? Category { get; set; }      // NEW
             [Column("udid_card_number")] public string? UdidCardNumber { get; set; }
             [Column("type_of_disability")] public string? TypeOfDisability { get; set; }
             [Column("kind_of_disability")] public string? KindOfDisability { get; set; }
@@ -1257,7 +1259,24 @@ namespace SahayataNidhi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetApplicationsForReport(int accessCode, int serviceId, string accessLevel, string? dataType = null, string reportType = "TehsilWise", string? statusType = null, string? ageRanges = null, int pageIndex = 0, int pageSize = 10, bool isPaginated = true, DateTime? fromDate = null, DateTime? toDate = null, DateTime? sanctionFromDate = null, DateTime? sanctionToDate = null)
+        public async Task<IActionResult> GetApplicationsForReport(
+      int accessCode,
+      int serviceId,
+      string accessLevel,
+      string? dataType = null,
+      string reportType = "TehsilWise",
+      string? statusType = null,
+      string? ageRanges = null,
+      int pageIndex = 0,
+      int pageSize = 10,
+      bool isPaginated = true,
+      DateTime? fromDate = null,
+      DateTime? toDate = null,
+      DateTime? sanctionFromDate = null,
+      DateTime? sanctionToDate = null,
+      string? gender = null,          // NEW
+      string? pensionType = null,     // NEW
+      string? category = null)        // NEW
         {
             try
             {
@@ -1270,7 +1289,8 @@ namespace SahayataNidhi.Controllers
                     $"FromDate: {fromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
                     $"ToDate: {toDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
                     $"SanctionFrom: {sanctionFromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
-                    $"SanctionTo: {sanctionToDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
+                    $"SanctionTo: {sanctionToDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"Gender: {gender ?? "NULL"}, PensionType: {pensionType ?? "NULL"}, Category: {category ?? "NULL"}");
 
                 List<dynamic> data;
                 List<dynamic> columns;
@@ -1281,11 +1301,11 @@ namespace SahayataNidhi.Controllers
                     case "TehsilWise":
                         var tehsilParameters = new[]
                         {
-                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
-                        };
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
+                };
 
                         var tehsilResults = dbcontext.Database
                             .SqlQueryRaw<SummaryReports>(
@@ -1296,14 +1316,14 @@ namespace SahayataNidhi.Controllers
                         data = tehsilResults.Cast<dynamic>().ToList();
                         totalRecords = data.Count;
                         columns = new List<dynamic>
-                        {
-                            new { accessorKey = "tehsilname", header = "Tehsil Name" },
-                            new { accessorKey = "totalapplicationssubmitted", header = "Total Applications Submitted" },
-                            new { accessorKey = "totalapplicationspending", header = "Total Applications Pending" },
-                            new { accessorKey = "totalapplicationsreturntoedit", header = "Total Applications Return to Edit" },
-                            new { accessorKey = "totalapplicationsrejected", header = "Total Applications Rejected" },
-                            new { accessorKey = "totalapplicationssanctioned", header = "Total Applications Sanctioned" }
-                        };
+                {
+                    new { accessorKey = "tehsilname", header = "Tehsil Name" },
+                    new { accessorKey = "totalapplicationssubmitted", header = "Total Applications Submitted" },
+                    new { accessorKey = "totalapplicationspending", header = "Total Applications Pending" },
+                    new { accessorKey = "totalapplicationsreturntoedit", header = "Total Applications Return to Edit" },
+                    new { accessorKey = "totalapplicationsrejected", header = "Total Applications Rejected" },
+                    new { accessorKey = "totalapplicationssanctioned", header = "Total Applications Sanctioned" }
+                };
                         break;
 
                     case "AgeWise":
@@ -1312,21 +1332,21 @@ namespace SahayataNidhi.Controllers
                         if (string.IsNullOrEmpty(ageRangesJson))
                         {
                             ageRangesJson = @"[
-                                {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
-                                {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
-                                {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
-                            ]";
+                        {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
+                        {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
+                        {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
+                    ]";
                         }
 
                         var ageParameters = new[]
                         {
-                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
-                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                            new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
-                        };
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                    new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
+                };
 
                         var ageResults = dbcontext.Database
                             .SqlQueryRaw<AgeWiseReportDto>(
@@ -1337,10 +1357,10 @@ namespace SahayataNidhi.Controllers
                         data = ageResults.Cast<dynamic>().ToList();
                         totalRecords = data.Count;
                         columns = new List<dynamic>
-                        {
-                            new { accessorKey = "age_range", header = "Age Range" },
-                            new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                        };
+                {
+                    new { accessorKey = "age_range", header = "Age Range" },
+                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                };
                         break;
 
                     case "PensionTypeWise":
@@ -1349,21 +1369,21 @@ namespace SahayataNidhi.Controllers
                         if (string.IsNullOrEmpty(ageRangesJson))
                         {
                             ageRangesJson = @"[
-                                {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
-                                {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
-                                {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
-                            ]";
+                        {""min"": 0, ""max"": 59, ""label"": ""Below 60""},
+                        {""min"": 60, ""max"": 79, ""label"": ""60 to 79""},
+                        {""min"": 80, ""max"": 999, ""label"": ""80 and Above""}
+                    ]";
                         }
 
                         var pensionParameters = new[]
                         {
-                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
-                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                            new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
-                        };
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                    new NpgsqlParameter("@p_age_ranges", NpgsqlDbType.Jsonb) { Value = ageRangesJson }
+                };
 
                         var pensionResults = dbcontext.Database
                             .SqlQueryRaw<PensionTypeWiseReportDto>(
@@ -1374,22 +1394,22 @@ namespace SahayataNidhi.Controllers
                         data = pensionResults.Cast<dynamic>().ToList();
                         totalRecords = data.Count;
                         columns = new List<dynamic>
-                        {
-                            new { accessorKey = "age_range", header = "Age Range" },
-                            new { accessorKey = "pensiontype", header = "Pension Type" },
-                            new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                        };
+                {
+                    new { accessorKey = "age_range", header = "Age Range" },
+                    new { accessorKey = "pensiontype", header = "Pension Type" },
+                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                };
                         break;
 
                     case "GenderWise":
                         var genderParameters = new[]
                         {
-                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
-                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
-                        };
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? "total" : statusType },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType }
+                };
 
                         var genderResults = dbcontext.Database
                             .SqlQueryRaw<GenderWiseReportDto>(
@@ -1400,30 +1420,34 @@ namespace SahayataNidhi.Controllers
                         data = genderResults.Cast<dynamic>().ToList();
                         totalRecords = data.Count;
                         columns = new List<dynamic>
-                        {
-                            new { accessorKey = "gender", header = "Gender" },
-                            new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                        };
+                {
+                    new { accessorKey = "gender", header = "Gender" },
+                    new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
+                };
                         break;
 
                     case "DetailedApplications":
                         var detailedParameters = new[]
                         {
-                            new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
-                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
-                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
-                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
-                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
-                            new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
-                            new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
-                            new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = isPaginated },
-                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value },
-                            new NpgsqlParameter("@p_startdate",          NpgsqlDbType.Timestamp) { Value = fromDate.HasValue         ? (object)fromDate.Value.Date         : DBNull.Value },
-                            new NpgsqlParameter("@p_enddate",            NpgsqlDbType.Timestamp) { Value = toDate.HasValue           ? (object)toDate.Value.Date           : DBNull.Value },
-                            new NpgsqlParameter("@p_sanction_startdate", NpgsqlDbType.Timestamp) { Value = sanctionFromDate.HasValue ? (object)sanctionFromDate.Value.Date : DBNull.Value },
-                            new NpgsqlParameter("@p_sanction_enddate",   NpgsqlDbType.Timestamp) { Value = sanctionToDate.HasValue   ? (object)sanctionToDate.Value.Date   : DBNull.Value }
-                        };
+                    new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
+                    new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                    new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                    new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
+                    new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                    new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
+                    new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
+                    new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = isPaginated },
+                    new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                    new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value },
+                    new NpgsqlParameter("@p_startdate",          NpgsqlDbType.Timestamp) { Value = fromDate.HasValue         ? (object)fromDate.Value.Date         : DBNull.Value },
+                    new NpgsqlParameter("@p_enddate",            NpgsqlDbType.Timestamp) { Value = toDate.HasValue           ? (object)toDate.Value.Date           : DBNull.Value },
+                    new NpgsqlParameter("@p_sanction_startdate", NpgsqlDbType.Timestamp) { Value = sanctionFromDate.HasValue ? (object)sanctionFromDate.Value.Date : DBNull.Value },
+                    new NpgsqlParameter("@p_sanction_enddate",   NpgsqlDbType.Timestamp) { Value = sanctionToDate.HasValue   ? (object)sanctionToDate.Value.Date   : DBNull.Value },
+                    // ── NEW filters ─────────────────────────────────────
+                    new NpgsqlParameter("@p_gender",       NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(gender)      ? DBNull.Value : (object)gender },
+                    new NpgsqlParameter("@p_pension_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(pensionType) ? DBNull.Value : (object)pensionType },
+                    new NpgsqlParameter("@p_category",     NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(category)    ? DBNull.Value : (object)category }
+                };
 
                         var detailedResults = dbcontext.Database
                             .SqlQueryRaw<DetailedApplicationsReportDto>(
@@ -1431,7 +1455,8 @@ namespace SahayataNidhi.Controllers
                                 "@p_role, @p_access_level, @p_access_code, @p_application_status, " +
                                 "@p_service_id, @p_page_index, @p_page_size, @p_is_paginated, " +
                                 "@p_data_type, @p_division_code, @p_startdate, @p_enddate, " +
-                                "@p_sanction_startdate, @p_sanction_enddate)",
+                                "@p_sanction_startdate, @p_sanction_enddate, " +
+                                "@p_gender, @p_pension_type, @p_category)",
                                 detailedParameters)
                             .ToList();
 
@@ -1461,6 +1486,8 @@ namespace SahayataNidhi.Controllers
                             new { accessorKey = "permanentDistrict",                header = "Permanent District" },
                             new { accessorKey = "permanentTehsil",                  header = "Permanent Tehsil" },
                             new { accessorKey = "pensionType",                      header = "Pension Type" },
+                            new { accessorKey = "gender",                           header = "Gender" },        // NEW
+                            new { accessorKey = "category",                         header = "Category" },      // NEW
                             new { accessorKey = "udidCardNumber",                   header = "UDID Card Number" },
                             new { accessorKey = "typeOfDisability",                 header = "Type of Disability" },
                             new { accessorKey = "kindOfDisability",                 header = "Kind of Disability" },
@@ -1499,18 +1526,18 @@ namespace SahayataNidhi.Controllers
 
                             var withheldParameters = new[]
                             {
-                                new NpgsqlParameter("@p_role",           NpgsqlDbType.Varchar)   { Value = officer?.Role        ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_access_level",   NpgsqlDbType.Varchar)   { Value = accessLevel          ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_access_code",    NpgsqlDbType.Integer)   { Value = accessCode },
-                                new NpgsqlParameter("@p_service_id",     NpgsqlDbType.Integer)   { Value = serviceId },
-                                new NpgsqlParameter("@p_page_index",     NpgsqlDbType.Integer)   { Value = pageIndex },
-                                new NpgsqlParameter("@p_page_size",      NpgsqlDbType.Integer)   { Value = pageSize },
-                                new NpgsqlParameter("@p_is_paginated",   NpgsqlDbType.Boolean)   { Value = isPaginated },
-                                new NpgsqlParameter("@p_data_type",      NpgsqlDbType.Varchar)   { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
-                                new NpgsqlParameter("@p_division_code",  NpgsqlDbType.Integer)   { Value = divisionCode ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_startdate",      NpgsqlDbType.Timestamp) { Value = fromDate.HasValue ? (object)fromDate.Value.Date : DBNull.Value },
-                                new NpgsqlParameter("@p_enddate",        NpgsqlDbType.Timestamp) { Value = toDate.HasValue   ? (object)toDate.Value.Date   : DBNull.Value }
-                            };
+                        new NpgsqlParameter("@p_role",           NpgsqlDbType.Varchar)   { Value = officer?.Role        ?? (object)DBNull.Value },
+                        new NpgsqlParameter("@p_access_level",   NpgsqlDbType.Varchar)   { Value = accessLevel          ?? (object)DBNull.Value },
+                        new NpgsqlParameter("@p_access_code",    NpgsqlDbType.Integer)   { Value = accessCode },
+                        new NpgsqlParameter("@p_service_id",     NpgsqlDbType.Integer)   { Value = serviceId },
+                        new NpgsqlParameter("@p_page_index",     NpgsqlDbType.Integer)   { Value = pageIndex },
+                        new NpgsqlParameter("@p_page_size",      NpgsqlDbType.Integer)   { Value = pageSize },
+                        new NpgsqlParameter("@p_is_paginated",   NpgsqlDbType.Boolean)   { Value = isPaginated },
+                        new NpgsqlParameter("@p_data_type",      NpgsqlDbType.Varchar)   { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                        new NpgsqlParameter("@p_division_code",  NpgsqlDbType.Integer)   { Value = divisionCode ?? (object)DBNull.Value },
+                        new NpgsqlParameter("@p_startdate",      NpgsqlDbType.Timestamp) { Value = fromDate.HasValue ? (object)fromDate.Value.Date : DBNull.Value },
+                        new NpgsqlParameter("@p_enddate",        NpgsqlDbType.Timestamp) { Value = toDate.HasValue   ? (object)toDate.Value.Date   : DBNull.Value }
+                    };
 
                             var withheldData = dbcontext.Database
                                 .SqlQueryRaw<WithheldDetailedReportDto>(
@@ -1525,24 +1552,24 @@ namespace SahayataNidhi.Controllers
                             data = withheldData.Cast<dynamic>().ToList();
 
                             columns = new List<dynamic>
-                            {
-                                new { accessorKey = "districtname",             header = "District" },
-                                new { accessorKey = "tswofficename",            header = "TSWO Office" },
-                                new { accessorKey = "application_status",       header = "Application Status" },
-                                new { accessorKey = "application_pending_with", header = "Application Pending With" },
-                                new { accessorKey = "referencenumber",          header = "Reference Number" },
-                                new { accessorKey = "applicant_name",           header = "Applicant Name" },
-                                new { accessorKey = "parentage",                header = "Parentage" },
-                                new { accessorKey = "mobile_number",            header = "Mobile Number" },
-                                new { accessorKey = "account_number",           header = "Account Number" },
-                                new { accessorKey = "ifsc_code",                header = "IFSC Code" },
-                                new { accessorKey = "bank_name",                header = "Bank Name" },
-                                new { accessorKey = "branch_name",              header = "Branch Name" },
-                                new { accessorKey = "actionTakenOn",            header = "Action Taken On" },
-                                new { accessorKey = "iswithheld",               header = "Is Withheld" },
-                                new { accessorKey = "withheldtype",             header = "Withheld Type" },
-                                new { accessorKey = "withheldreason",           header = "Withheld Reason" }
-                            };
+                    {
+                        new { accessorKey = "districtname",             header = "District" },
+                        new { accessorKey = "tswofficename",            header = "TSWO Office" },
+                        new { accessorKey = "application_status",       header = "Application Status" },
+                        new { accessorKey = "application_pending_with", header = "Application Pending With" },
+                        new { accessorKey = "referencenumber",          header = "Reference Number" },
+                        new { accessorKey = "applicant_name",           header = "Applicant Name" },
+                        new { accessorKey = "parentage",                header = "Parentage" },
+                        new { accessorKey = "mobile_number",            header = "Mobile Number" },
+                        new { accessorKey = "account_number",           header = "Account Number" },
+                        new { accessorKey = "ifsc_code",                header = "IFSC Code" },
+                        new { accessorKey = "bank_name",                header = "Bank Name" },
+                        new { accessorKey = "branch_name",              header = "Branch Name" },
+                        new { accessorKey = "actionTakenOn",            header = "Action Taken On" },
+                        new { accessorKey = "iswithheld",               header = "Is Withheld" },
+                        new { accessorKey = "withheldtype",             header = "Withheld Type" },
+                        new { accessorKey = "withheldreason",           header = "Withheld Reason" }
+                    };
                         }
                         break;
 
@@ -1567,7 +1594,6 @@ namespace SahayataNidhi.Controllers
                 return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
-
         private static string NormalizeColumnKey(string key)
         {
             if (string.IsNullOrEmpty(key)) return string.Empty;
@@ -1732,6 +1758,11 @@ namespace SahayataNidhi.Controllers
                     string? ageRanges = form["ageRanges"].ToString();
                     bool isPaginated = scope == "InView";
 
+                    // ── NEW filters ────────────────────────────────────────
+                    string? gender = form["gender"];
+                    string? pensionType = form["pensionType"];
+                    string? category = form["category"];
+
                     string? fromDateRaw = form["fromDate"];
                     string? toDateRaw = form["toDate"];
                     string? sanctionFromRaw = form["sanctionFromDate"];
@@ -1775,7 +1806,10 @@ namespace SahayataNidhi.Controllers
                         fromDate,
                         toDate,
                         sanctionFromDate,
-                        sanctionToDate);
+                        sanctionToDate,
+                        gender,        // NEW
+                        pensionType,   // NEW
+                        category);     // NEW
 
                     var okResult = reportResult as OkObjectResult;
                     if (okResult?.Value != null)

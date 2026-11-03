@@ -10,22 +10,17 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  CircularProgress,
   Alert,
   Button,
   Chip,
   TextField,
-  Card,
-  CardContent,
   Divider,
   Container,
-  Stack,
   ToggleButton,
   ToggleButtonGroup,
 } from "@mui/material";
 import { FormHelperText } from "@mui/material";
 import ServerSideTable from "../../components/ServerSideTable";
-import DynamicReportRunner from "../../components/DynamicReportRunner";
 import { toast } from "react-toastify";
 
 import {
@@ -36,28 +31,46 @@ import {
   CalendarToday,
   PlayArrow,
   Info,
+  Person,
 } from "@mui/icons-material";
+
+// Case-insensitive lookup for the filterFields response. The backend may
+// return `gender` / `Gender` / `GENDER` — we accept all.
+const pickField = (obj, name) => {
+  if (!obj || typeof obj !== "object") return null;
+  const key = Object.keys(obj).find(
+    (k) => k.toLowerCase() === name.toLowerCase(),
+  );
+  return key ? obj[key] : null;
+};
+
+// Normalises whatever the backend sent into the canonical shape used
+// throughout the component (available: boolean, label, options[]).
+const normaliseField = (raw, fallbackLabel) => {
+  if (!raw) {
+    return { available: false, label: fallbackLabel, options: [] };
+  }
+  return {
+    available: raw.available === true,
+    label: raw.label || fallbackLabel,
+    type: raw.type || "text",
+    options: Array.isArray(raw.options) ? raw.options : [],
+  };
+};
 
 export default function Reports() {
   const [officerAccessLevel, setOfficerAccessLevel] = useState(null);
   const [officerAccessCode, setOfficerAccessCode] = useState(null);
   const [officerRole, setOfficerRole] = useState(null);
 
-  // Service state
   const [services, setServices] = useState([]);
   const [selectedService, setSelectedService] = useState("");
   const [loadingServices, setLoadingServices] = useState(false);
 
-  // Report type state
   const [reportTypes, setReportTypes] = useState([]);
   const [selectedReportType, setSelectedReportType] = useState("");
   const [loadingReportTypes, setLoadingReportTypes] = useState(false);
 
-  // Active template filters (from template definition)
-  const [activeTemplateFilters, setActiveTemplateFilters] = useState([]);
-  const [filterInputValues, setFilterInputValues] = useState({});
-
-  // Location filter states
   const [districts, setDistricts] = useState([]);
   const [tehsils, setTehsils] = useState([]);
   const [selectedDistrict, setSelectedDistrict] = useState("");
@@ -65,19 +78,14 @@ export default function Reports() {
   const [loadingDistricts, setLoadingDistricts] = useState(false);
   const [loadingTehsils, setLoadingTehsils] = useState(false);
 
-  // Submission-date filter states
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  // Sanction-date filter states (only for DetailedApplications)
   const [sanctionFromDate, setSanctionFromDate] = useState("");
   const [sanctionToDate, setSanctionToDate] = useState("");
 
-  // ── Which date filter is active. Only one at a time. ─────────────
-  //    "submission" (default) | "sanction"
   const [dateFilterType, setDateFilterType] = useState("submission");
 
-  // Status filter (static)
   const [statusTypes] = useState([
     { value: "total", label: "Total Applications" },
     { value: "Initiated", label: "Under Process" },
@@ -86,14 +94,23 @@ export default function Reports() {
   ]);
   const [selectedStatus, setSelectedStatus] = useState("total");
 
-  // Table refresh trigger
+  // Dynamic per-service field filters (Gender / PensionType / Category)
+  const [availableFilterFields, setAvailableFilterFields] = useState({
+    Gender: { available: false, label: "Gender", options: [] },
+    PensionType: { available: false, label: "Pension Type", options: [] },
+    Category: { available: false, label: "Category", options: [] },
+  });
+  const [loadingFilterFields, setLoadingFilterFields] = useState(false);
+  const [filterFetchFailed, setFilterFetchFailed] = useState(false);
+  const [selectedGender, setSelectedGender] = useState("");
+  const [selectedPensionType, setSelectedPensionType] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showReport, setShowReport] = useState(false);
   const [reportParams, setReportParams] = useState({});
 
-  // Ref for auto-scrolling to the table
   const tableRef = useRef(null);
-
   const emptyActionFunctions = useMemo(() => ({}), []);
 
   useEffect(() => {
@@ -113,7 +130,6 @@ export default function Reports() {
     fetchOfficerData();
   }, []);
 
-  // Fetch services
   useEffect(() => {
     const fetchServices = async () => {
       setLoadingServices(true);
@@ -135,7 +151,6 @@ export default function Reports() {
     fetchServices();
   }, []);
 
-  // Fetch report types
   useEffect(() => {
     const fetchReportTypes = async () => {
       setLoadingReportTypes(true);
@@ -154,7 +169,6 @@ export default function Reports() {
     fetchReportTypes();
   }, []);
 
-  // Fetch districts based on access level
   useEffect(() => {
     const fetchDistricts = async () => {
       if (officerAccessLevel === "Division") {
@@ -181,7 +195,72 @@ export default function Reports() {
     }
   }, [officerAccessLevel, officerAccessCode]);
 
-  // Fetch tehsils for selected district
+  // Fetch field filter metadata whenever the service changes
+  useEffect(() => {
+    if (!selectedService) {
+      setAvailableFilterFields({
+        Gender: { available: false, label: "Gender", options: [] },
+        PensionType: { available: false, label: "Pension Type", options: [] },
+        Category: { available: false, label: "Category", options: [] },
+      });
+      setSelectedGender("");
+      setSelectedPensionType("");
+      setSelectedCategory("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchFilterFields = async () => {
+      setLoadingFilterFields(true);
+      setFilterFetchFailed(false);
+      setSelectedGender("");
+      setSelectedPensionType("");
+      setSelectedCategory("");
+
+      try {
+        const response = await axiosInstance.get(
+          "/Officer/GetServiceFilterFields",
+          { params: { serviceId: selectedService } },
+        );
+        if (cancelled) return;
+
+        console.log("🔎 filterFields response:", response.data);
+
+        const fields = response.data?.filterFields || {};
+
+        // Normalise to canonical keys. Backend returns `gender`,
+        // `pensionType`, `category` today, but this also tolerates
+        // `Gender` / `PensionType` / `Category` if that ever changes.
+        setAvailableFilterFields({
+          Gender: normaliseField(pickField(fields, "Gender"), "Gender"),
+          PensionType: normaliseField(
+            pickField(fields, "PensionType"),
+            "Pension Type",
+          ),
+          Category: normaliseField(pickField(fields, "Category"), "Category"),
+        });
+      } catch (error) {
+        if (cancelled) return;
+        console.error("❌ Error fetching filter fields:", error);
+        setAvailableFilterFields({
+          Gender: { available: false, label: "Gender", options: [] },
+          PensionType: { available: false, label: "Pension Type", options: [] },
+          Category: { available: false, label: "Category", options: [] },
+        });
+        setFilterFetchFailed(true);
+      } finally {
+        if (!cancelled) setLoadingFilterFields(false);
+      }
+    };
+
+    fetchFilterFields();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedService]);
+
   const fetchTehsils = async (districtId) => {
     if (!districtId) return;
 
@@ -200,7 +279,6 @@ export default function Reports() {
     }
   };
 
-  // Handle district change
   const handleDistrictChange = (event) => {
     const districtId = event.target.value;
     setSelectedDistrict(districtId);
@@ -208,13 +286,11 @@ export default function Reports() {
     fetchTehsils(districtId);
   };
 
-  // Handle report type change
   const handleReportTypeChange = (event) => {
     const newReportType = event.target.value;
     setSelectedReportType(newReportType);
     setShowReport(false);
 
-    // Reset sanction-related state when leaving DetailedApplications
     if (newReportType !== "DetailedApplications") {
       setSanctionFromDate("");
       setSanctionToDate("");
@@ -222,14 +298,10 @@ export default function Reports() {
     }
   };
 
-  // ── Toggle between submission / sanction date filter ─────────────
   const handleDateFilterTypeChange = (event, newValue) => {
-    // Prevent deselecting the only active option
     if (!newValue) return;
     setDateFilterType(newValue);
 
-    // Clear the panel we're switching away from so its values don't
-    // accidentally get submitted later.
     if (newValue === "submission") {
       setSanctionFromDate("");
       setSanctionToDate("");
@@ -239,7 +311,6 @@ export default function Reports() {
     }
   };
 
-  // Validate the active date range before generating the report
   const validateDateRange = () => {
     if (dateFilterType === "submission") {
       if (fromDate && toDate && fromDate > toDate) {
@@ -261,7 +332,13 @@ export default function Reports() {
     return true;
   };
 
-  // Handle generate report
+  // True when the officer has chosen Sanction Date for a Detailed
+  // Applications report — in that case status is implicitly "Sanctioned"
+  // and the Status dropdown is hidden.
+  const sanctionDateFilterActive =
+    selectedReportType === "DetailedApplications" &&
+    dateFilterType === "sanction";
+
   const handleGenerateReport = () => {
     if (!selectedReportType) {
       toast.error("Please select a report type");
@@ -307,20 +384,30 @@ export default function Reports() {
       reportType: selectedReportType,
     };
 
-    if (
-      selectedReportType === "AgeWise" ||
-      selectedReportType === "PensionTypeWise" ||
-      selectedReportType === "GenderWise" ||
-      selectedReportType === "DetailedApplications"
-    ) {
+    const needsStatusFilter = [
+      "AgeWise",
+      "PensionTypeWise",
+      "GenderWise",
+      "DetailedApplications",
+    ].includes(selectedReportType);
+
+    // Skip status when sanction date filter is active — only sanctioned
+    // applications can come back from that filter.
+    if (needsStatusFilter && !sanctionDateFilterActive) {
       params.statusType = selectedStatus;
     }
 
     if (selectedReportType === "DetailedApplications") {
       params.role = officerRole;
+
+      if (availableFilterFields.Gender?.available && selectedGender)
+        params.gender = selectedGender;
+      if (availableFilterFields.PensionType?.available && selectedPensionType)
+        params.pensionType = selectedPensionType;
+      if (availableFilterFields.Category?.available && selectedCategory)
+        params.category = selectedCategory;
     }
 
-    // ── Only the ACTIVE date filter is sent ──────────────────────
     if (dateFilterType === "submission") {
       if (fromDate) params.fromDate = fromDate;
       if (toDate) params.toDate = toDate;
@@ -345,7 +432,15 @@ export default function Reports() {
     }, 150);
   };
 
-  // Determine which filters to show based on access level
+  const selectSx = {
+    bgcolor: "white",
+    "& .MuiOutlinedInput-notchedOutline": { borderColor: "#E2E8F0" },
+    "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#2562E9" },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#2562E9",
+    },
+  };
+
   const renderLocationFilters = () => {
     if (!officerAccessLevel) return null;
 
@@ -361,18 +456,7 @@ export default function Reports() {
                   onChange={handleDistrictChange}
                   label="District"
                   disabled={loadingDistricts}
-                  sx={{
-                    bgcolor: "white",
-                    "& .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "#E2E8F0",
-                    },
-                    "&:hover .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "#2562E9",
-                    },
-                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "#2562E9",
-                    },
-                  }}
+                  sx={selectSx}
                 >
                   <MenuItem value="">
                     <em>Select District</em>
@@ -401,18 +485,7 @@ export default function Reports() {
                     onChange={(e) => setSelectedTehsil(e.target.value)}
                     label="Tehsil"
                     disabled={loadingTehsils}
-                    sx={{
-                      bgcolor: "white",
-                      "& .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#E2E8F0",
-                      },
-                      "&:hover .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#2562E9",
-                      },
-                      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#2562E9",
-                      },
-                    }}
+                    sx={selectSx}
                   >
                     <MenuItem value="">
                       <em>Select Tehsil</em>
@@ -443,18 +516,7 @@ export default function Reports() {
                   onChange={(e) => setSelectedTehsil(e.target.value)}
                   label="Tehsil"
                   disabled={loadingTehsils}
-                  sx={{
-                    bgcolor: "white",
-                    "& .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "#E2E8F0",
-                    },
-                    "&:hover .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "#2562E9",
-                    },
-                    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                      borderColor: "#2562E9",
-                    },
-                  }}
+                  sx={selectSx}
                 >
                   <MenuItem value="">
                     <em>Select Tehsil</em>
@@ -489,9 +551,7 @@ export default function Reports() {
     }
   };
 
-  // Submission OR Sanction date filters — only one at a time
   const renderDateFilters = () => {
-    // Sanction date is only meaningful for DetailedApplications
     const showDateFilterToggle = selectedReportType === "DetailedApplications";
 
     const dateInputSx = {
@@ -505,7 +565,6 @@ export default function Reports() {
 
     return (
       <Box sx={{ mt: 3 }}>
-        {/* ── Filter type toggle (only for DetailedApplications) ───── */}
         {showDateFilterToggle && (
           <Box sx={{ mb: 3 }}>
             <Typography
@@ -543,7 +602,6 @@ export default function Reports() {
           </Box>
         )}
 
-        {/* ── Submission Date panel ───────────────────────────────── */}
         {dateFilterType === "submission" && (
           <>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
@@ -611,7 +669,6 @@ export default function Reports() {
           </>
         )}
 
-        {/* ── Sanction Date panel ─────────────────────────────────── */}
         {dateFilterType === "sanction" &&
           selectedReportType === "DetailedApplications" && (
             <>
@@ -694,9 +751,137 @@ export default function Reports() {
     );
   };
 
-  // Render additional filters (Status only)
+  // Field-level filters (Gender / PensionType / Category).
+  // Always renders for DetailedApplications when at least one field is
+  // available OR still loading. Individual dropdowns hide only when the
+  // backend explicitly reported available === false.
+  const renderFieldFilters = () => {
+    if (selectedReportType !== "DetailedApplications") return null;
+
+    const hasGender = availableFilterFields.Gender?.available !== false;
+    const hasPension = availableFilterFields.PensionType?.available !== false;
+    const hasCategory = availableFilterFields.Category?.available !== false;
+
+    if (!hasGender && !hasPension && !hasCategory) return null;
+
+    const anySelected =
+      selectedGender || selectedPensionType || selectedCategory;
+
+    const clearAll = () => {
+      setSelectedGender("");
+      setSelectedPensionType("");
+      setSelectedCategory("");
+    };
+
+    const renderSelect = (fieldKey, value, setValue, fallbackLabel) => {
+      const field = availableFilterFields[fieldKey] || {};
+      const options = field.options || [];
+      const label = field.label || fallbackLabel;
+      const isLoading = loadingFilterFields;
+      const isEmpty = !isLoading && options.length === 0;
+
+      return (
+        <Grid item xs={12} md={4}>
+          <FormControl fullWidth>
+            <InputLabel>{label}</InputLabel>
+            <Select
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              label={label}
+              disabled={isLoading || isEmpty}
+              sx={selectSx}
+            >
+              <MenuItem value="">
+                <em>All</em>
+              </MenuItem>
+              {options.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>
+                  {opt.label || opt.value}
+                </MenuItem>
+              ))}
+            </Select>
+            {isLoading && <FormHelperText>Loading options…</FormHelperText>}
+            {isEmpty && (
+              <FormHelperText>
+                No options configured for this service
+              </FormHelperText>
+            )}
+          </FormControl>
+        </Grid>
+      );
+    };
+
+    return (
+      <Box sx={{ mt: 3 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            mb: 2,
+            flexWrap: "wrap",
+          }}
+        >
+          <Person sx={{ fontSize: 18, color: "#64748B" }} />
+          <Typography
+            variant="subtitle2"
+            sx={{ fontWeight: 600, color: "#475569" }}
+          >
+            Application Filters
+          </Typography>
+          <Typography variant="caption" sx={{ color: "#94A3B8", ml: 0.5 }}>
+            (Optional)
+          </Typography>
+          {anySelected && (
+            <Button
+              size="small"
+              onClick={clearAll}
+              sx={{
+                ml: "auto",
+                textTransform: "none",
+                color: "#64748B",
+                "&:hover": { color: "#DC2626", bgcolor: "#FEF2F2" },
+              }}
+            >
+              Clear Filters
+            </Button>
+          )}
+        </Box>
+
+        {filterFetchFailed && (
+          <Alert severity="warning" sx={{ mb: 2, fontSize: 12 }}>
+            Couldn't load filter options from the server.
+          </Alert>
+        )}
+
+        <Grid container spacing={3}>
+          {hasGender &&
+            renderSelect("Gender", selectedGender, setSelectedGender, "Gender")}
+          {hasPension &&
+            renderSelect(
+              "PensionType",
+              selectedPensionType,
+              setSelectedPensionType,
+              "Pension Type",
+            )}
+          {hasCategory &&
+            renderSelect(
+              "Category",
+              selectedCategory,
+              setSelectedCategory,
+              "Category",
+            )}
+        </Grid>
+      </Box>
+    );
+  };
+
+  // Application Status filter — hidden when Sanction Date is active for
+  // Detailed Applications (that combination is inherently "sanctioned only").
   const renderAdditionalFilters = () => {
     if (!selectedReportType) return null;
+
+    if (sanctionDateFilterActive) return null;
 
     const needsStatusFilter = [
       "AgeWise",
@@ -723,18 +908,7 @@ export default function Reports() {
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
                 label="Status"
-                sx={{
-                  bgcolor: "white",
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "#E2E8F0",
-                  },
-                  "&:hover .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "#2562E9",
-                  },
-                  "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "#2562E9",
-                  },
-                }}
+                sx={selectSx}
               >
                 {statusTypes.map((status) => (
                   <MenuItem key={status.value} value={status.value}>
@@ -749,7 +923,6 @@ export default function Reports() {
     );
   };
 
-  // Get report title
   const getReportTitle = () => {
     if (!selectedReportType) return "Reports";
     const reportType = reportTypes.find((r) => r.value === selectedReportType);
@@ -759,9 +932,6 @@ export default function Reports() {
       : "Reports";
   };
 
-  // Searchable fields per report type
-  // ── UPDATED: DetailedApplications now includes mobile_number and the two
-  //    new date columns so the user can search them in the on-screen grid.
   const searchableFields = useMemo(() => {
     switch (selectedReportType) {
       case "AgeWise":
@@ -775,6 +945,8 @@ export default function Reports() {
           "referencenumber",
           "applicant_name",
           "mobile_number",
+          "gender", // NEW
+          "category", // NEW
           "districtname",
           "tswofficename",
           "submission_date",
@@ -788,7 +960,6 @@ export default function Reports() {
   return (
     <Box sx={{ bgcolor: "#F8FAFC", minHeight: "100vh", py: 4 }}>
       <Container maxWidth="xl">
-        {/* Header */}
         <Box sx={{ mb: 4 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
             <Box
@@ -835,7 +1006,6 @@ export default function Reports() {
           )}
         </Box>
 
-        {/* Configuration Card */}
         <Paper
           elevation={0}
           sx={{
@@ -865,18 +1035,7 @@ export default function Reports() {
                     onChange={(e) => setSelectedService(e.target.value)}
                     label="Service"
                     disabled={loadingServices}
-                    sx={{
-                      bgcolor: "white",
-                      "& .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#E2E8F0",
-                      },
-                      "&:hover .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#2562E9",
-                      },
-                      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#2562E9",
-                      },
-                    }}
+                    sx={selectSx}
                   >
                     {services.map((service) => (
                       <MenuItem
@@ -916,18 +1075,7 @@ export default function Reports() {
                     onChange={handleReportTypeChange}
                     label="Report Type"
                     disabled={loadingReportTypes}
-                    sx={{
-                      bgcolor: "white",
-                      "& .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#E2E8F0",
-                      },
-                      "&:hover .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#2562E9",
-                      },
-                      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                        borderColor: "#2562E9",
-                      },
-                    }}
+                    sx={selectSx}
                   >
                     <MenuItem value="">
                       <em>Select Report Type</em>
@@ -969,6 +1117,7 @@ export default function Reports() {
                 </Box>
                 {renderLocationFilters()}
                 {renderDateFilters()}
+                {renderFieldFilters()}
                 {renderAdditionalFilters()}
 
                 <Box
@@ -1003,7 +1152,6 @@ export default function Reports() {
           )}
         </Paper>
 
-        {/* Report Display */}
         {showReport && (
           <Box sx={{ mt: 4 }} ref={tableRef}>
             <ServerSideTable

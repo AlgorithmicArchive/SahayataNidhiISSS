@@ -20,6 +20,15 @@ import {
   Divider,
   Stack,
   Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
 } from "@mui/material";
 import {
   Delete as DeleteIcon,
@@ -30,6 +39,8 @@ import {
   History,
   UploadFile,
   Description,
+  WarningAmber,
+  ErrorOutline,
 } from "@mui/icons-material";
 import ServiceSelectionForm from "../../components/ServiceSelectionForm";
 import { fetchServiceList } from "../../assets/fetch";
@@ -119,6 +130,8 @@ export default function IssueDocumentChange() {
   const [formDetails, setFormDetails] = useState({});
   const [formElements, setFormElements] = useState([]);
   const [corrigendumFields, setCorrigendumFields] = useState([]);
+  const [groupSupportingDocuments, setGroupSupportingDocuments] = useState({});
+  const [removedFields, setRemovedFields] = useState({});
   const [selectedField, setSelectedField] = useState("");
   const [remarks, setRemarks] = useState("");
   const [wordCount, setWordCount] = useState(0);
@@ -147,6 +160,19 @@ export default function IssueDocumentChange() {
   });
   const [existingCorrigendumId, setExistingCorrigendumId] = useState(null);
   const [canEditExisting, setCanEditExisting] = useState(false);
+
+  const [validationPopup, setValidationPopup] = useState({
+    open: false,
+    items: [],
+  });
+  const [highlightedField, setHighlightedField] = useState(null);
+  const highlightTimer = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    };
+  }, []);
 
   const [bankOptions, setBankOptions] = useState([
     { label: "Please Select", value: "Please Select" },
@@ -217,13 +243,9 @@ export default function IssueDocumentChange() {
   const fetchBanks = useCallback(async () => {
     try {
       const response = await axiosInstance.get("/Base/GetBanks");
-      if (!response.data?.status) {
-        throw new Error("Failed to fetch banks");
-      }
+      if (!response.data?.status) throw new Error("Failed to fetch banks");
       const banks = (response.data.data || [])
         .map((bank) => {
-          const id =
-            bank.id ?? bank.bankid ?? bank.bankId ?? bank.Bankid ?? bank.BankId;
           const name =
             bank.bankname ??
             bank.bankName ??
@@ -232,8 +254,7 @@ export default function IssueDocumentChange() {
             bank.name ??
             bank.Name;
           if (name === undefined || name === null) return null;
-          const value = name;
-          return { value: String(value), label: String(name) };
+          return { value: String(name), label: String(name) };
         })
         .filter(Boolean);
       setBankOptions([
@@ -250,6 +271,8 @@ export default function IssueDocumentChange() {
     setFormDetailsFields([]);
     setFormElements([]);
     setCorrigendumFields([]);
+    setGroupSupportingDocuments({});
+    setRemovedFields({});
     setSelectedField("");
     setRemarks("");
     setWordCount(0);
@@ -262,6 +285,8 @@ export default function IssueDocumentChange() {
     setResponseMessage({ message: "", type: "" });
     setExistingCorrigendumId(null);
     setCanEditExisting(false);
+    setValidationPopup({ open: false, items: [] });
+    setHighlightedField(null);
   }, []);
 
   const handleStartNew = useCallback(() => {
@@ -296,9 +321,7 @@ export default function IssueDocumentChange() {
           setIsEdit(true);
           setExistingCorrigendumId(applicationId);
         }
-        if (applicationType) {
-          setType(applicationType);
-        }
+        if (applicationType) setType(applicationType);
         await handleCheckIfDocumentChange();
         setIsInitialLoad(false);
       } else {
@@ -578,67 +601,48 @@ export default function IssueDocumentChange() {
     [formElements, formData, corrigendumFields],
   );
 
+  // ─────────────────────────────────────────────────────────
+  // Recursive field-config lookup
+  // ─────────────────────────────────────────────────────────
   const findFieldConfigRaw = useCallback(
     (fieldName, fieldType = "text", parsedFormElements = null) => {
       parsedFormElements = parsedFormElements || formElements;
-      for (const section of parsedFormElements) {
-        for (const field of section.fields) {
-          if (field.name === fieldName) {
-            return {
-              ...field,
-              type: field.type || fieldType,
-              validationFunctions: field.validationFunctions || [],
-              transformationFunctions: field.transformationFunctions || [],
-              additionalFields: field.additionalFields || {},
-              conditionalAdditionalFields:
-                field.conditionalAdditionalFields || {},
-              options: field.options || [
-                { label: "Please Select", value: "Please Select" },
-              ],
-              accept: field.accept || ".pdf",
-              allowSameAsOldValue: field.allowSameAsOldValue || false,
-            };
+
+      const buildConfig = (field) => ({
+        ...field,
+        type: field.type || fieldType,
+        validationFunctions: field.validationFunctions || [],
+        transformationFunctions: field.transformationFunctions || [],
+        additionalFields: field.additionalFields || {},
+        conditionalAdditionalFields: field.conditionalAdditionalFields || {},
+        options: field.options || [
+          { label: "Please Select", value: "Please Select" },
+        ],
+        accept: field.accept || ".pdf",
+        allowSameAsOldValue: field.allowSameAsOldValue || false,
+      });
+
+      const searchFields = (fields) => {
+        if (!Array.isArray(fields)) return null;
+        for (const field of fields) {
+          if (field.name === fieldName) return buildConfig(field);
+          for (const key in field.additionalFields || {}) {
+            const found = searchFields(field.additionalFields[key]);
+            if (found) return found;
           }
-          for (const key in field.additionalFields) {
-            const additional = field.additionalFields[key];
-            const found = additional.find((f) => f.name === fieldName);
-            if (found)
-              return {
-                ...found,
-                type: found.type || fieldType,
-                validationFunctions: found.validationFunctions || [],
-                transformationFunctions: found.transformationFunctions || [],
-                additionalFields: found.additionalFields || {},
-                conditionalAdditionalFields:
-                  found.conditionalAdditionalFields || {},
-                options: found.options || [
-                  { label: "Please Select", value: "Please Select" },
-                ],
-                accept: found.accept || ".pdf",
-                allowSameAsOldValue: found.allowSameAsOldValue || false,
-              };
-          }
-          for (const key in field.conditionalAdditionalFields) {
-            const conditional = field.conditionalAdditionalFields[key];
-            const found = conditional.find((f) => f.name === fieldName);
-            if (found)
-              return {
-                ...found,
-                type: found.type || fieldType,
-                validationFunctions: found.validationFunctions || [],
-                transformationFunctions: found.transformationFunctions || [],
-                additionalFields: found.additionalFields || {},
-                conditionalAdditionalFields:
-                  found.conditionalAdditionalFields || {},
-                options: found.options || [
-                  { label: "Please Select", value: "Please Select" },
-                ],
-                accept: found.accept || ".pdf",
-                allowSameAsOldValue: found.allowSameAsOldValue || false,
-              };
+          for (const key in field.conditionalAdditionalFields || {}) {
+            const found = searchFields(field.conditionalAdditionalFields[key]);
+            if (found) return found;
           }
         }
+        return null;
+      };
+
+      for (const section of parsedFormElements) {
+        const found = searchFields(section.fields);
+        if (found) return found;
       }
+
       return {
         label: fieldName,
         name: fieldName,
@@ -664,11 +668,7 @@ export default function IssueDocumentChange() {
         parsedFormElements,
       );
       if (fieldName === "BankName" && bankOptions.length > 1) {
-        return {
-          ...config,
-          type: "select",
-          options: bankOptions,
-        };
+        return { ...config, type: "select", options: bankOptions };
       }
       return config;
     },
@@ -676,8 +676,8 @@ export default function IssueDocumentChange() {
   );
 
   const normalizeDetails = useCallback(
-    (formDetails, parsedFormElements = null) => {
-      if (!formDetails || typeof formDetails !== "object") return [];
+    (formDetailsArg, parsedFormElements = null) => {
+      if (!formDetailsArg || typeof formDetailsArg !== "object") return [];
       const sourceElements = parsedFormElements || formElements;
       const allFields = [];
       const shouldIncludeField = (config) =>
@@ -697,7 +697,7 @@ export default function IssueDocumentChange() {
         }
         allFields.push(field);
       };
-      Object.entries(formDetails).forEach(([sectionName, section]) => {
+      Object.entries(formDetailsArg).forEach(([sectionName, section]) => {
         if (!Array.isArray(section)) return;
         section.forEach((item) => {
           const fieldType = getFieldTypeByName(sourceElements, item.name);
@@ -742,17 +742,16 @@ export default function IssueDocumentChange() {
 
   function getFieldTypeByName(jsonData, fieldName) {
     function searchFields(fields) {
+      if (!Array.isArray(fields)) return null;
       for (const field of fields) {
         if (field.name === fieldName) return field.type;
-        if (
-          field.additionalFields &&
-          Object.keys(field.additionalFields).length > 0
-        ) {
-          for (const key in field.additionalFields) {
-            const nestedFields = field.additionalFields[key];
-            const result = searchFields(nestedFields);
-            if (result) return result;
-          }
+        for (const key in field.additionalFields || {}) {
+          const result = searchFields(field.additionalFields[key]);
+          if (result) return result;
+        }
+        for (const key in field.conditionalAdditionalFields || {}) {
+          const result = searchFields(field.conditionalAdditionalFields[key]);
+          if (result) return result;
         }
       }
       return null;
@@ -774,20 +773,235 @@ export default function IssueDocumentChange() {
     return transformedValue;
   }, []);
 
+  // Group supporting-document helpers
+  const getGroupAnchorField = useCallback((fields, groupId) => {
+    const groupIndices = fields
+      .map((f, i) => (f.groupId === groupId ? i : -1))
+      .filter((i) => i !== -1);
+    if (!groupIndices.length) return null;
+    return fields[groupIndices[groupIndices.length - 1]];
+  }, []);
+
+  const getFieldSupportingDocument = useCallback(
+    (field) => {
+      if (!field) return null;
+      if (field.groupId) return groupSupportingDocuments[field.groupId] || null;
+      return field.supportingDocument || null;
+    },
+    [groupSupportingDocuments],
+  );
+
+  // ─────────────────────────────────────────────────────────
+  // Deep formDetails lookup — returns undefined when the field
+  // does NOT exist (as opposed to findNestedFieldValue, which
+  // returns "" for not-found). Needed by visibility evaluation
+  // to distinguish "field empty" from "field missing".
+  // ─────────────────────────────────────────────────────────
+  const findFormDetailValueDeep = useCallback((details, fieldName) => {
+    if (!details || typeof details !== "object") return undefined;
+
+    const search = (fields) => {
+      if (!Array.isArray(fields)) return undefined;
+      for (const f of fields) {
+        if (f.name === fieldName) return f.value ?? f.File ?? "";
+        if (Array.isArray(f.additionalFields)) {
+          const hit = search(f.additionalFields);
+          if (hit !== undefined) return hit;
+        }
+        if (Array.isArray(f.conditionalAdditionalFields)) {
+          const hit = search(f.conditionalAdditionalFields);
+          if (hit !== undefined) return hit;
+        }
+      }
+      return undefined;
+    };
+
+    for (const section of Object.values(details)) {
+      if (!Array.isArray(section)) continue;
+      const hit = search(section);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  }, []);
+
+  // ─────────────────────────────────────────────────────────
+  // Visibility condition evaluator
+  // ─────────────────────────────────────────────────────────
+  const evaluateVisibilityCondition = useCallback(
+    (condition, formDetailsArg) => {
+      if (
+        !condition ||
+        !Array.isArray(condition.conditions) ||
+        condition.conditions.length === 0
+      )
+        return true;
+
+      const checkOne = (c) => {
+        const actual = findFormDetailValueDeep(formDetailsArg, c.field);
+        const expected = c.value ?? "";
+        const a = String(actual ?? "");
+        const e = String(expected ?? "");
+
+        switch (c.operator) {
+          case "equals":
+            return a === e;
+          case "notEquals":
+            return a !== e;
+          case "contains":
+            return a.toLowerCase().includes(e.toLowerCase());
+          case "in":
+            return e
+              .split(",")
+              .map((s) => s.trim())
+              .includes(a);
+          case "notIn":
+            return !e
+              .split(",")
+              .map((s) => s.trim())
+              .includes(a);
+          case "isEmpty":
+            return a.trim() === "" || a === "undefined" || a === "null";
+          case "isNotEmpty":
+            return !(a.trim() === "" || a === "undefined" || a === "null");
+          default:
+            return true;
+        }
+      };
+
+      return condition.logic === "OR"
+        ? condition.conditions.some(checkOne)
+        : condition.conditions.every(checkOne);
+    },
+    [findFormDetailValueDeep],
+  );
+
+  // ─────────────────────────────────────────────────────────
+  // Same-as-old dynamic policy
+  // ─────────────────────────────────────────────────────────
+  const isValueSameAsOld = useCallback(
+    (field, value) => {
+      const cfg = findFieldConfig(field.name);
+      if (cfg.type === "date") {
+        const toYMD = (s) => {
+          if (!s) return null;
+          const str = String(s).trim();
+          let m;
+          if ((m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))
+            return { y: +m[1], m: +m[2], d: +m[3] };
+          if ((m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))
+            return { y: +m[3], m: +m[2], d: +m[1] };
+          return null;
+        };
+        const a = toYMD(value);
+        const b = toYMD(field.oldValue);
+        if (!a || !b) return String(value) === String(field.oldValue);
+        return a.y === b.y && a.m === b.m && a.d === b.d;
+      }
+      if (cfg.type === "enclosure") {
+        if (value instanceof File && field.oldValue?.file)
+          return value.name === field.oldValue.file;
+        if (value instanceof File) return value.name === (field.oldValue || "");
+        return value === field.oldValue;
+      }
+      return String(value ?? "").trim() === String(field.oldValue ?? "").trim();
+    },
+    [findFieldConfig],
+  );
+
+  const isEmptyNewValue = (f) => {
+    if (f.newValue === null || f.newValue === undefined) return true;
+    if (typeof f.newValue === "string" && f.newValue.trim() === "") return true;
+    if (f.newValue === "Please Select") return true;
+    return false;
+  };
+
+  const isFieldActuallyChanging = useCallback(
+    (f) => !isEmptyNewValue(f) && !isValueSameAsOld(f, f.newValue),
+    [isValueSameAsOld],
+  );
+
+  const shouldAllowSameAsOldValue = useCallback(
+    (field, allFields) => {
+      const cfg = findFieldConfig(field.name);
+
+      if (cfg.allowSameAsOldValue === true) return true;
+
+      if (
+        field.oldValue === null ||
+        field.oldValue === undefined ||
+        (typeof field.oldValue === "string" && field.oldValue.trim() === "")
+      )
+        return true;
+
+      if (field.type === "enclosure" && field.newValue instanceof File)
+        return true;
+
+      const others = allFields || [];
+
+      if (field.groupId) {
+        const siblingChanging = others.some(
+          (f) =>
+            f !== field &&
+            f.groupId === field.groupId &&
+            isFieldActuallyChanging(f),
+        );
+        if (siblingChanging) return true;
+      }
+
+      const childNames = new Set([
+        ...(cfg.additionalFields?.[field.newValue] || []).map((c) => c.name),
+        ...(cfg.conditionalAdditionalFields?.[field.newValue] || []).map(
+          (c) => c.name,
+        ),
+      ]);
+      if (childNames.size > 0) {
+        const childChanging = others.some(
+          (f) => childNames.has(f.name) && isFieldActuallyChanging(f),
+        );
+        if (childChanging) return true;
+      }
+
+      const parentChanging = others.some((parent) => {
+        if (parent === field) return false;
+        const parentCfg = findFieldConfig(parent.name);
+        const names = [
+          ...Object.values(parentCfg.additionalFields || {}).flat(),
+          ...Object.values(parentCfg.conditionalAdditionalFields || {}).flat(),
+        ].map((c) => c.name);
+        return names.includes(field.name) && isFieldActuallyChanging(parent);
+      });
+      if (parentChanging) return true;
+
+      const driverName = cfg.valueDependentOn || cfg.dependentOn;
+      if (driverName) {
+        const driver = others.find((f) => f.name === driverName);
+        if (driver && isFieldActuallyChanging(driver)) return true;
+      }
+
+      const effDoc = field.groupId
+        ? groupSupportingDocuments[field.groupId]
+        : field.supportingDocument;
+      if (effDoc && typeof effDoc !== "string") return true;
+
+      if (cfg.isDependentEnclosure === true) return true;
+
+      return false;
+    },
+    [findFieldConfig, isFieldActuallyChanging, groupSupportingDocuments],
+  );
+
   const validateUdidNumber = useCallback(
-    async (udidNumber, referenceNumber) => {
+    async (udidNumber, referenceNumberArg) => {
       try {
         const response = await axiosInstance.get(
           "/Officer/GetIfSameUdidNumber",
-          { params: { referenceNumber, udidNumber } },
+          { params: { referenceNumber: referenceNumberArg, udidNumber } },
         );
-        const data = response.data;
-        if (data.status) return null;
-        else
-          return (
-            data.message ||
-            "UDID Number doesn't match the existing one in the record."
-          );
+        if (response.data.status) return null;
+        return (
+          response.data.message ||
+          "UDID Number doesn't match the existing one in the record."
+        );
       } catch (error) {
         return (
           error.response?.data?.message ||
@@ -799,13 +1013,20 @@ export default function IssueDocumentChange() {
   );
 
   const validateField = useCallback(
-    async (field, value, formData, referenceNumber) => {
-      const fieldConfig = findFieldConfig(field.name);
-      const skipSameValueCheckFields = [
-        "UdidCardNumber",
-        "KindOfDisability",
-        "PercentageOfDisability",
-      ];
+    async (
+      field,
+      value,
+      formDataArg,
+      referenceNumberArg,
+      allFields,
+      opts = {},
+    ) => {
+      const fieldConfig = findFieldConfig(
+        field.name,
+        "text",
+        opts.formElementsOverride,
+      );
+
       if (fieldConfig.type === "enclosure") {
         if (value && field.oldValue?.file && value.name === field.oldValue.file)
           return {
@@ -831,51 +1052,75 @@ export default function IssueDocumentChange() {
         }
         return { transformedValue: value, error: null };
       }
-      const sameValue =
-        fieldConfig.type === "date"
-          ? isSameDate(value, field.oldValue)
-          : value === field.oldValue;
-      if (
-        !skipSameValueCheckFields.includes(field.name) &&
-        !fieldConfig.allowSameAsOldValue &&
-        sameValue
-      )
-        return {
-          transformedValue: value,
-          error: "New value cannot be the same as old value",
-        };
+
+      // Dynamic reverse-transition check (defense in depth)
+      const reversePolicy = fieldConfig.reverseTransitionPolicy;
+      if (reversePolicy && reversePolicy.allowed !== true) {
+        const oldUpper = String(field.oldValue || "")
+          .trim()
+          .toUpperCase();
+        const newUpper = String(value || "")
+          .trim()
+          .toUpperCase();
+        if (oldUpper === "PERMANENT" && newUpper === "TEMPORARY") {
+          return {
+            transformedValue: value,
+            error:
+              reversePolicy.message ||
+              "This value cannot be reverted to its previous state.",
+          };
+        }
+      }
+
+      if (!opts.skipSameValueCheck) {
+        const same = isValueSameAsOld(field, value);
+        if (same && !shouldAllowSameAsOldValue(field, allFields || [])) {
+          return {
+            transformedValue: value,
+            error: "New value cannot be the same as old value",
+          };
+        }
+      }
+
       const validationResult = await runValidations(
         {
           ...fieldConfig,
           validationFunctions: fieldConfig.validationFunctions || [],
         },
         value,
-        formData,
-        referenceNumber,
+        formDataArg,
+        referenceNumberArg,
       );
+
       if (field.name === "IfscCode") {
         const isInvalid =
           (typeof validationResult === "object" &&
             validationResult !== null &&
             validationResult.status === false) ||
           typeof validationResult === "string";
-        if (isInvalid) {
-          return { transformedValue: value, error: null };
-        }
+        if (isInvalid) return { transformedValue: value, error: null };
       }
+
       if (validationResult !== true)
         return { transformedValue: value, error: validationResult };
+
       if (field.name === "UdidCardNumber" && value) {
         const udidValidationResult = await validateUdidNumber(
           value,
-          referenceNumber,
+          referenceNumberArg,
         );
         if (udidValidationResult !== null)
           return { transformedValue: value, error: udidValidationResult };
       }
+
       return { transformedValue: value, error: null };
     },
-    [findFieldConfig, validateUdidNumber],
+    [
+      findFieldConfig,
+      isValueSameAsOld,
+      shouldAllowSameAsOldValue,
+      validateUdidNumber,
+    ],
   );
 
   const validateRemarks = useCallback((value) => {
@@ -889,24 +1134,29 @@ export default function IssueDocumentChange() {
     return null;
   }, []);
 
-  const validateSupportingDocument = useCallback((field, allFields) => {
-    if (field.groupId) {
-      const groupIndices = allFields
-        .map((f, i) => (f.groupId === field.groupId ? i : -1))
-        .filter((i) => i !== -1);
-      const lastIndex = groupIndices[groupIndices.length - 1];
-      const currentIndex = allFields.indexOf(field);
-      if (lastIndex !== currentIndex) {
-        return null;
+  const validateSupportingDocument = useCallback(
+    (field, allFields) => {
+      if (!field.groupId) {
+        return field.supportingDocument
+          ? null
+          : "Supporting document is required for this field.";
       }
-    }
-    if (!field.supportingDocument) {
-      return field.groupId
-        ? "Supporting document is required for this group of fields."
-        : "Supporting document is required for this field.";
-    }
-    return null;
-  }, []);
+
+      const anchor = getGroupAnchorField(allFields || [], field.groupId);
+      if (!anchor || anchor.name !== field.name) return null;
+
+      const hasGroupDoc =
+        !!groupSupportingDocuments[field.groupId] ||
+        (allFields || []).some(
+          (f) => f.groupId === field.groupId && !!f.supportingDocument,
+        );
+
+      return hasGroupDoc
+        ? null
+        : "Supporting document is required for this group of fields.";
+    },
+    [groupSupportingDocuments, getGroupAnchorField],
+  );
 
   const validateType = useCallback((value) => {
     return ["Corrigendum", "Correction"].includes(value)
@@ -917,8 +1167,8 @@ export default function IssueDocumentChange() {
   const revalidateAllFields = useCallback(
     async (
       updatedFields,
-      formData,
-      referenceNumber,
+      formDataArg,
+      referenceNumberArg,
       validateRemarksAndFiles = false,
     ) => {
       const newErrors = {};
@@ -927,8 +1177,9 @@ export default function IssueDocumentChange() {
           const { error } = await validateField(
             field,
             field.newValue,
-            formData,
-            referenceNumber,
+            formDataArg,
+            referenceNumberArg,
+            updatedFields,
           );
           newErrors[field.name] = error;
 
@@ -947,8 +1198,8 @@ export default function IssueDocumentChange() {
                     additionalFieldConfig.validationFunctions || [],
                 },
                 field.additionalValues[additionalFieldName],
-                formData,
-                referenceNumber,
+                formDataArg,
+                referenceNumberArg,
               );
               newErrors[`${field.name}-${additionalFieldName}`] =
                 validationResult === true ? null : validationResult;
@@ -972,40 +1223,163 @@ export default function IssueDocumentChange() {
     ],
   );
 
-  function toYMD(input) {
-    if (!input) return null;
-    const s = String(input).trim();
-    let m;
-    if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))
-      return { year: +m[1], month: +m[2], day: +m[3] };
-    if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))
-      return { year: +m[3], month: +m[2], day: +m[1] };
-    return null;
-  }
+  const collectValidationErrors = useCallback(
+    (errs) => {
+      const items = [];
+      const push = (key, label, message) => items.push({ key, label, message });
 
-  function isSameDate(a, b) {
-    const x = toYMD(a);
-    const y = toYMD(b);
-    if (!x || !y) return false;
-    return x.year === y.year && x.month === y.month && x.day === y.day;
-  }
+      if (errs?.type) push("type", "Document Change Type", errs.type);
+      if (errs?.remarks) push("remarks", "Officer Remarks", errs.remarks);
+      if (errs?.corrigendumFields)
+        push("__top", "Submission", errs.corrigendumFields);
 
-  const getFormDetailValue = useCallback((fieldName, details) => {
-    if (!details || typeof details !== "object") return null;
-    for (const section of Object.values(details)) {
-      if (Array.isArray(section)) {
-        for (const item of section) {
-          if (item.name === fieldName) return item.value;
-          if (Array.isArray(item.additionalFields)) {
-            for (const addField of item.additionalFields) {
-              if (addField.name === fieldName) return addField.value;
-            }
-          }
+      corrigendumFields.forEach((field) => {
+        const label = field.label || field.name;
+
+        if (errs?.[field.name]) push(field.name, label, errs[field.name]);
+
+        if (errs?.[`${field.name}-doc`])
+          push(
+            field.name,
+            `${label} — Supporting Document`,
+            errs[`${field.name}-doc`],
+          );
+
+        const addFields = field.additionalFields?.[field.newValue] || [];
+        addFields.forEach((af) => {
+          const ek = `${field.name}-${af.name}`;
+          if (errs?.[ek])
+            push(field.name, `${label} → ${af.label || af.name}`, errs[ek]);
+        });
+      });
+
+      return items;
+    },
+    [corrigendumFields],
+  );
+
+  const scrollToField = useCallback((fieldName) => {
+    if (
+      !fieldName ||
+      fieldName === "type" ||
+      fieldName === "remarks" ||
+      fieldName === "__top"
+    )
+      return;
+
+    setHighlightedField(fieldName);
+    const el = document.querySelector(
+      `[data-field-name="${CSS.escape(fieldName)}"]`,
+    );
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => setHighlightedField(null), 2500);
+  }, []);
+
+  // ─────────────────────────────────────────────────────────
+  // Deep formDetails lookup — returns "" when not found
+  // (used by the removedFields effect and handleNewValueChange)
+  // ─────────────────────────────────────────────────────────
+  const findNestedFieldValue = (formDetailsArg, fieldName) => {
+    if (!formDetailsArg || typeof formDetailsArg !== "object") return "";
+
+    const searchFields = (fields) => {
+      if (!Array.isArray(fields)) return null;
+      for (const sub of fields) {
+        if (sub.name === fieldName) return sub.value ?? sub.File ?? "";
+        if (sub.additionalFields) {
+          const nested = searchFields(sub.additionalFields);
+          if (nested !== null && nested !== undefined) return nested;
+        }
+        if (sub.conditionalAdditionalFields) {
+          const nested = searchFields(sub.conditionalAdditionalFields);
+          if (nested !== null && nested !== undefined) return nested;
         }
       }
+      return null;
+    };
+
+    for (const section of Object.values(formDetailsArg)) {
+      if (!Array.isArray(section)) continue;
+      const result = searchFields(section);
+      if (result !== null && result !== undefined) return result;
+    }
+    return "";
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // Dynamic RemovedFields derivation
+  // ─────────────────────────────────────────────────────────
+  const findBucketKey = (obj, key) => {
+    if (!obj || !key) return null;
+    if (Object.prototype.hasOwnProperty.call(obj, key)) return key;
+    const lower = String(key).toLowerCase();
+    for (const k of Object.keys(obj)) {
+      if (k.toLowerCase() === lower) return k;
     }
     return null;
-  }, []);
+  };
+
+  useEffect(() => {
+    const nextRemovedFields = {};
+
+    corrigendumFields.forEach((parentField) => {
+      const oldValue = String(parentField.oldValue || "");
+      const newValue = String(parentField.newValue || "");
+
+      if (!oldValue || !newValue || oldValue === newValue) return;
+
+      const oldKey = findBucketKey(parentField.additionalFields, oldValue);
+      const newKey = findBucketKey(parentField.additionalFields, newValue);
+      const oldCondKey = findBucketKey(
+        parentField.conditionalAdditionalFields,
+        oldValue,
+      );
+      const newCondKey = findBucketKey(
+        parentField.conditionalAdditionalFields,
+        newValue,
+      );
+
+      const oldChildren = [
+        ...(oldKey ? parentField.additionalFields[oldKey] : []),
+        ...(oldCondKey
+          ? parentField.conditionalAdditionalFields[oldCondKey]
+          : []),
+      ];
+      const newChildren = [
+        ...(newKey ? parentField.additionalFields[newKey] : []),
+        ...(newCondKey
+          ? parentField.conditionalAdditionalFields[newCondKey]
+          : []),
+      ];
+
+      const newChildNames = new Set(newChildren.map((c) => c.name));
+
+      oldChildren.forEach((child) => {
+        if (newChildNames.has(child.name)) return;
+        if (nextRemovedFields[child.name]) return;
+
+        const oldChildValue = findNestedFieldValue(formDetails, child.name);
+
+        nextRemovedFields[child.name] = {
+          oldValue: oldChildValue,
+          label: child.label || child.name,
+          reason: `${parentField.label || parentField.name} changed from "${oldValue}" to "${newValue}"`,
+        };
+      });
+    });
+
+    setRemovedFields((prev) => {
+      const merged = { ...nextRemovedFields };
+      Object.keys(merged).forEach((name) => {
+        if (!merged[name].oldValue && prev[name]?.oldValue) {
+          merged[name].oldValue = prev[name].oldValue;
+        }
+      });
+      return merged;
+    });
+  }, [corrigendumFields, formDetails]);
 
   const handleCheckIfDocumentChange = useCallback(async () => {
     if (!existingCorrigendumId && !type) {
@@ -1044,7 +1418,7 @@ export default function IssueDocumentChange() {
         if (typeof result.formElements === "string") {
           try {
             parsedFormElements = JSON.parse(result.formElements);
-          } catch (error) {
+          } catch {
             setResponseMessage({
               message: "Invalid form elements data from server.",
               type: "error",
@@ -1087,43 +1461,84 @@ export default function IssueDocumentChange() {
         }
         setNextOfficer(result.nextOfficer);
 
-        const mappedAllowedFields = result.allowedForDetails
-          .filter((item) => {
-            if (item.label === "UDID" || item.name === "UDID") {
-              const pensionType = getFormDetailValue(
-                "PensionType",
-                result.formDetails,
-              );
-              const kindOfDisability = getFormDetailValue(
-                "KindOfDisability",
-                result.formDetails,
-              );
+        // ─────────────────────────────────────────────────────────
+        // 1) Prefer visibilityCondition that the backend forwarded.
+        // 2) If the backend dropped it, fetch Documentfields directly
+        //    from /Designer/GetDocumentFields and merge by label/name.
+        //    This is required because the backend's allowedForDetails
+        //    rebuilds each item and may not carry visibilityCondition.
+        // ─────────────────────────────────────────────────────────
+        const anyConditionPresent = (result.allowedForDetails || []).some(
+          (i) => i.visibilityCondition || i.visibility_condition,
+        );
 
-              return (
-                pensionType === "PHYSICALLY CHALLENGED PERSON" &&
-                kindOfDisability === "TEMPORARY"
-              );
+        const docVisibilityByKey = {};
+        if (!anyConditionPresent) {
+          const effectiveServiceId = ServiceId || serviceId;
+          const effectiveType =
+            type || applicationType || result.corrigendumType;
+
+          try {
+            const docRes = await axiosInstance.get(
+              "/Designer/GetDocumentFields",
+              { params: { serviceId: effectiveServiceId } },
+            );
+            if (docRes.data.status && docRes.data.documentFields) {
+              const list = docRes.data.documentFields[effectiveType] || [];
+              for (const entry of list) {
+                if (
+                  entry &&
+                  typeof entry === "object" &&
+                  !Array.isArray(entry)
+                ) {
+                  const key = entry.label || entry.name;
+                  const cond =
+                    entry.visibilityCondition ||
+                    entry.visibility_condition ||
+                    null;
+                  if (key && cond) docVisibilityByKey[key] = cond;
+                }
+              }
             }
-            return true;
-          })
-          .map((item) => {
-            if (item.isGroup)
-              return {
-                label: item.label,
-                name: item.name || item.label,
-                isGroup: true,
-                fields: item.fields,
-                value: `group|${item.label}`,
-              };
-            else
-              return {
-                label: item.label,
-                name: item.name,
-                type: item.type || "text",
-                isGroup: false,
-                value: `${item.label}|${item.name}`,
-              };
-          });
+          } catch (e) {
+            // ignore — fall back to whatever the backend sent
+          }
+        }
+
+        const mergedItems = (result.allowedForDetails || []).map((item) => {
+          const key = item.label || item.name;
+          const backendCond =
+            item.visibilityCondition || item.visibility_condition || null;
+          const visibility = backendCond || docVisibilityByKey[key] || null;
+          return { ...item, __visibility: visibility };
+        });
+
+        const visibleItems = mergedItems.filter((item) =>
+          evaluateVisibilityCondition(item.__visibility, result.formDetails),
+        );
+
+        const mappedAllowedFields = visibleItems.map((item) => {
+          const visibility = item.__visibility;
+
+          if (item.isGroup || Array.isArray(item.fields)) {
+            return {
+              label: item.label,
+              name: item.name || item.label,
+              isGroup: true,
+              fields: item.fields,
+              visibilityCondition: visibility,
+              value: `group|${item.label}`,
+            };
+          }
+          return {
+            label: item.label,
+            name: item.name,
+            type: item.type || "text",
+            isGroup: false,
+            visibilityCondition: visibility,
+            value: `${item.label}|${item.name}`,
+          };
+        });
         setAllowedFormFields(mappedAllowedFields);
 
         if (isEdit || result.existingCorrigendumId) {
@@ -1141,6 +1556,7 @@ export default function IssueDocumentChange() {
         }
         let newCorrigendumFields = [];
         let newErrors = {};
+        let hydratedRemovals = {};
         if (
           (isEdit || result.existingCorrigendumId) &&
           result.corrigendumFields
@@ -1149,11 +1565,23 @@ export default function IssueDocumentChange() {
             typeof result.corrigendumFields === "string"
               ? JSON.parse(result.corrigendumFields)
               : result.corrigendumFields;
-          let index = 0;
+
+          if (corrigendumFieldsData.RemovedFields) {
+            for (const [name, info] of Object.entries(
+              corrigendumFieldsData.RemovedFields,
+            )) {
+              hydratedRemovals[name] = {
+                oldValue: info.old_value || "",
+                label: info.label || name,
+                reason: info.reason || "Removed by this corrigendum",
+              };
+            }
+          }
+
           for (const [name, fieldData] of Object.entries(
             corrigendumFieldsData,
           )) {
-            if (name === "Files") continue;
+            if (name === "Files" || name === "RemovedFields") continue;
             const isGroup =
               typeof fieldData === "object" && !fieldData.new_value;
             if (isGroup) {
@@ -1194,56 +1622,19 @@ export default function IssueDocumentChange() {
                   supportingDocument: subFieldData.supporting_document || null,
                   groupId: name,
                 };
-                if (
-                  subFieldData.new_value &&
-                  fieldConfig.conditionalAdditionalFields?.[
-                    subFieldData.new_value
-                  ]
-                ) {
-                  const conditionalFields =
-                    fieldConfig.conditionalAdditionalFields[
-                      subFieldData.new_value
-                    ];
-                  for (const condField of conditionalFields) {
-                    const condFormDetail = normalizeDetails(
-                      result.formDetails,
-                    ).find((item) => item.name === condField.name);
-                    const condOldValue = condFormDetail
-                      ? condFormDetail.oldValue || ""
-                      : "";
-                    newCorrigendumFields.push({
-                      label: condField.label || condField.name,
-                      name: condField.name,
-                      oldValue: condOldValue,
-                      newValue:
-                        subFieldData.additional_values[condField.name] ||
-                        (condField.type === "enclosure" ? null : ""),
-                      additionalValues: {},
-                      type: condField.type || "text",
-                      options: condField.options || [
-                        { label: "Please Select", value: "Please Select" },
-                      ],
-                      validationFunctions: condField.validationFunctions || [],
-                      transformationFunctions:
-                        condField.transformationFunctions || [],
-                      additionalFields: condField.additionalFields || {},
-                      conditionalAdditionalFields:
-                        condField.conditionalAdditionalFields || {},
-                      accept: condField.accept || ".pdf",
-                      supportingDocument: null,
-                      groupId: name,
-                    });
-                  }
-                }
                 newCorrigendumFields.push(newField);
                 const { error } = await validateField(
                   newField,
                   newField.newValue,
                   formData,
                   result.application.ReferenceNumber,
+                  newCorrigendumFields,
+                  {
+                    skipSameValueCheck: true,
+                    formElementsOverride: parsedFormElements,
+                  },
                 );
-                newErrors[index] = error;
-                index++;
+                newErrors[newField.name] = error;
               }
             } else {
               const fieldConfig = findFieldConfig(
@@ -1281,56 +1672,37 @@ export default function IssueDocumentChange() {
                 accept: fieldConfig.accept || ".pdf",
                 supportingDocument: fieldData.supporting_document || null,
               };
-              if (
-                fieldData.new_value &&
-                fieldConfig.conditionalAdditionalFields?.[fieldData.new_value]
-              ) {
-                const conditionalFields =
-                  fieldConfig.conditionalAdditionalFields[fieldData.new_value];
-                for (const condField of conditionalFields) {
-                  const condFormDetail = normalizeDetails(
-                    result.formDetails,
-                  ).find((item) => item.name === condField.name);
-                  const condOldValue = condFormDetail
-                    ? condFormDetail.oldValue || ""
-                    : "";
-                  newCorrigendumFields.push({
-                    label: condField.label || condField.name,
-                    name: condField.name,
-                    oldValue: condOldValue,
-                    newValue:
-                      fieldData.additional_values[condField.name] ||
-                      (condField.type === "enclosure" ? null : ""),
-                    additionalValues: {},
-                    type: condField.type || "text",
-                    options: condField.options || [
-                      { label: "Please Select", value: "Please Select" },
-                    ],
-                    validationFunctions: condField.validationFunctions || [],
-                    transformationFunctions:
-                      condField.transformationFunctions || [],
-                    additionalFields: condField.additionalFields || {},
-                    conditionalAdditionalFields:
-                      condField.conditionalAdditionalFields || {},
-                    accept: condField.accept || ".pdf",
-                    supportingDocument: null,
-                  });
-                }
-              }
               newCorrigendumFields.push(newField);
               const { error } = await validateField(
                 newField,
                 newField.newValue,
                 formData,
                 result.application.ReferenceNumber,
+                newCorrigendumFields,
+                {
+                  skipSameValueCheck: true,
+                  formElementsOverride: parsedFormElements,
+                },
               );
-              newErrors[index] = error;
-              index++;
+              newErrors[newField.name] = error;
             }
           }
         }
+
+        const newGroupDocs = {};
+        newCorrigendumFields.forEach((f) => {
+          if (f.groupId && f.supportingDocument) {
+            if (!newGroupDocs[f.groupId])
+              newGroupDocs[f.groupId] = f.supportingDocument;
+            f.supportingDocument = null;
+          }
+        });
+
+        setGroupSupportingDocuments(newGroupDocs);
         setCorrigendumFields(newCorrigendumFields);
+        setRemovedFields(hydratedRemovals);
         setErrors(newErrors);
+
         const newFormData = {};
         normalizeDetails(result.formDetails).forEach((item) => {
           newFormData[item.name] = item.value || (item.File ? item.File : "");
@@ -1392,37 +1764,8 @@ export default function IssueDocumentChange() {
     formData,
     validateField,
     applicationType,
-    getFormDetailValue,
+    evaluateVisibilityCondition,
   ]);
-
-  const findNestedFieldValue = (formDetails, fieldName) => {
-    if (formDetails && typeof formDetails === "object") {
-      for (const [sectionName, section] of Object.entries(formDetails)) {
-        if (!Array.isArray(section)) continue;
-        for (const field of section) {
-          if (field.name === fieldName) return field.value ?? field.File ?? "";
-          if (field.additionalFields) {
-            const searchAdditional = (fields, depth = 1) => {
-              for (const sub of fields) {
-                if (sub.name === fieldName) return sub.value ?? sub.File ?? "";
-                if (sub.additionalFields) {
-                  const nested = searchAdditional(
-                    sub.additionalFields,
-                    depth + 1,
-                  );
-                  if (nested) return nested;
-                }
-              }
-              return null;
-            };
-            const nestedValue = searchAdditional(field.additionalFields);
-            if (nestedValue) return nestedValue;
-          }
-        }
-      }
-    }
-    return "";
-  };
 
   const handleNewValueChange = useCallback(
     (index, value, additionalFieldName = null, skipStateUpdate = false) => {
@@ -1496,12 +1839,31 @@ export default function IssueDocumentChange() {
           )
             return;
         }
+
+        // Dynamic reverse-transition guard (defense in depth)
+        const reverseCfg = findFieldConfig(field.name).reverseTransitionPolicy;
+        if (reverseCfg && reverseCfg.allowed !== true) {
+          const oldUpper = String(field.oldValue || "")
+            .trim()
+            .toUpperCase();
+          const newUpper = String(value || "")
+            .trim()
+            .toUpperCase();
+          if (oldUpper === "PERMANENT" && newUpper === "TEMPORARY") {
+            setErrors((prev) => ({
+              ...prev,
+              [field.name]:
+                reverseCfg.message ||
+                "This value cannot be reverted to its previous state.",
+            }));
+            return;
+          }
+        }
+
         if (!skipStateUpdate) {
           const tempUpdated = [...corrigendumFields];
           tempUpdated[index].newValue = transformedValue;
 
-          // FIX: Include fields from BOTH additionalFields and conditionalAdditionalFields
-          // so they are added as standalone fields instead of inline.
           const additionalFieldsList =
             field.additionalFields?.[transformedValue] || [];
           const conditionalFieldsList =
@@ -1557,14 +1919,6 @@ export default function IssueDocumentChange() {
                 groupId: field.groupId || null,
               };
               fieldsToAdd.push(newField);
-              validateField(
-                newField,
-                newField.newValue,
-                formData,
-                referenceNumber,
-              ).then(({ error }) => {
-                setErrors((prev) => ({ ...prev, [newField.name]: error }));
-              });
             }
           });
           let newCorrigendumFields = tempUpdated.filter(
@@ -1572,14 +1926,6 @@ export default function IssueDocumentChange() {
           );
           newCorrigendumFields = [...newCorrigendumFields, ...fieldsToAdd];
           setCorrigendumFields(newCorrigendumFields);
-          validateField(
-            field,
-            transformedValue,
-            formData,
-            referenceNumber,
-          ).then(({ error }) => {
-            setErrors((prev) => ({ ...prev, [field.name]: error }));
-          });
           revalidateAllFields(
             newCorrigendumFields,
             { ...formData, [changedFieldName]: transformedValue },
@@ -1611,6 +1957,7 @@ export default function IssueDocumentChange() {
       revalidateAllFields,
       formData,
       referenceNumber,
+      findFieldConfig,
     ],
   );
 
@@ -1646,6 +1993,7 @@ export default function IssueDocumentChange() {
           field.newValue,
           formData,
           referenceNumber,
+          updated,
         );
         error = result.error;
         setErrors((prev) => ({ ...prev, [field.name]: error }));
@@ -1690,7 +2038,9 @@ export default function IssueDocumentChange() {
     const addFieldToCorrigendum = (field, groupId = null) => {
       if (corrigendumFields.some((f) => f.name === field.name)) return;
       const formDetail = formDetailsFields.find((d) => d.name === field.name);
-      const fieldConfig = findFieldConfig(field.name, field.type || "text");
+      const inferredType =
+        field.type || getFieldTypeByName(formElements, field.name) || "text";
+      const fieldConfig = findFieldConfig(field.name, inferredType);
       if (!fieldConfig) return;
 
       let oldValue = formDetail ? formDetail.oldValue : "";
@@ -1744,6 +2094,7 @@ export default function IssueDocumentChange() {
     corrigendumFields,
     formDetailsFields,
     findFieldConfig,
+    formElements,
     formData,
     referenceNumber,
     revalidateAllFields,
@@ -1751,37 +2102,89 @@ export default function IssueDocumentChange() {
 
   const handleDeleteField = useCallback(
     (index) => {
+      const deletedField = corrigendumFields[index];
       const updatedFields = corrigendumFields.filter((_, i) => i !== index);
+
+      if (deletedField?.groupId) {
+        const groupStillExists = updatedFields.some(
+          (f) => f.groupId === deletedField.groupId,
+        );
+        if (!groupStillExists) {
+          setGroupSupportingDocuments((prev) => {
+            const next = { ...prev };
+            delete next[deletedField.groupId];
+            return next;
+          });
+        }
+      }
+
       setCorrigendumFields(updatedFields);
       setRenderKey((prev) => prev + 1);
       revalidateAllFields(updatedFields, formData, referenceNumber, true).then(
-        (newErrors) => {
-          setErrors(newErrors);
-        },
+        (newErrors) => setErrors(newErrors),
       );
     },
     [corrigendumFields, formData, referenceNumber, revalidateAllFields],
   );
 
-  const handleSupportingDocumentChange = (index, file) => {
-    const updated = [...corrigendumFields];
-    updated[index].supportingDocument = file;
-    setCorrigendumFields(updated);
-    setErrors((prev) => ({ ...prev, [`${updated[index].name}-doc`]: null }));
-  };
+  const handleSupportingDocumentChange = useCallback(
+    (index, file) => {
+      const field = corrigendumFields[index];
+      if (!field) return;
 
-  const handleRemoveSupportingDocument = (index) => {
-    const updated = [...corrigendumFields];
-    updated[index].supportingDocument = null;
-    setCorrigendumFields(updated);
-    setErrors((prev) => ({
-      ...prev,
-      [`${updated[index].name}-doc`]: validateSupportingDocument(
-        updated[index],
-        updated,
-      ),
-    }));
-  };
+      if (field.groupId) {
+        setGroupSupportingDocuments((prev) => ({
+          ...prev,
+          [field.groupId]: file,
+        }));
+        setErrors((prev) => {
+          const next = { ...prev };
+          corrigendumFields.forEach((f) => {
+            if (f.groupId === field.groupId) delete next[`${f.name}-doc`];
+          });
+          return next;
+        });
+      } else {
+        const updated = [...corrigendumFields];
+        updated[index].supportingDocument = file;
+        setCorrigendumFields(updated);
+        setErrors((prev) => ({ ...prev, [`${field.name}-doc`]: null }));
+      }
+    },
+    [corrigendumFields],
+  );
+
+  const handleRemoveSupportingDocument = useCallback(
+    (index) => {
+      const field = corrigendumFields[index];
+      if (!field) return;
+
+      if (field.groupId) {
+        setGroupSupportingDocuments((prev) => {
+          const next = { ...prev };
+          delete next[field.groupId];
+          return next;
+        });
+        setErrors((prev) => ({
+          ...prev,
+          [`${field.name}-doc`]:
+            "Supporting document is required for this group of fields.",
+        }));
+      } else {
+        const updated = [...corrigendumFields];
+        updated[index].supportingDocument = null;
+        setCorrigendumFields(updated);
+        setErrors((prev) => ({
+          ...prev,
+          [`${field.name}-doc`]: validateSupportingDocument(
+            updated[index],
+            updated,
+          ),
+        }));
+      }
+    },
+    [corrigendumFields, validateSupportingDocument],
+  );
 
   const handleRemarksChange = useCallback((e) => {
     const value = e.target.value;
@@ -1801,21 +2204,9 @@ export default function IssueDocumentChange() {
     setErrors((prev) => ({ ...prev, remarks: error }));
   }, [remarks, validateRemarks]);
 
-  const handleTypeChange = useCallback(
-    (e) => {
-      const newType = e.target.value;
-      if (!isEdit && !isInitialLoad && type !== newType) {
-        resetFormState();
-        setType(newType);
-      } else setType(newType);
-    },
-    [isEdit, isInitialLoad, type, resetFormState],
-  );
-
   const handleTypeBlur = useCallback(() => {
     setTouched((prev) => ({ ...prev, type: true }));
-    const error = validateType(type);
-    setErrors((prev) => ({ ...prev, type: error }));
+    setErrors((prev) => ({ ...prev, type: validateType(type) }));
   }, [type, validateType]);
 
   const handleServiceChange = useCallback(
@@ -1860,7 +2251,27 @@ export default function IssueDocumentChange() {
   }, []);
 
   const generateCorrigendumObject = useCallback(() => {
-    return corrigendumFields.reduce((acc, field) => {
+    const anchorByGroup = {};
+    corrigendumFields.forEach((f) => {
+      if (f.groupId) anchorByGroup[f.groupId] = f.name;
+    });
+
+    const result = corrigendumFields.reduce((acc, field) => {
+      let supportingDocValue = null;
+
+      if (field.groupId) {
+        if (anchorByGroup[field.groupId] === field.name) {
+          const doc = groupSupportingDocuments[field.groupId];
+          if (doc)
+            supportingDocValue = typeof doc === "string" ? doc : doc.name;
+        }
+      } else if (field.supportingDocument) {
+        supportingDocValue =
+          typeof field.supportingDocument === "string"
+            ? field.supportingDocument
+            : field.supportingDocument.name;
+      }
+
       acc[field.name] = {
         old_value:
           field.type === "enclosure" ? field.oldValue || "" : field.oldValue,
@@ -1871,31 +2282,51 @@ export default function IssueDocumentChange() {
               : null
             : field.newValue,
         additional_values: field.additionalValues || {},
-        supporting_document: field.supportingDocument
-          ? typeof field.supportingDocument === "string"
-            ? field.supportingDocument
-            : field.supportingDocument.name
-          : null,
+        supporting_document: supportingDocValue,
       };
       return acc;
     }, {});
-  }, [corrigendumFields]);
+
+    if (Object.keys(removedFields).length > 0) {
+      result.RemovedFields = Object.entries(removedFields).reduce(
+        (acc, [name, info]) => {
+          acc[name] = {
+            old_value: info.oldValue || "",
+            label: info.label || name,
+            reason: info.reason || "Removed by this corrigendum",
+          };
+          return acc;
+        },
+        {},
+      );
+    }
+
+    return result;
+  }, [corrigendumFields, groupSupportingDocuments, removedFields]);
 
   const handleSubmitDocumentChange = useCallback(async () => {
+    const preflight = [];
     if (!type) {
-      setErrors((prev) => ({
-        ...prev,
-        type: "Please select a type (Corrigendum or Correction)",
-      }));
-      return;
+      preflight.push({
+        key: "type",
+        label: "Document Change Type",
+        message: "Please select a type (Corrigendum or Correction).",
+      });
     }
     if (corrigendumFields.length === 0) {
-      setErrors((prev) => ({
-        ...prev,
-        corrigendumFields: `Please add at least one field to submit the ${type.toLowerCase()}.`,
-      }));
+      preflight.push({
+        key: "__top",
+        label: "Fields",
+        message: `Please add at least one field to submit the ${(
+          type || "document change"
+        ).toLowerCase()}.`,
+      });
+    }
+    if (preflight.length > 0) {
+      setValidationPopup({ open: true, items: preflight });
       return;
     }
+
     setTouched((prev) => ({ ...prev, remarks: true, type: true }));
     const newErrors = await revalidateAllFields(
       corrigendumFields,
@@ -1903,55 +2334,60 @@ export default function IssueDocumentChange() {
       referenceNumber,
       true,
     );
-    setErrors(newErrors);
+    const merged = { ...newErrors };
 
-    const missingGroupDoc = corrigendumFields.some((field) => {
-      if (field.groupId) {
-        const groupIndices = corrigendumFields
-          .map((f, i) => (f.groupId === field.groupId ? i : -1))
-          .filter((i) => i !== -1);
-        const lastIndex = groupIndices[groupIndices.length - 1];
-        return (
-          lastIndex === corrigendumFields.indexOf(field) &&
-          !field.supportingDocument
-        );
+    const groupHasDoc = {};
+    corrigendumFields.forEach((f) => {
+      if (f.groupId) {
+        if (groupHasDoc[f.groupId] === undefined)
+          groupHasDoc[f.groupId] = false;
+        if (groupSupportingDocuments[f.groupId]) groupHasDoc[f.groupId] = true;
+        if (f.supportingDocument) groupHasDoc[f.groupId] = true;
       }
-      return !field.supportingDocument;
     });
 
-    const hasEmptyNewValue = corrigendumFields.some((field) => !field.newValue);
+    const missingGroupDoc = corrigendumFields.some((field) => {
+      if (field.groupId) return !groupHasDoc[field.groupId];
+      return !field.supportingDocument;
+    });
+    const hasEmptyNewValue = corrigendumFields.some((f) => !f.newValue);
     const hasValidationErrors = Object.values(newErrors).some(
       (error) => error !== null && error !== undefined,
     );
 
-    if (missingGroupDoc) {
-      setErrors((prev) => ({
-        ...prev,
-        corrigendumFields: `All fields or groups must have a supporting document uploaded.`,
-      }));
+    if (missingGroupDoc && !merged.corrigendumFields) {
+      merged.corrigendumFields =
+        "All fields or groups must have a supporting document uploaded.";
+    } else if (
+      hasEmptyNewValue &&
+      !missingGroupDoc &&
+      !merged.corrigendumFields
+    ) {
+      merged.corrigendumFields = `Please fill in all new values before submitting the ${type.toLowerCase()}.`;
+    } else if (
+      hasValidationErrors &&
+      !missingGroupDoc &&
+      !hasEmptyNewValue &&
+      !merged.corrigendumFields
+    ) {
+      merged.corrigendumFields = `Please correct all validation errors before submitting the ${type.toLowerCase()}.`;
+    }
+
+    setErrors(merged);
+
+    const items = collectValidationErrors(merged);
+    if (items.length > 0) {
+      setValidationPopup({ open: true, items });
       return;
     }
-    if (hasEmptyNewValue) {
-      setErrors((prev) => ({
-        ...prev,
-        corrigendumFields: `Please fill in all new values before submitting the ${type.toLowerCase()}.`,
-      }));
-      return;
-    }
-    if (hasValidationErrors) {
-      setErrors((prev) => ({
-        ...prev,
-        corrigendumFields: `Please correct all validation errors before submitting the ${type.toLowerCase()}.`,
-      }));
-      return;
-    }
+
     setLoading(true);
     setResponseMessage({ message: "", type: "" });
     try {
       const corrigendumObject = generateCorrigendumObject();
       try {
         JSON.parse(JSON.stringify(corrigendumObject));
-      } catch (error) {
+      } catch {
         setResponseMessage({
           message: `Invalid ${type.toLowerCase()} fields format.`,
           type: "error",
@@ -1970,16 +2406,32 @@ export default function IssueDocumentChange() {
       );
       if (existingCorrigendumId)
         formDataToSend.append("applicationId", existingCorrigendumId);
+
       corrigendumFields.forEach((field) => {
         if (
+          !field.groupId &&
           field.supportingDocument &&
           typeof field.supportingDocument !== "string"
-        )
+        ) {
           formDataToSend.append(
             `fieldSupportingDocuments[${field.name}]`,
             field.supportingDocument,
           );
+        }
       });
+
+      const anchorByGroup = {};
+      corrigendumFields.forEach((f) => {
+        if (f.groupId) anchorByGroup[f.groupId] = f.name;
+      });
+      Object.entries(groupSupportingDocuments).forEach(([groupId, doc]) => {
+        const anchorName = anchorByGroup[groupId];
+        if (!anchorName) return;
+        if (doc && typeof doc !== "string") {
+          formDataToSend.append(`fieldSupportingDocuments[${anchorName}]`, doc);
+        }
+      });
+
       const response = await axiosInstance.post(
         "/Officer/SubmitDocumentChange",
         formDataToSend,
@@ -1988,8 +2440,8 @@ export default function IssueDocumentChange() {
       if (response.data.status) {
         setSuccessDetails({
           message: response.data.message || `${type} submitted successfully!`,
-          referenceNumber: referenceNumber,
-          type: type,
+          referenceNumber,
+          type,
         });
         setShowSuccessMessage(true);
         setTimeout(() => {
@@ -2023,6 +2475,7 @@ export default function IssueDocumentChange() {
   }, [
     type,
     corrigendumFields,
+    groupSupportingDocuments,
     formData,
     referenceNumber,
     remarks,
@@ -2031,7 +2484,8 @@ export default function IssueDocumentChange() {
     generateCorrigendumObject,
     resetFormState,
     revalidateAllFields,
-    validateSupportingDocument,
+    collectValidationErrors,
+    removedFields,
   ]);
 
   if (loading) {
@@ -2204,8 +2658,10 @@ export default function IssueDocumentChange() {
                     setType(newValue);
                   } else setType(newValue);
                   setTouched((prev) => ({ ...prev, type: true }));
-                  const error = validateType(newValue);
-                  setErrors((prev) => ({ ...prev, type: error }));
+                  setErrors((prev) => ({
+                    ...prev,
+                    type: validateType(newValue),
+                  }));
                 }}
                 onBlur={handleTypeBlur}
                 options={["Corrigendum", "Correction"]}
@@ -2416,6 +2872,27 @@ export default function IssueDocumentChange() {
               </Alert>
             )}
 
+            {Object.keys(removedFields).length > 0 && (
+              <Alert severity="info" sx={{ mb: 3, borderRadius: 2 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                  The following field(s) will be removed from the application:
+                </Typography>
+                {Object.entries(removedFields).map(([name, info]) => (
+                  <Typography key={name} variant="body2">
+                    • <strong>{info.label}</strong> — old value:{" "}
+                    <em>{info.oldValue || "N/A"}</em> ({info.reason})
+                  </Typography>
+                ))}
+                <Typography
+                  variant="caption"
+                  sx={{ display: "block", mt: 1, color: "text.secondary" }}
+                >
+                  Their historical values are preserved in this corrigendum's
+                  record.
+                </Typography>
+              </Alert>
+            )}
+
             {errors.corrigendumFields && (
               <Alert severity="error" sx={{ mb: 3 }}>
                 {errors.corrigendumFields}
@@ -2428,19 +2905,21 @@ export default function IssueDocumentChange() {
 
               const isLastInGroup = field.groupId
                 ? (() => {
-                    const groupIndices = corrigendumFields
-                      .map((f, i) => (f.groupId === field.groupId ? i : -1))
-                      .filter((i) => i !== -1);
-                    return (
-                      groupIndices.length > 0 &&
-                      groupIndices[groupIndices.length - 1] === index
+                    const anchor = getGroupAnchorField(
+                      corrigendumFields,
+                      field.groupId,
                     );
+                    return anchor?.name === field.name;
                   })()
                 : true;
+
+              const groupDoc = getFieldSupportingDocument(field);
+              const isHighlighted = highlightedField === field.name;
 
               return (
                 <Paper
                   key={`${field.name}-${index}`}
+                  data-field-name={field.name}
                   elevation={0}
                   sx={{
                     p: 3,
@@ -2449,6 +2928,11 @@ export default function IssueDocumentChange() {
                     border: "1px solid #E2E8F0",
                     borderLeft: `4px solid ${hasError ? "#DC2626" : "#2562E9"}`,
                     bgcolor: "#FFFFFF",
+                    boxShadow: isHighlighted
+                      ? "0 0 0 3px #FBBF24, 0 0 20px rgba(251, 191, 36, 0.35)"
+                      : "none",
+                    transition: "box-shadow 0.35s ease",
+                    scrollMarginTop: "96px",
                   }}
                 >
                   <Box
@@ -2699,9 +3183,7 @@ export default function IssueDocumentChange() {
                           }
                           sx={{ textTransform: "none", fontWeight: 600 }}
                         >
-                          {field.supportingDocument
-                            ? "Change Document"
-                            : "Upload Document"}
+                          {groupDoc ? "Change Document" : "Upload Document"}
                           <input
                             type="file"
                             accept=".pdf"
@@ -2714,7 +3196,7 @@ export default function IssueDocumentChange() {
                             }
                           />
                         </Button>
-                        {field.supportingDocument && (
+                        {groupDoc && (
                           <Box
                             sx={{
                               display: "flex",
@@ -2732,14 +3214,14 @@ export default function IssueDocumentChange() {
                               }}
                               onClick={() =>
                                 handleViewFile(
-                                  field.supportingDocument,
-                                  typeof field.supportingDocument === "string",
+                                  groupDoc,
+                                  typeof groupDoc === "string",
                                 )
                               }
                             >
-                              {typeof field.supportingDocument === "string"
-                                ? field.supportingDocument
-                                : field.supportingDocument.name}
+                              {typeof groupDoc === "string"
+                                ? groupDoc
+                                : groupDoc.name}
                             </Typography>
                             {canEditDocument && (
                               <IconButton
@@ -2764,7 +3246,6 @@ export default function IssueDocumentChange() {
                   )}
 
                   {field.additionalFields[field.newValue]?.map((addField) => {
-                    // If this field is already a standalone field in corrigendumFields, don't render it inline
                     if (
                       corrigendumFields.some((f) => f.name === addField.name)
                     ) {
@@ -3050,6 +3531,70 @@ export default function IssueDocumentChange() {
           </Paper>
         )}
       </Container>
+
+      <Dialog
+        open={validationPopup.open}
+        onClose={() => setValidationPopup({ open: false, items: [] })}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            fontWeight: 700,
+          }}
+        >
+          <WarningAmber sx={{ color: "#D97706" }} />
+          Cannot forward {type || "document change"}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
+            Please resolve the following{" "}
+            {validationPopup.items.length === 1
+              ? "issue"
+              : `${validationPopup.items.length} issues`}{" "}
+            before submitting. Click any item to jump to the field.
+          </Typography>
+          <List dense disablePadding>
+            {validationPopup.items.map((item, i) => (
+              <ListItem key={`${item.key}-${i}`} disablePadding>
+                <ListItemButton
+                  onClick={() => {
+                    setValidationPopup({ open: false, items: [] });
+                    setTimeout(() => scrollToField(item.key), 120);
+                  }}
+                  sx={{ borderRadius: 1, alignItems: "flex-start" }}
+                >
+                  <ListItemIcon sx={{ minWidth: 32, mt: 0.5 }}>
+                    <ErrorOutline color="error" fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.label}
+                    secondary={item.message}
+                    primaryTypographyProps={{
+                      fontWeight: 600,
+                      fontSize: "0.875rem",
+                    }}
+                    secondaryTypographyProps={{ fontSize: "0.75rem" }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => setValidationPopup({ open: false, items: [] })}
+            variant="contained"
+            sx={{ textTransform: "none", fontWeight: 600 }}
+          >
+            Got it
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

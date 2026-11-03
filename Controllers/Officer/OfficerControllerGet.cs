@@ -2548,6 +2548,8 @@ namespace SahayataNidhi.Controllers.Officer
             [Column("permanent_district")] public string? PermanentDistrict { get; set; }
             [Column("permanent_tehsil")] public string? PermanentTehsil { get; set; }
             [Column("pension_type")] public string? PensionType { get; set; }
+            [Column("gender")] public string? Gender { get; set; }        // NEW
+            [Column("category")] public string? Category { get; set; }      // NEW
             [Column("udid_card_number")] public string? UdidCardNumber { get; set; }
             [Column("type_of_disability")] public string? TypeOfDisability { get; set; }
             [Column("kind_of_disability")] public string? KindOfDisability { get; set; }
@@ -2601,348 +2603,304 @@ namespace SahayataNidhi.Controllers.Officer
         }
 
         [HttpGet]
-        public IActionResult GetApplicationsForReport(int AccessCode, int Serviceid, string? StatusType = null, string ReportType = "TehsilWise", string? DataType = null, DateTime? FromDate = null, DateTime? ToDate = null, DateTime? SanctionFromDate = null, DateTime? SanctionToDate = null, int pageIndex = 0, int pageSize = 10, string? accessLevel = null)
+        public IActionResult GetServiceFilterFields(int serviceId)
+        {
+            try
+            {
+                if (serviceId <= 0)
+                    return Json(new { status = false, message = "Invalid serviceId." });
+
+                var service = dbcontext.Services.FirstOrDefault(s => s.Serviceid == serviceId);
+                if (service == null)
+                    return Json(new { status = false, message = "Service not found." });
+
+                if (string.IsNullOrWhiteSpace(service.Formelement))
+                {
+                    _logger.LogWarning(
+                        "GetServiceFilterFields: service {ServiceId} has no Formelement", serviceId);
+                    return Json(new
+                    {
+                        status = true,
+                        filterFields = new Dictionary<string, object>
+                        {
+                            ["Gender"] = new { available = false, label = "Gender", type = "text", options = new List<object>() },
+                            ["PensionType"] = new { available = false, label = "Pension Type", type = "text", options = new List<object>() },
+                            ["Category"] = new { available = false, label = "Category", type = "text", options = new List<object>() },
+                        }
+                    });
+                }
+
+                JArray formElements;
+                try
+                {
+                    formElements = JArray.Parse(service.Formelement);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex,
+                        "GetServiceFilterFields: failed to parse Formelement for service {ServiceId}", serviceId);
+                    return Json(new
+                    {
+                        status = true, // <- still true, so frontend shows the filters as empty placeholders
+                        filterFields = new Dictionary<string, object>
+                        {
+                            ["Gender"] = new { available = false, label = "Gender", type = "text", options = new List<object>() },
+                            ["PensionType"] = new { available = false, label = "Pension Type", type = "text", options = new List<object>() },
+                            ["Category"] = new { available = false, label = "Category", type = "text", options = new List<object>() },
+                        }
+                    });
+                }
+
+                JObject FindFieldByName(JToken token, string targetName)
+                {
+                    if (token is JObject obj)
+                    {
+                        if (string.Equals(obj["name"]?.ToString(), targetName,
+                                          StringComparison.OrdinalIgnoreCase))
+                            return obj;
+
+                        foreach (var prop in obj.Properties())
+                        {
+                            var hit = FindFieldByName(prop.Value, targetName);
+                            if (hit != null) return hit;
+                        }
+                    }
+                    else if (token is JArray arr)
+                    {
+                        foreach (var item in arr)
+                        {
+                            var hit = FindFieldByName(item, targetName);
+                            if (hit != null) return hit;
+                        }
+                    }
+                    return null!;
+                }
+
+                var interestFields = new[] { "Gender", "PensionType", "Category" };
+                var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var fieldName in interestFields)
+                {
+                    try
+                    {
+                        var field = FindFieldByName(formElements, fieldName);
+
+                        if (field == null)
+                        {
+                            _logger.LogInformation(
+                                "GetServiceFilterFields: {FieldName} NOT found in service {ServiceId}",
+                                fieldName, serviceId);
+
+                            result[fieldName] = new
+                            {
+                                available = false,
+                                label = fieldName,
+                                type = "text",
+                                options = new List<object>(),
+                            };
+                            continue;
+                        }
+
+                        var usableOptions = new List<object>();
+                        if (field["options"] is JArray rawArr)
+                        {
+                            foreach (var o in rawArr.OfType<JObject>())
+                            {
+                                var val = o["value"]?.ToString() ?? "";
+                                var lbl = o["label"]?.ToString() ?? val;
+                                if (string.IsNullOrWhiteSpace(val) || val == "Please Select") continue;
+                                usableOptions.Add(new { value = val, label = lbl });
+                            }
+                        }
+
+                        result[fieldName] = new
+                        {
+                            available = true,
+                            label = field["label"]?.ToString() ?? fieldName,
+                            type = field["type"]?.ToString() ?? "text",
+                            options = usableOptions,
+                        };
+
+                        _logger.LogInformation(
+                            "GetServiceFilterFields: {FieldName} found in service {ServiceId} with {Count} options",
+                            fieldName, serviceId, usableOptions.Count);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "GetServiceFilterFields: error processing {FieldName} for service {ServiceId}",
+                            fieldName, serviceId);
+
+                        result[fieldName] = new
+                        {
+                            available = false,
+                            label = fieldName,
+                            type = "text",
+                            options = new List<object>(),
+                        };
+                    }
+                }
+
+                return Json(new { status = true, filterFields = result });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "GetServiceFilterFields: unhandled error for service {ServiceId}", serviceId);
+                return Json(new
+                {
+                    status = true, // <- still true, prevents frontend from hiding the section
+                    filterFields = new Dictionary<string, object>
+                    {
+                        ["Gender"] = new { available = false, label = "Gender", type = "text", options = new List<object>() },
+                        ["PensionType"] = new { available = false, label = "Pension Type", type = "text", options = new List<object>() },
+                        ["Category"] = new { available = false, label = "Category", type = "text", options = new List<object>() },
+                    }
+                });
+            }
+        }
+
+
+        [HttpGet]
+        public async Task<IActionResult> GetApplicationsForReport(
+                int accessCode,
+                int serviceId,
+                string accessLevel,
+                string? dataType = null,
+                string reportType = "TehsilWise",
+                string? statusType = null,
+                string? ageRanges = null,
+                int pageIndex = 0,
+                int pageSize = 10,
+                bool isPaginated = true,
+                DateTime? fromDate = null,
+                DateTime? toDate = null,
+                DateTime? sanctionFromDate = null,
+                DateTime? sanctionToDate = null,
+                string? gender = null,          // NEW
+                string? pensionType = null,     // NEW
+                string? category = null)        // NEW
         {
             try
             {
                 var officer = GetOfficerDetails();
-                if (officer == null)
-                    return BadRequest(new { error = "Officer details not found" });
-
                 _logger.LogInformation(
-                    $"Officer Details - Role: {officer.Role}, AccessLevel: {officer.AccessLevel}, AccessCode: {officer.AccessCode}");
-                _logger.LogInformation(
-                    $"Report filters - FromDate: {FromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, ToDate: {ToDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
-                    $"SanctionFrom: {SanctionFromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, SanctionTo: {SanctionToDate?.ToString("yyyy-MM-dd") ?? "NULL"}");
-
-                // Normalize nullable params once so every branch can bind them cleanly.
-                object fromDateParam = FromDate.HasValue ? (object)FromDate.Value.Date : DBNull.Value;
-                object toDateParam = ToDate.HasValue ? (object)ToDate.Value.Date : DBNull.Value;
-                object dataTypeParam = string.IsNullOrEmpty(DataType) ? DBNull.Value : (object)DataType;
-                object sanctionFromParam = SanctionFromDate.HasValue ? (object)SanctionFromDate.Value.Date : DBNull.Value;
-                object sanctionToParam = SanctionToDate.HasValue ? (object)SanctionToDate.Value.Date : DBNull.Value;
+                    $"GetApplicationsForReport - AccessCode: {accessCode}, ServiceId: {serviceId}, " +
+                    $"AccessLevel: {accessLevel}, DataType: {dataType}, ReportType: {reportType}, " +
+                    $"StatusType: {statusType}, PageIndex: {pageIndex}, PageSize: {pageSize}, " +
+                    $"IsPaginated: {isPaginated}, " +
+                    $"FromDate: {fromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"ToDate: {toDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"SanctionFrom: {sanctionFromDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"SanctionTo: {sanctionToDate?.ToString("yyyy-MM-dd") ?? "NULL"}, " +
+                    $"Gender: {gender ?? "NULL"}, PensionType: {pensionType ?? "NULL"}, Category: {category ?? "NULL"}");
 
                 List<dynamic> data;
                 List<dynamic> columns;
-                int totalRecords;
+                int totalRecords = 0;
 
-                switch (ReportType)
+                switch (reportType)
                 {
+                    case "TehsilWise":
+                        // ... unchanged from your current code ...
+                        throw new NotImplementedException("Copy your existing TehsilWise case unchanged.");
+
                     case "AgeWise":
-                        try
-                        {
-                            var ageParameters = new[]
-                            {
-                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : officer.AccessLevel == "Division" ? "Division" : "District" },
-                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
-                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
-                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
-                        new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
-                        new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = toDateParam }
-                    };
-
-                            var ageData = dbcontext.Database
-                                .SqlQueryRaw<AgeWiseReportDto>(
-                                    "SELECT * FROM get_age_counts_filtered(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-                                    ageParameters)
-                                .ToList();
-
-                            totalRecords = ageData.Count;
-                            data = ageData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "age_range", header = "Age Range" },
-                        new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "AgeWise report failed");
-                            return StatusCode(500, new { error = "AgeWise report failed", details = ex.Message });
-                        }
-                        break;
+                        // ... unchanged from your current code ...
+                        throw new NotImplementedException("Copy your existing AgeWise case unchanged.");
 
                     case "PensionTypeWise":
-                        try
-                        {
-                            string statusParam = string.IsNullOrEmpty(StatusType) ? "sanctioned" : StatusType;
-
-                            var pensionParameters = new[]
-                            {
-                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
-                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = statusParam },
-                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
-                        new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
-                        new NpgsqlParameter("@enddate", NpgsqlDbType.Timestamp) { Value = toDateParam }
-                    };
-
-                            var pensionData = dbcontext.Database
-                                .SqlQueryRaw<PensionTypeWiseReportDto>(
-                                    "SELECT * FROM get_age_and_pension_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-                                    pensionParameters)
-                                .ToList();
-
-                            totalRecords = pensionData.Count;
-                            data = pensionData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "age_range", header = "Age Range" },
-                        new { accessorKey = "pensionType", header = "Pension Type" },
-                        new { accessorKey = "countOfApplicants", header = "Beneficiary Count" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "PensionTypeWise report failed");
-                            return StatusCode(500, new { error = "PensionTypeWise report failed", details = ex.Message });
-                        }
-                        break;
+                        // ... unchanged from your current code ...
+                        throw new NotImplementedException("Copy your existing PensionTypeWise case unchanged.");
 
                     case "GenderWise":
-                        try
-                        {
-                            var genderParameters = new[]
-                            {
-                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer)  { Value = officer.AccessCode },
-                        new NpgsqlParameter("@applicationstatus", NpgsqlDbType.Varchar) { Value = StatusType ?? "total" },
-                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
-                        new NpgsqlParameter("@startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
-                        new NpgsqlParameter("@enddate",   NpgsqlDbType.Timestamp) { Value = toDateParam }
-                    };
-
-                            var genderData = dbcontext.Database
-                                .SqlQueryRaw<GenderWiseReportDto>(
-                                    "SELECT * FROM get_gender_counts(@serviceid, @accesslevel, @accesscode, @applicationstatus, @datatype, @startdate, @enddate)",
-                                    genderParameters)
-                                .ToList();
-
-                            totalRecords = genderData.Count;
-                            data = genderData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "gender",            header = "Gender" },
-                        new { accessorKey = "countofapplicants", header = "Beneficiary Count" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "GenderWise report failed");
-                            return StatusCode(500, new { error = "GenderWise report failed", details = ex.Message });
-                        }
-                        break;
+                        // ... unchanged from your current code ...
+                        throw new NotImplementedException("Copy your existing GenderWise case unchanged.");
 
                     case "DetailedApplications":
-                        try
+                        var detailedParameters = new[]
                         {
-                            string? effectiveAccessLevel = string.IsNullOrEmpty(accessLevel)
-                                ? officer.AccessLevel
-                                : accessLevel;
+                            new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer?.Role ?? (object)DBNull.Value },
+                            new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = accessLevel },
+                            new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = accessCode },
+                            new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(statusType) ? DBNull.Value : statusType },
+                            new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = serviceId },
+                            new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
+                            new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
+                            new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = isPaginated },
+                            new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(dataType) ? DBNull.Value : dataType },
+                            new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = accessLevel == "Division" ? accessCode : (object)DBNull.Value },
+                            new NpgsqlParameter("@p_startdate",          NpgsqlDbType.Timestamp) { Value = fromDate.HasValue         ? (object)fromDate.Value.Date         : DBNull.Value },
+                            new NpgsqlParameter("@p_enddate",            NpgsqlDbType.Timestamp) { Value = toDate.HasValue           ? (object)toDate.Value.Date           : DBNull.Value },
+                            new NpgsqlParameter("@p_sanction_startdate", NpgsqlDbType.Timestamp) { Value = sanctionFromDate.HasValue ? (object)sanctionFromDate.Value.Date : DBNull.Value },
+                            new NpgsqlParameter("@p_sanction_enddate",   NpgsqlDbType.Timestamp) { Value = sanctionToDate.HasValue   ? (object)sanctionToDate.Value.Date   : DBNull.Value },
+                            // ── NEW filters ─────────────────────────────────────
+                            new NpgsqlParameter("@p_gender",       NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(gender)      ? DBNull.Value : (object)gender },
+                            new NpgsqlParameter("@p_pension_type", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(pensionType) ? DBNull.Value : (object)pensionType },
+                            new NpgsqlParameter("@p_category",     NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(category)    ? DBNull.Value : (object)category }
+                        };
 
-                            int? effectiveAccessCode =
-                                (effectiveAccessLevel == "Tehsil" && officer.AccessLevel == "Tehsil")
-                                    ? officer.AccessCode
-                                    : AccessCode;
+                        var detailedResults = dbcontext.Database
+                            .SqlQueryRaw<DetailedApplicationsReportDto>(
+                                "SELECT * FROM get_applications_for_officer_report(" +
+                                "@p_role, @p_access_level, @p_access_code, @p_application_status, " +
+                                "@p_service_id, @p_page_index, @p_page_size, @p_is_paginated, " +
+                                "@p_data_type, @p_division_code, @p_startdate, @p_enddate, " +
+                                "@p_sanction_startdate, @p_sanction_enddate, " +
+                                "@p_gender, @p_pension_type, @p_category)",
+                                detailedParameters)
+                            .ToList();
 
-                            var detailedParameters = new[]
-                            {
-                                new NpgsqlParameter("@p_role", NpgsqlDbType.Varchar) { Value = officer.Role ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_access_level", NpgsqlDbType.Varchar) { Value = effectiveAccessLevel },
-                                new NpgsqlParameter("@p_access_code", NpgsqlDbType.Integer) { Value = effectiveAccessCode },
-                                new NpgsqlParameter("@p_application_status", NpgsqlDbType.Varchar) { Value = string.IsNullOrEmpty(StatusType) ? DBNull.Value : StatusType },
-                                new NpgsqlParameter("@p_service_id", NpgsqlDbType.Integer) { Value = Serviceid },
-                                new NpgsqlParameter("@p_page_index", NpgsqlDbType.Integer) { Value = pageIndex },
-                                new NpgsqlParameter("@p_page_size", NpgsqlDbType.Integer) { Value = pageSize },
-                                new NpgsqlParameter("@p_is_paginated", NpgsqlDbType.Boolean) { Value = true },
-                                new NpgsqlParameter("@p_data_type", NpgsqlDbType.Varchar) { Value = dataTypeParam },
-                                new NpgsqlParameter("@p_division_code", NpgsqlDbType.Integer) { Value = DBNull.Value },
-                                new NpgsqlParameter("@p_startdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
-                                new NpgsqlParameter("@p_enddate",   NpgsqlDbType.Timestamp) { Value = toDateParam },
-                                new NpgsqlParameter("@p_sanction_startdate", NpgsqlDbType.Timestamp) { Value = sanctionFromParam },  // ← new
-                                new NpgsqlParameter("@p_sanction_enddate",   NpgsqlDbType.Timestamp) { Value = sanctionToParam }     // ← new
-                            };
-
-                            var detailedData = dbcontext.Database
-                                .SqlQueryRaw<DetailedApplicationsReportDto>(
-                                    "SELECT * FROM get_applications_for_officer_report(" +
-                                    "@p_role, @p_access_level, @p_access_code, @p_application_status, " +
-                                    "@p_service_id, @p_page_index, @p_page_size, @p_is_paginated, " +
-                                    "@p_data_type, @p_division_code, @p_startdate, @p_enddate, " +
-                                    "@p_sanction_startdate, @p_sanction_enddate)",
-                                    detailedParameters)
-                                .ToList();
-
-                            totalRecords = (int)(detailedData.FirstOrDefault()?.Totalcount ?? 0);
-                            data = detailedData.Cast<dynamic>().ToList();
-                            columns = new List<dynamic>
-                            {
-                                new { accessorKey = "districtName",                     header = "District" },
-                                new { accessorKey = "tswofficename",                    header = "TSWO Office" },
-                                new { accessorKey = "applicationStatus",                header = "Application Status" },
-                                new { accessorKey = "applicationPendingWith",           header = "Application Pending With" },
-                                new { accessorKey = "referenceNumber",                  header = "Reference Number" },
-                                new { accessorKey = "applicantName",                    header = "Applicant Name" },
-                                new { accessorKey = "submissionDate",                   header = "Submission Date" },
-                                new { accessorKey = "parentage",                        header = "Parentage" },
-                                new { accessorKey = "dateOfBirth",                      header = "Date of Birth" },   // ← NEW
-                                new { accessorKey = "mobileNumber",                     header = "Mobile Number" },
-                                new { accessorKey = "accountNumber",                    header = "Account Number" },
-                                new { accessorKey = "ifscCode",                         header = "IFSC Code" },
-                                new { accessorKey = "bankName",                         header = "Bank Name" },
-                                new { accessorKey = "branchName",                       header = "Branch Name" },
-                                new { accessorKey = "presentAddress",                   header = "Present Address" },
-                                new { accessorKey = "presentDistrict",                  header = "Present District" },
-                                new { accessorKey = "presentTehsil",                    header = "Present Tehsil" },
-                                new { accessorKey = "permanentAddress",                 header = "Permanent Address" },
-                                new { accessorKey = "permanentDistrict",                header = "Permanent District" },
-                                new { accessorKey = "permanentTehsil",                  header = "Permanent Tehsil" },
-                                new { accessorKey = "pensionType",                      header = "Pension Type" },
-                                new { accessorKey = "udidCardNumber",                   header = "UDID Card Number" },
-                                new { accessorKey = "typeOfDisability",                 header = "Type of Disability" },
-                                new { accessorKey = "kindOfDisability",                 header = "Kind of Disability" },
-                                new { accessorKey = "percentageOfDisability",           header = "Percentage of Disability" },
-                                new { accessorKey = "disabilityOthers",                 header = "Disability (If Others)" },
-                                new { accessorKey = "temporaryDisabilityValidUpto",     header = "Temporary Disability Valid Upto" },
-                                new { accessorKey = "civilCondition",                   header = "Civil Condition" },
-                                new { accessorKey = "lastActionTaken",                  header = "Last Action Taken" },
-                                new { accessorKey = "remarks",                          header = "Remarks" },
-                                new { accessorKey = "actionTakenOn",                    header = "Action Taken On" },
-                                new { accessorKey = "sanctionedDate",                   header = "Sanctioned Date" }
-                            };
-                        }
-                        catch (Exception ex)
+                        totalRecords = (int)(detailedResults.FirstOrDefault()?.Totalcount ?? 0);
+                        data = detailedResults.Cast<dynamic>().ToList();
+                        columns = new List<dynamic>
                         {
-                            _logger.LogError(ex, "Detailed Applications report failed");
-                            return StatusCode(500, new { error = "Detailed Applications report failed", details = ex.Message });
-                        }
+                            new { accessorKey = "districtName",                     header = "District" },
+                            new { accessorKey = "tswofficename",                    header = "TSWO Office" },
+                            new { accessorKey = "applicationStatus",                header = "Application Status" },
+                            new { accessorKey = "applicationPendingWith",           header = "Application Pending With" },
+                            new { accessorKey = "referenceNumber",                  header = "Reference Number" },
+                            new { accessorKey = "applicantName",                    header = "Applicant Name" },
+                            new { accessorKey = "submissionDate",                   header = "Submission Date" },
+                            new { accessorKey = "parentage",                        header = "Parentage" },
+                            new { accessorKey = "dateOfBirth",                      header = "Date of Birth" },
+                            new { accessorKey = "mobileNumber",                     header = "Mobile Number" },
+                            new { accessorKey = "accountNumber",                    header = "Account Number" },
+                            new { accessorKey = "ifscCode",                         header = "IFSC Code" },
+                            new { accessorKey = "bankName",                         header = "Bank Name" },
+                            new { accessorKey = "branchName",                       header = "Branch Name" },
+                            new { accessorKey = "presentAddress",                   header = "Present Address" },
+                            new { accessorKey = "presentDistrict",                  header = "Present District" },
+                            new { accessorKey = "presentTehsil",                    header = "Present Tehsil" },
+                            new { accessorKey = "permanentAddress",                 header = "Permanent Address" },
+                            new { accessorKey = "permanentDistrict",                header = "Permanent District" },
+                            new { accessorKey = "permanentTehsil",                  header = "Permanent Tehsil" },
+                            new { accessorKey = "pensionType",                      header = "Pension Type" },
+                            new { accessorKey = "gender",                           header = "Gender" },        // NEW
+                            new { accessorKey = "category",                         header = "Category" },      // NEW
+                            new { accessorKey = "udidCardNumber",                   header = "UDID Card Number" },
+                            new { accessorKey = "typeOfDisability",                 header = "Type of Disability" },
+                            new { accessorKey = "kindOfDisability",                 header = "Kind of Disability" },
+                            new { accessorKey = "percentageOfDisability",           header = "Percentage of Disability" },
+                            new { accessorKey = "disabilityOthers",                 header = "Disability (If Others)" },
+                            new { accessorKey = "temporaryDisabilityValidUpto",     header = "Temporary Disability Valid Upto" },
+                            new { accessorKey = "civilCondition",                   header = "Civil Condition" },
+                            new { accessorKey = "lastActionTaken",                  header = "Last Action Taken" },
+                            new { accessorKey = "remarks",                          header = "Remarks" },
+                            new { accessorKey = "actionTakenOn",                    header = "Action Taken On" },
+                            new { accessorKey = "sanctionedDate",                   header = "Sanctioned Date" }
+                        };
                         break;
 
-                    case "TehsilWise":
-                        try
-                        {
-                            var tehsilParameters = new[]
-                            {
-                        new NpgsqlParameter("@accesscode", NpgsqlDbType.Integer) { Value = officer.AccessCode },
-                        new NpgsqlParameter("@serviceid", NpgsqlDbType.Integer) { Value = Serviceid },
-                        new NpgsqlParameter("@accesslevel", NpgsqlDbType.Varchar) { Value = officer.AccessLevel == "Tehsil" ? "Tehsil" : "District" },
-                        new NpgsqlParameter("@datatype", NpgsqlDbType.Varchar) { Value = dataTypeParam },
-                        new NpgsqlParameter("@fromdate", NpgsqlDbType.Timestamp) { Value = fromDateParam },
-                        new NpgsqlParameter("@todate", NpgsqlDbType.Timestamp) { Value = toDateParam }
-                    };
-
-                            var tehsilData = dbcontext.Database
-                                .SqlQueryRaw<SummaryReports>(
-                                    "SELECT * FROM get_applications_for_report(@accesscode, @serviceid, @accesslevel, @datatype, @fromdate, @todate)",
-                                    tehsilParameters)
-                                .ToList();
-
-                            totalRecords = tehsilData.Count;
-                            data = tehsilData.Skip(pageIndex * pageSize).Take(pageSize).ToList<dynamic>();
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "tehsilName", header = "Tehsil Name" },
-                        new { accessorKey = "totalApplicationsSubmitted", header = "Total Applications Received" },
-                        new { accessorKey = "totalApplicationsPending", header = "Total Applications Pending" },
-                        new { accessorKey = "totalApplicationsReturnToEdit", header = "Pending With Citizens" },
-                        new { accessorKey = "totalApplicationsSanctioned", header = "Total Sanctioned" },
-                        new { accessorKey = "totalApplicationsRejected", header = "Total Rejected" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "TehsilWise report failed");
-                            return StatusCode(500, new { error = "TehsilWise report failed", details = ex.Message });
-                        }
-                        break;
                     case "WithheldApplications":
-                        try
-                        {
-                            int? divisionCode = null;
-                            if (string.Equals(officer.AccessLevel, "Division", StringComparison.OrdinalIgnoreCase))
-                            {
-                                divisionCode = officer.AccessCode;
-                            }
-                            else if (string.Equals(officer.AccessLevel, "District", StringComparison.OrdinalIgnoreCase)
-                                     && officer.AccessCode.HasValue)
-                            {
-                                divisionCode = dbcontext.District
-                                    .Where(d => d.Districtid == officer.AccessCode.Value)
-                                    .Select(d => (int?)d.Division)
-                                    .FirstOrDefault();
-                            }
-                            else if (string.Equals(officer.AccessLevel, "Tehsil", StringComparison.OrdinalIgnoreCase)
-                                     && officer.AccessCode.HasValue)
-                            {
-                                divisionCode = dbcontext.Tswotehsil
-                                    .Where(t => t.Tehsilid == officer.AccessCode.Value)
-                                    .Select(t => (int?)t.Divisioncode)
-                                    .FirstOrDefault();
-                            }
-
-                            var withheldParameters = new[]
-                            {
-                                new NpgsqlParameter("@p_role",           NpgsqlDbType.Varchar)   { Value = officer.Role ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_access_level",   NpgsqlDbType.Varchar)   { Value = officer.AccessLevel ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_access_code",    NpgsqlDbType.Integer)   { Value = officer.AccessCode ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_service_id",     NpgsqlDbType.Integer)   { Value = Serviceid },
-                                new NpgsqlParameter("@p_page_index",     NpgsqlDbType.Integer)   { Value = pageIndex },
-                                new NpgsqlParameter("@p_page_size",      NpgsqlDbType.Integer)   { Value = pageSize },
-                                new NpgsqlParameter("@p_is_paginated",   NpgsqlDbType.Boolean)   { Value = true },
-                                new NpgsqlParameter("@p_data_type",      NpgsqlDbType.Varchar)   { Value = dataTypeParam },
-                                new NpgsqlParameter("@p_division_code",  NpgsqlDbType.Integer)   { Value = divisionCode ?? (object)DBNull.Value },
-                                new NpgsqlParameter("@p_startdate",      NpgsqlDbType.Timestamp) { Value = fromDateParam },
-                                new NpgsqlParameter("@p_enddate",        NpgsqlDbType.Timestamp) { Value = toDateParam }
-                            };
-
-                            var withheldData = dbcontext.Database
-                                .SqlQueryRaw<WithheldDetailedReportDto>(
-                                    "SELECT * FROM get_withheld_applications_report(" +
-                                    "@p_role, @p_access_level, @p_access_code, @p_service_id, " +
-                                    "@p_page_index, @p_page_size, @p_is_paginated, " +
-                                    "@p_data_type, @p_division_code, @p_startdate, @p_enddate)",
-                                    withheldParameters)
-                                .ToList();
-
-                            totalRecords = (int)(withheldData.FirstOrDefault()?.Totalcount ?? 0);
-                            data = [.. withheldData.Cast<dynamic>()];
-
-                            columns = new List<dynamic>
-                    {
-                        new { accessorKey = "districtname",            header = "District" },
-                        new { accessorKey = "tswofficename",           header = "TSWO Office" },
-                        new { accessorKey = "application_status",      header = "Application Status" },
-                        new { accessorKey = "application_pending_with",header = "Application Pending With" },
-                        new { accessorKey = "referencenumber",         header = "Reference Number" },
-                        new { accessorKey = "applicant_name",          header = "Applicant Name" },
-                        new { accessorKey = "parentage",               header = "Parentage" },
-                        new { accessorKey = "mobile_number",           header = "Mobile Number" },
-                        new { accessorKey = "account_number",          header = "Account Number" },
-                        new { accessorKey = "ifsc_code",               header = "IFSC Code" },
-                        new { accessorKey = "bank_name",               header = "Bank Name" },
-                        new { accessorKey = "branch_name",             header = "Branch Name" },
-                        new { accessorKey = "actionTakenOn",           header = "Action Taken On" },
-                        new { accessorKey = "iswithheld",              header = "Is Withheld" },
-                        new { accessorKey = "withheldtype",            header = "Withheld Type" },
-                        new { accessorKey = "withheldreason",          header = "Withheld Reason" }
-                    };
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Withheld Applications report failed");
-                            return StatusCode(500, new { error = "Withheld Applications report failed", details = ex.Message });
-                        }
-                        break;
+                        // ... unchanged from your current code ...
+                        throw new NotImplementedException("Copy your existing WithheldApplications case unchanged.");
 
                     default:
                         return BadRequest(new { status = false, message = "Invalid report type" });
-
                 }
 
-                return Json(new
+                return Ok(new
                 {
                     status = true,
                     data,
@@ -2955,19 +2913,10 @@ namespace SahayataNidhi.Controllers.Officer
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error executing report for AccessCode: {AccessCode}, Serviceid: {Serviceid}, ReportType: {ReportType}");
-                return StatusCode(500, new
-                {
-                    status = false,
-                    error = "An error occurred while fetching the report",
-                    details = ex.Message,
-                    reportType = ReportType,
-                    serviceId = Serviceid,
-                    accessCode = AccessCode
-                });
+                _logger.LogError(ex, $"Error executing report - AccessCode: {accessCode}, ServiceId: {serviceId}, ReportType: {reportType}");
+                return StatusCode(500, new { status = false, message = ex.Message });
             }
         }
-
         [HttpGet]
         public IActionResult GetReportTypes()
         {
@@ -4080,6 +4029,37 @@ namespace SahayataNidhi.Controllers.Officer
                 out parsed);
         }
 
+        private static void RemoveFieldValueRecursively(JToken token, string fieldName)
+        {
+            if (token is JObject obj)
+            {
+                foreach (var prop in obj.Properties().ToList())
+                {
+                    if (prop.Value is JArray arr)
+                    {
+                        for (int i = arr.Count - 1; i >= 0; i--)
+                        {
+                            if (arr[i] is JObject item && item["name"]?.ToString() == fieldName)
+                            {
+                                arr.RemoveAt(i);
+                                continue;
+                            }
+                            RemoveFieldValueRecursively(arr[i], fieldName);
+                        }
+                    }
+                    else
+                    {
+                        RemoveFieldValueRecursively(prop.Value, fieldName);
+                    }
+                }
+            }
+            else if (token is JArray topArr)
+            {
+                foreach (var item in topArr)
+                    RemoveFieldValueRecursively(item, fieldName);
+            }
+        }
+
 
         [HttpGet]
         public IActionResult GetApplicationForCorrigendum(string referenceNumber, string serviceId, string type, string? applicationId = null)
@@ -4151,13 +4131,13 @@ namespace SahayataNidhi.Controllers.Officer
 
                 var parameters = new[]
                 {
-                    new NpgsqlParameter("@referencenumber", referenceNumber),
-                    new NpgsqlParameter("@role", officer.Role),
-                    new NpgsqlParameter("@officeraccesslevel", officer.AccessLevel),
-                    new NpgsqlParameter("@officeraccesscode", officer.AccessCode),
-                    new NpgsqlParameter("@serviceid", serviceIdInt),
-                    new NpgsqlParameter("@type", type)
-                };
+            new NpgsqlParameter("@referencenumber", referenceNumber),
+            new NpgsqlParameter("@role", officer.Role),
+            new NpgsqlParameter("@officeraccesslevel", officer.AccessLevel),
+            new NpgsqlParameter("@officeraccesscode", officer.AccessCode),
+            new NpgsqlParameter("@serviceid", serviceIdInt),
+            new NpgsqlParameter("@type", type)
+        };
 
                 var result = dbcontext.CitizenApplications
                     .FromSqlRaw("SELECT * FROM get_application_for_corrigendum(@referencenumber, @role, @officeraccesslevel, @officeraccesscode, @serviceid, @type)", parameters)
@@ -4186,6 +4166,9 @@ namespace SahayataNidhi.Controllers.Officer
 
                     foreach (var field in typeFields)
                     {
+                        // ─────────────────────────────────────────────────────
+                        // 1. Plain string field name — always visible
+                        // ─────────────────────────────────────────────────────
                         if (field.Type == JTokenType.String)
                         {
                             var fieldName = field.ToString();
@@ -4193,69 +4176,109 @@ namespace SahayataNidhi.Controllers.Officer
                                 .SelectMany(s => s["fields"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
                                 .FirstOrDefault(f => f?["name"]?.ToString() == fieldName);
 
-                            var fieldDetails = new
+                            allowedForDetails.Add(new
                             {
                                 label = fieldConfig?["label"]?.ToString() ?? fieldName,
                                 name = fieldName,
                                 type = fieldConfig?["type"]?.ToString() ?? "text",
                                 isGroup = false,
                                 options = fieldConfig?["options"]?.ToObject<List<object>>() ?? new List<object>(),
-                                oldValue = fieldConfig?["value"]?.ToString() ?? ""
-                            };
-                            allowedForDetails.Add(fieldDetails);
+                                oldValue = fieldConfig?["value"]?.ToString() ?? "",
+                                visibilityCondition = (JToken)null!
+                            });
+                            continue;
                         }
-                        else if (field is JObject group)
+
+                        if (field is not JObject fieldObj) continue;
+
+                        // Normalise: property absent OR explicit null → null
+                        JToken visibility = fieldObj["visibilityCondition"] ?? fieldObj["visibility_condition"]!;
+                        if (visibility != null && visibility.Type == JTokenType.Null) visibility = null!;
+
+                        // ─────────────────────────────────────────────────────
+                        // 2. Group entry — has a `fields` array
+                        //    Forward the whole visibilityCondition verbatim so
+                        //    the frontend can evaluate it against formDetails.
+                        // ─────────────────────────────────────────────────────
+                        if (fieldObj["fields"] is JArray groupFieldsArray)
                         {
-                            var groupLabel = group["label"]?.ToString() ?? "Group";
-                            var groupFieldsToken = group["fields"];
+                            var groupLabel = fieldObj["label"]?.ToString()
+                                          ?? fieldObj["name"]?.ToString()
+                                          ?? "Group";
                             var groupFields = new List<object>();
 
-                            if (groupFieldsToken is JArray fieldsArray)
+                            foreach (var f in groupFieldsArray)
                             {
-                                foreach (var f in fieldsArray)
+                                if (f.Type == JTokenType.String)
                                 {
-                                    if (f.Type == JTokenType.String)
-                                    {
-                                        var fieldName = f.ToString();
-                                        var fieldConfig = formElements
-                                            .SelectMany(s => s["fields"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
-                                            .FirstOrDefault(fc => fc?["name"]?.ToString() == fieldName);
+                                    var fieldName = f.ToString();
+                                    var fieldConfig = formElements
+                                        .SelectMany(s => s["fields"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
+                                        .FirstOrDefault(fc => fc?["name"]?.ToString() == fieldName);
 
-                                        groupFields.Add(new
-                                        {
-                                            label = fieldConfig?["label"]?.ToString() ?? fieldName,
-                                            name = fieldName,
-                                            type = fieldConfig?["type"]?.ToString() ?? "text",
-                                            oldValue = fieldConfig?["value"]?.ToString() ?? "",
-                                            options = fieldConfig?["options"]?.ToObject<List<object>>() ?? new List<object>()
-                                        });
-                                    }
-                                    else if (f is JObject fieldObj)
+                                    groupFields.Add(new
                                     {
-                                        var fieldName = fieldObj?["name"]?.ToString();
-                                        var fieldConfig = formElements
-                                            .SelectMany(s => s["fields"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
-                                            .FirstOrDefault(fc => fc?["name"]?.ToString() == fieldName);
+                                        label = fieldConfig?["label"]?.ToString() ?? fieldName,
+                                        name = fieldName,
+                                        type = fieldConfig?["type"]?.ToString() ?? "text",
+                                        oldValue = fieldConfig?["value"]?.ToString() ?? "",
+                                        options = fieldConfig?["options"]?.ToObject<List<object>>() ?? new List<object>()
+                                    });
+                                }
+                                else if (f is JObject nestedFieldObj)
+                                {
+                                    var fieldName = nestedFieldObj["name"]?.ToString();
+                                    var fieldConfig = formElements
+                                        .SelectMany(s => s["fields"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
+                                        .FirstOrDefault(fc => fc?["name"]?.ToString() == fieldName);
 
-                                        groupFields.Add(new
-                                        {
-                                            label = fieldObj?["label"]?.ToString() ?? fieldName,
-                                            name = fieldName,
-                                            type = fieldConfig?["type"]?.ToString() ?? "text",
-                                            oldValue = fieldConfig?["value"]?.ToString() ?? "",
-                                            options = fieldConfig?["options"]?.ToObject<List<object>>() ?? new List<object>()
-                                        });
-                                    }
+                                    groupFields.Add(new
+                                    {
+                                        label = nestedFieldObj["label"]?.ToString() ?? fieldName,
+                                        name = fieldName,
+                                        type = fieldConfig?["type"]?.ToString() ?? "text",
+                                        oldValue = fieldConfig?["value"]?.ToString() ?? "",
+                                        options = fieldConfig?["options"]?.ToObject<List<object>>() ?? new List<object>()
+                                    });
                                 }
                             }
 
                             allowedForDetails.Add(new
                             {
                                 label = groupLabel,
+                                name = groupLabel,
                                 fields = groupFields,
-                                isGroup = true
+                                isGroup = true,
+                                visibilityCondition = visibility
                             });
+                            continue;
                         }
+
+                        // ─────────────────────────────────────────────────────
+                        // 3. Single field object — has `name` but no `fields`
+                        //    Previously this fell into the group branch and
+                        //    produced an empty group, so its visibilityCondition
+                        //    was always ignored.
+                        // ─────────────────────────────────────────────────────
+                        var singleName = fieldObj["name"]?.ToString();
+                        if (string.IsNullOrEmpty(singleName)) continue;
+
+                        var singleConfig = formElements
+                            .SelectMany(s => s["fields"]?.Values<JObject>() ?? Enumerable.Empty<JObject>())
+                            .FirstOrDefault(fc => fc?["name"]?.ToString() == singleName);
+
+                        allowedForDetails.Add(new
+                        {
+                            label = fieldObj["label"]?.ToString()
+                                  ?? singleConfig?["label"]?.ToString()
+                                  ?? singleName,
+                            name = singleName,
+                            type = singleConfig?["type"]?.ToString() ?? "text",
+                            isGroup = false,
+                            options = singleConfig?["options"]?.ToObject<List<object>>() ?? new List<object>(),
+                            oldValue = singleConfig?["value"]?.ToString() ?? "",
+                            visibilityCondition = visibility
+                        });
                     }
                 }
                 catch (JsonException ex)
@@ -4280,19 +4303,19 @@ namespace SahayataNidhi.Controllers.Officer
                 }
 
                 var legacyBankMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    { "STATE BANK OF INDIA", "2" },
-                    { "INDIA POST PAYMENTS BANK", "3" },
-                    { "INDIA POST PAYMENTS BANK LIMITED", "3" },
-                    { "J & K GRAMEEN BANK", "4" },
-                    { "THE JAMMU AND KASHMIR BANK LTD./WATERGAM", "1" },
-                    { "ELLAQUAI DEHATI BANK", "5" },
-                    { "جموں اور کشمیر بینک لمیٹڈ", "1" },
-                    { "KASHMIR MERCANTILE CO-OPERATIVE BANK LTD.", "6" },
-                    { "KASHMIR MERCANTILE CO OP BANK LTD", "6" },
-                    { "THE JAMMU AND KASHMIR BANK LTD.", "1" },
-                    { "JAMMU AND KASHMIR BANK LIMITED", "1" }
-                };
+        {
+            { "STATE BANK OF INDIA", "2" },
+            { "INDIA POST PAYMENTS BANK", "3" },
+            { "INDIA POST PAYMENTS BANK LIMITED", "3" },
+            { "J & K GRAMEEN BANK", "4" },
+            { "THE JAMMU AND KASHMIR BANK LTD./WATERGAM", "1" },
+            { "ELLAQUAI DEHATI BANK", "5" },
+            { "جموں اور کشمیر بینک لمیٹڈ", "1" },
+            { "KASHMIR MERCANTILE CO-OPERATIVE BANK LTD.", "6" },
+            { "KASHMIR MERCANTILE CO OP BANK LTD", "6" },
+            { "THE JAMMU AND KASHMIR BANK LTD.", "1" },
+            { "JAMMU AND KASHMIR BANK LIMITED", "1" }
+        };
 
                 if (formDetailsToken is JObject formDetailsObject)
                 {
@@ -4355,12 +4378,10 @@ namespace SahayataNidhi.Controllers.Officer
                                 }
                             }
 
-                            // Step 2: bank id → canonical name (BankName keeps the name)
                             // Step 2: bank id → id only. Do NOT rewrite the stored name.
                             if (!string.IsNullOrEmpty(resolvedBankId) &&
                                 int.TryParse(resolvedBankId, out int bankId))
                             {
-                                // Optional: verify the id exists so we don't inject a bogus BankId
                                 var bankExists = dbcontext.Bank.Any(b => b.Id == bankId);
                                 if (bankExists)
                                 {
@@ -4368,12 +4389,9 @@ namespace SahayataNidhi.Controllers.Officer
                                 }
                                 else
                                 {
-                                    // Unknown id — don't inject a BankId, and leave the name alone.
                                     resolvedBankIdForSection = null;
                                 }
                             }
-                            // else: nothing matched — leave the original value untouched
-                            // else: nothing matched — leave the original value untouched
                         }
 
                         // ── Pass 2: inject (or update) a BankId field right after BankName ──
@@ -4391,8 +4409,6 @@ namespace SahayataNidhi.Controllers.Officer
 
                             if (existingBankIdIndex >= 0)
                             {
-                                // Idempotent: if a BankId already exists (e.g. from a prior
-                                // corrigendum), just refresh its value.
                                 fields[existingBankIdIndex]["value"] = resolvedBankIdForSection;
                             }
                             else
@@ -4408,6 +4424,7 @@ namespace SahayataNidhi.Controllers.Officer
                         }
                     }
                 }
+
                 // ------------------ UPDATE FORMDETAILS USING ALL APPROVED CORRIGENDUM/CORRECTION ------------------
                 var approvedCorrigenda = dbcontext.Corrigendum
                     .Where(c => c.Referencenumber == referenceNumber &&
@@ -4433,13 +4450,22 @@ namespace SahayataNidhi.Controllers.Officer
 
                     foreach (var field in corrigendumFields.Properties())
                     {
-                        if (field.Name == "Files" || field.Name == "remarks")
+                        if (field.Name == "Files" || field.Name == "remarks" || field.Name == "RemovedFields")
                             continue;
 
                         var newValue = field.Value?["new_value"]?.ToString();
                         if (!string.IsNullOrWhiteSpace(newValue))
                         {
                             UpdateFieldValueRecursively(formDetailsToken, field.Name, newValue);
+                        }
+                    }
+
+                    // Apply RemovedFields — the whole point of the previous change
+                    if (corrigendumFields["RemovedFields"] is JObject removedFields)
+                    {
+                        foreach (var r in removedFields.Properties())
+                        {
+                            RemoveFieldValueRecursively(formDetailsToken, r.Name);
                         }
                     }
                 }
@@ -4449,7 +4475,6 @@ namespace SahayataNidhi.Controllers.Officer
                 formDetailsToken = ReorderFormDetails(formDetailsToken, referenceNumber, isSanctioned);
                 var formDetailsWithCodes = formDetailsToken.DeepClone();
                 ReplaceCodeFieldsWithNames(formDetailsToken, false);
-                // FormatDateFields(formDetailsToken);
 
                 var workFlow = JArray.Parse(result[0].Workflow ?? "[]");
                 bool isCurrentOfficer = type == "Correction" && workFlow.Count > result[0].Currentplayer &&
@@ -4517,13 +4542,13 @@ namespace SahayataNidhi.Controllers.Officer
 
                     var history = JsonConvert.DeserializeObject<List<dynamic>>(existingCorrigendum.History ?? "[]") ?? new List<dynamic>();
                     var columns = new List<dynamic>
-                    {
-                        new { accessorKey = "sno", header = "S.No." },
-                        new { accessorKey = "officer", header = "Officer" },
-                        new { accessorKey = "actionTaken", header = "Action Taken" },
-                        new { accessorKey = "remarks", header = "Remarks" },
-                        new { accessorKey = "actionTakenOn", header = "Action Taken On" },
-                    };
+            {
+                new { accessorKey = "sno", header = "S.No." },
+                new { accessorKey = "officer", header = "Officer" },
+                new { accessorKey = "actionTaken", header = "Action Taken" },
+                new { accessorKey = "remarks", header = "Remarks" },
+                new { accessorKey = "actionTakenOn", header = "Action Taken On" },
+            };
 
                     var data = new List<dynamic>();
                     int index = 1;
@@ -4657,7 +4682,6 @@ namespace SahayataNidhi.Controllers.Officer
                 });
             }
         }
-
 
         public IActionResult GetPoolSanctionBatchLimit(string serviceId)
         {

@@ -289,7 +289,14 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
         await helper.GetFilePath(null, memoryStream.ToArray(),
             ApplicationId.Replace("/", "_") + "_SanctionLetter.pdf", "document");
     }
-    public async Task CreateCorrigendumSanctionPdf(string corrigendumFieldsJson, string applicationId, OfficerDetailsModal officer, string serviceName, string corrigendumId, string sanctionedDate, string type)
+    public async Task CreateCorrigendumSanctionPdf(
+     string corrigendumFieldsJson,
+     string applicationId,
+     OfficerDetailsModal officer,
+     string serviceName,
+     string corrigendumId,
+     string sanctionedDate,
+     string type)
     {
         if (string.IsNullOrEmpty(corrigendumFieldsJson))
             throw new ArgumentException($"{type} fields JSON cannot be null or empty.");
@@ -306,60 +313,102 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
         using PdfWriter writer = new(memoryStream);
         using PdfDocument pdf = new(writer);
         pdf.SetDefaultPageSize(PageSize.A4);
+
         using Document document = new(pdf, PageSize.A4, false);
+        document.SetMargins(28, 28, 24, 20);
 
-        float pageHeight = pdf.GetDefaultPageSize().GetHeight() - document.GetTopMargin() - document.GetBottomMargin();
-
-        // --- Emblem ---
+        // ─────────────────────────────────────────────────────────
+        // Emblem
+        // ─────────────────────────────────────────────────────────
         string emblemPath = System.IO.Path.Combine(_webHostEnvironment.WebRootPath, "assets", "images", "emblem.png");
         Image emblem = new Image(ImageDataFactory.Create(emblemPath))
             .ScaleToFit(50, 50)
-            .SetHorizontalAlignment(HorizontalAlignment.CENTER);
+            .SetHorizontalAlignment(HorizontalAlignment.CENTER)
+            .SetMarginBottom(2);
         document.Add(emblem);
 
-        // --- Header ---
+        // ─────────────────────────────────────────────────────────
+        // Header
+        // ─────────────────────────────────────────────────────────
         document.Add(new Paragraph("Union Territory of Jammu and Kashmir")
             .SetBold()
             .SetTextAlignment(TextAlignment.CENTER)
-            .SetFontSize(16));
+            .SetFontSize(14)
+            .SetMultipliedLeading(1.15f)
+            .SetMarginTop(0)
+            .SetMarginBottom(2));
 
         string sanctionedFromWhere = officer.AccessLevel != "State"
             ? $"Office of The {officer.Role}, {GetArreaName(officer.AccessLevel, officer.AccessCode)}"
             : "SOCIAL WELFARE DEPARTMENT\nCIVIL SECRETARIAT, JAMMU / SRINAGAR";
         document.Add(new Paragraph(sanctionedFromWhere)
             .SetTextAlignment(TextAlignment.CENTER)
-            .SetFontSize(16));
+            .SetFontSize(14)
+            .SetMultipliedLeading(1.15f)
+            .SetMarginBottom(2));
+
         document.Add(new Paragraph($"{type}")
             .SetTextAlignment(TextAlignment.CENTER)
-            .SetFontSize(16));
+            .SetFontSize(14)
+            .SetMultipliedLeading(1.15f)
+            .SetMarginBottom(4));
 
-        // --- No and Date above corrigendum table (right side) ---
+        // ─────────────────────────────────────────────────────────
+        // No / Date
+        // ─────────────────────────────────────────────────────────
         Table headerInfoTable = new Table(UnitValue.CreatePercentArray(new float[] { 50, 50 }))
             .UseAllAvailableWidth();
         headerInfoTable.AddCell(new Cell().SetBorder(Border.NO_BORDER));
         headerInfoTable.AddCell(new Cell()
             .Add(new Paragraph($"No: {corrigendumId}\nDate: {DateTime.Today:dd/MM/yyyy}")
                 .SetFontSize(10)
+                .SetMultipliedLeading(1.15f)
                 .SetTextAlignment(TextAlignment.RIGHT)
                 .SetBold())
             .SetBorder(Border.NO_BORDER));
         document.Add(headerInfoTable);
 
-        // --- Subject and Intro ---
-        document.Add(new Paragraph($"\nSubject: {type} to Sanction Letter No. {applicationId} {(sanctionedDate != null ? "dated " + sanctionedDate : "")}")
-             .SetFontSize(14));
-        document.Add(new Paragraph($"\nIn partial modification of above mentioned Sanction Letter No., the following corrections may be read as:")
-            .SetFontSize(12));
+        // ─────────────────────────────────────────────────────────
+        // Subject + Intro
+        // ─────────────────────────────────────────────────────────
+        document.Add(new Paragraph(
+                $"Subject: {type} to Sanction Letter No. {applicationId}" +
+                $"{(sanctionedDate != null ? " dated " + sanctionedDate : "")}")
+            .SetFontSize(13)
+            .SetMultipliedLeading(1.15f)
+            .SetMarginTop(10)
+            .SetMarginBottom(4));
 
-        // --- Corrigendum Fields Table ---
+        document.Add(new Paragraph(
+                "In partial modification of above mentioned Sanction Letter No., " +
+                "the following corrections may be read as:")
+            .SetFontSize(11)
+            .SetMultipliedLeading(1.15f)
+            .SetMarginBottom(4));
+
+        // ─────────────────────────────────────────────────────────
+        // Corrigendum fields table
+        // ─────────────────────────────────────────────────────────
         Table table = new Table(UnitValue.CreatePercentArray(new float[] { 10, 30, 30, 30 }))
             .UseAllAvailableWidth()
-            .SetKeepTogether(true);
+            .SetMarginTop(4);
 
-        table.AddHeaderCell(new Cell().Add(new Paragraph("S.No").SetBold()));
-        table.AddHeaderCell(new Cell().Add(new Paragraph("Description").SetBold()));
-        table.AddHeaderCell(new Cell().Add(new Paragraph("As Existing").SetBold()));
-        table.AddHeaderCell(new Cell().Add(new Paragraph(type == "Corrigendum" ? "As Corrected" : "As Updated").SetBold()));
+        table.SetKeepTogether(false);
+        table.SetSkipFirstHeader(false);
+
+        table.AddHeaderCell(new Cell()
+            .Add(new Paragraph("S.No").SetBold().SetFontSize(10))
+            .SetPadding(3));
+        table.AddHeaderCell(new Cell()
+            .Add(new Paragraph("Description").SetBold().SetFontSize(10))
+            .SetPadding(3));
+        table.AddHeaderCell(new Cell()
+            .Add(new Paragraph("As Existing").SetBold().SetFontSize(10))
+            .SetPadding(3));
+        table.AddHeaderCell(new Cell()
+            .Add(new Paragraph(type == "Corrigendum" ? "As Corrected" : "As Updated")
+                .SetBold().SetFontSize(10))
+            .SetPadding(3));
 
         var stack = new Stack<(string path, JToken field)>();
         var qrDetails = new List<string>();
@@ -375,16 +424,25 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
         {
             var (path, field) = stack.Pop();
             string header = Regex.Replace(path, "(\\B[A-Z])", " $1");
-            string oldValue = field["old_value"]?.ToString() ?? "";
-            string newValue = field["new_value"]?.ToString() ?? "";
 
-            table.AddCell(new Cell().Add(new Paragraph(serialNumber.ToString())));
-            table.AddCell(new Cell().Add(new Paragraph(header)));
-            table.AddCell(new Cell().Add(new Paragraph(oldValue)));
-            table.AddCell(new Cell().Add(new Paragraph(newValue)));
+            // ── Keep raw values for the QR payload / emptiness check ──
+            string rawOldValue = field["old_value"]?.ToString() ?? "";
+            string rawNewValue = field["new_value"]?.ToString() ?? "";
 
-            if (!string.IsNullOrEmpty(oldValue) || !string.IsNullOrEmpty(newValue))
-                qrDetails.Add($"{header} = {newValue}");
+            // ── Display value: null / empty / whitespace → "N/A" ──
+            string oldValueDisplay = string.IsNullOrWhiteSpace(rawOldValue)
+                ? "N/A"
+                : rawOldValue;
+            string newValueDisplay = rawNewValue;
+
+            table.AddCell(new Cell().Add(new Paragraph(serialNumber.ToString()).SetFontSize(10)).SetPadding(3));
+            table.AddCell(new Cell().Add(new Paragraph(header).SetFontSize(10)).SetPadding(3));
+            table.AddCell(new Cell().Add(new Paragraph(oldValueDisplay).SetFontSize(10)).SetPadding(3));
+            table.AddCell(new Cell().Add(new Paragraph(newValueDisplay).SetFontSize(10)).SetPadding(3));
+
+            // ── Only add to QR when at least one side actually carries data ──
+            if (!string.IsNullOrWhiteSpace(rawOldValue) || !string.IsNullOrWhiteSpace(rawNewValue))
+                qrDetails.Add($"{header} = {newValueDisplay}");
 
             serialNumber++;
 
@@ -396,9 +454,11 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
             }
         }
 
-        table.SetFontSize(12);
+        document.Add(table);
 
-        // --- QR Code ---
+        // ─────────────────────────────────────────────────────────
+        // QR payload
+        // ─────────────────────────────────────────────────────────
         qrDetails.Add($"Application Number: {applicationId}");
         string qrContent = string.Join("\n", qrDetails);
         if (string.IsNullOrEmpty(qrContent))
@@ -406,40 +466,58 @@ public class PdfService(IWebHostEnvironment webHostEnvironment, SwdjkContext dbc
 
         BarcodeQRCode qrCode = new(qrContent);
         PdfFormXObject qrXObject = qrCode.CreateFormXObject(ColorConstants.BLACK, pdf);
-        Image qrImage = new Image(qrXObject).ScaleToFit(110, 110).SetHorizontalAlignment(HorizontalAlignment.LEFT).SetMarginTop(10);
+        Image qrImage = new Image(qrXObject).ScaleToFit(75, 75);
 
-        // --- Footer ---
-        // Added more space before the issuing authority section
-        Table footerTable = new Table(UnitValue.CreatePercentArray(new float[] { 50, 50 })).UseAllAvailableWidth();
-        footerTable.AddCell(new Cell()
+        // ─────────────────────────────────────────────────────────
+        // Compact close-block
+        // ─────────────────────────────────────────────────────────
+        Div closeBlock = new Div().SetKeepTogether(true);
+
+        closeBlock.Add(new Paragraph(
+                "The rest of the contents of the afore said Sanction Letter No. remains unchanged.")
+            .SetFontSize(11)
+            .SetMultipliedLeading(1.15f)
+            .SetMarginTop(10)
+            .SetMarginBottom(6));
+
+        Table signatureTable = new Table(UnitValue.CreatePercentArray(new float[] { 30, 70 }))
+            .UseAllAvailableWidth();
+
+        signatureTable.AddCell(new Cell()
+            .Add(qrImage)
             .SetBorder(Border.NO_BORDER)
-            .SetTextAlignment(TextAlignment.LEFT));
-        footerTable.AddCell(new Cell()
+            .SetVerticalAlignment(VerticalAlignment.MIDDLE)
+            .SetPadding(0));
+
+        signatureTable.AddCell(new Cell()
             .Add(new Paragraph("ISSUING AUTHORITY")
-                .SetFontSize(10)
-                .SetBold())
-            .SetBorder(Border.NO_BORDER)
-            .SetTextAlignment(TextAlignment.RIGHT)
+                .SetFontSize(10).SetBold()
+                .SetTextAlignment(TextAlignment.RIGHT)
+                .SetMarginBottom(2))
             .Add(new Paragraph($"{officer.Role}, {GetArreaName(officer.AccessLevel, officer.AccessCode)}")
-                .SetFontSize(10)
-                .SetBold()));
+                .SetFontSize(10).SetBold()
+                .SetTextAlignment(TextAlignment.RIGHT))
+            .SetBorder(Border.NO_BORDER)
+            .SetVerticalAlignment(VerticalAlignment.MIDDLE)
+            .SetPadding(0));
 
-        Div div = new Div().SetKeepTogether(true);
-        div.Add(table);
+        closeBlock.Add(signatureTable);
 
-        // Added more space (extra paragraph breaks) before the unchanged text
-        div.Add(new Paragraph("\n\n")); // Increased from \n to \n\n
-        div.Add(new Paragraph($"The rest of the contents of the afore said Sanction Letter No. remains unchanged.").SetFontSize(12));
+        document.Add(closeBlock);
 
-        // Added more space before the issuing authority
-        div.Add(new Paragraph("\n\n")); // Added this for more spacing
+        // ─────────────────────────────────────────────────────────
+        // Read page count BEFORE Close() — after Close() the
+        // underlying PdfDocument is closed and any access throws.
+        // ─────────────────────────────────────────────────────────
+        int pageCount = pdf.GetNumberOfPages();
 
-        div.Add(footerTable);
-        div.Add(qrImage);
-
-        document.Add(div);
         document.Close();
 
-        await helper.GetFilePath(null, memoryStream.ToArray(), corrigendumId.Replace("/", "_") + $"_{type}_SanctionLetter.pdf", "document");
+        await helper.GetFilePath(
+            null,
+            memoryStream.ToArray(),
+            corrigendumId.Replace("/", "_") + $"_{type}_SanctionLetter.pdf",
+            "document");
     }
+
 }

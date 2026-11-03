@@ -2,10 +2,6 @@ import React from "react";
 import { FormControlLabel, Checkbox, Box, Typography } from "@mui/material";
 import { useController } from "react-hook-form";
 
-// additionalFields arrives in TWO shapes:
-//   spec   : { "Urban": [ {...}, ... ], "Rural": [ ... ] }
-//   fetched: [ { name, label, value }, ... ]
-// Flatten both into a plain array of sub-fields.
 const getNestedFields = (additionalFields) => {
   if (!additionalFields) return [];
   if (Array.isArray(additionalFields)) return additionalFields;
@@ -17,8 +13,6 @@ const getNestedFields = (additionalFields) => {
   return [];
 };
 
-// Recursively flatten a section's fields into { name, label, depth }.
-// Names are unique within a section, so we can key checkboxes by name.
 const flattenSection = (fields, depth = 0) => {
   const out = [];
   (fields || []).forEach((field) => {
@@ -46,8 +40,54 @@ export default function SectionSelectCheckboxes({
     field: { value = [], onChange },
   } = useController({ control, name });
 
+  const allFieldNames = React.useMemo(() => {
+    const names = [];
+    Object.values(formDetails || {}).forEach((fields) => {
+      flattenSection(fields).forEach((f) => names.push(f.name));
+    });
+    return [...new Set(names)];
+  }, [formDetails]);
+
+  const isAllSelected =
+    allFieldNames.length > 0 && allFieldNames.every((n) => value.includes(n));
+
+  const isPartiallySelected =
+    !isAllSelected && allFieldNames.some((n) => value.includes(n));
+
+  const handleToggleAll = (checked) => {
+    if (checked) {
+      onChange([...new Set([...value, ...allFieldNames])]);
+    } else {
+      onChange(value.filter((v) => !allFieldNames.includes(v)));
+    }
+  };
+
   return (
     <Box>
+      {/* Select All Checkbox */}
+      {allFieldNames.length > 0 && (
+        <FormControlLabel
+          sx={{ mb: 1 }}
+          control={
+            <Checkbox
+              checked={isAllSelected}
+              indeterminate={isPartiallySelected}
+              onChange={(e) => handleToggleAll(e.target.checked)}
+              sx={{
+                color: "#312C51",
+                "&.Mui-checked": { color: "#312C51" },
+                "&.MuiCheckbox-indeterminate": { color: "#312C51" },
+              }}
+            />
+          }
+          label={
+            <Typography variant="subtitle1" sx={{ fontWeight: "bold" }}>
+              Select All
+            </Typography>
+          }
+        />
+      )}
+
       {Object.entries(formDetails || {}).map(([sectionKey, fields]) => {
         const flat = flattenSection(fields);
         const sectionNames = flat.map((f) => f.name);
@@ -60,7 +100,6 @@ export default function SectionSelectCheckboxes({
             key={sectionKey}
             sx={{ mb: 2, border: "1px solid #ccc", p: 1, borderRadius: 1 }}
           >
-            {/* Section-level checkbox — toggles every field, including nested */}
             <FormControlLabel
               control={
                 <Checkbox
@@ -105,7 +144,6 @@ export default function SectionSelectCheckboxes({
                           onChange={(e) => {
                             const checked = e.target.checked;
                             if (checked) {
-                              // Preserve existing Location behaviour
                               if (sectionKey === "Location") {
                                 onChange([
                                   ...new Set([...value, ...sectionNames]),

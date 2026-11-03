@@ -123,7 +123,7 @@ namespace SahayataNidhi.Controllers
 
                 if (isUpdate)
                 {
-                    entity = dbcontext.Webservice.FirstOrDefault(w => w.Id == parsedId);
+                    entity = dbcontext.Webservice.FirstOrDefault(w => w.Id == parsedId)!;
                     if (entity == null)
                         return Json(new { status = false, message = "Web service not found" });
                 }
@@ -140,7 +140,7 @@ namespace SahayataNidhi.Controllers
                 entity.Webservicename = webServiceName;
 
                 // Save plain URL string (Ensure your DB column is 'text' or 'varchar', not 'json')
-                entity.Apiendpoint = apiEndPoint?.Trim();
+                entity.Apiendpoint = apiEndPoint?.Trim()!;
 
                 entity.Onaction = onAction;
 
@@ -731,11 +731,11 @@ namespace SahayataNidhi.Controllers
                     if (existing == null)
                         return NotFound(new { status = false, message = "Report template not found" });
 
-                    existing.Name = name;
+                    existing.Name = name!;
                     existing.Description = description;
-                    existing.Tablename = tableName;
+                    existing.Tablename = tableName!;
                     existing.ServiceId = serviceId;
-                    existing.Columns = columnsJson;
+                    existing.Columns = columnsJson!;
                     existing.Filters = filtersJson;
                     await dbcontext.SaveChangesAsync();
 
@@ -746,11 +746,11 @@ namespace SahayataNidhi.Controllers
                     // Create new
                     var entity = new Reports
                     {
-                        Name = name,
+                        Name = name!,
                         Description = description,
-                        Tablename = tableName,
+                        Tablename = tableName!,
                         ServiceId = serviceId,
-                        Columns = columnsJson,
+                        Columns = columnsJson!,
                         Filters = filtersJson,
                         Createdat = DateTime.Now,
                         Createdby = createdBy

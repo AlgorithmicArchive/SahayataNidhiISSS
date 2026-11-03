@@ -225,6 +225,237 @@ namespace SahayataNidhi.Controllers.Officer
             }
         }
 
+        // ─────────────────────────────────────────────────────────
+        // Applies a corrigendum's field changes (and removals) to
+        // the citizen application's formdetails JSON.
+        //
+        // serviceFormElementsJson is optional — when supplied, fields
+        // that don't yet exist in formdetails (reverse transition, e.g.
+        // PERMANENT → TEMPORARY re-adding IfTemporaryDisabilityUdid…)
+        // will be ADDED under their parent.
+        // ─────────────────────────────────────────────────────────
+        private bool ApplyCorrigendumFieldsToFormDetails(
+            JObject formDetails,
+            JObject corrigendumFields,
+            string referenceNumber,
+            string? serviceFormElementsJson = null)
+        {
+            bool changed = false;
+
+            JArray? formElements = null;
+            if (!string.IsNullOrEmpty(serviceFormElementsJson))
+            {
+                try { formElements = JArray.Parse(serviceFormElementsJson); }
+                catch { /* ignore — add-fallback disabled */ }
+            }
+
+            foreach (var prop in corrigendumFields.Properties())
+            {
+                if (prop.Name == "Files" || prop.Name == "RemovedFields")
+                    continue;
+
+                if (prop.Value is not JObject fieldObj) continue;
+
+                var newValueToken = fieldObj["new_value"];
+                if (newValueToken == null || newValueToken.Type == JTokenType.Null)
+                    continue;
+
+                var fieldType = fieldObj["type"]?.ToString();
+
+                if (UpdateFieldValueInFormDetails(formDetails, prop.Name, newValueToken, fieldType!))
+                {
+                    changed = true;
+                }
+                else if (formElements != null &&
+                         AddFieldToFormDetails(formDetails, prop.Name, newValueToken, formElements))
+                {
+                    changed = true;
+                }
+            }
+
+            if (corrigendumFields["RemovedFields"] is JObject removedFields)
+            {
+                foreach (var r in removedFields.Properties())
+                {
+                    if (RemoveFieldFromFormDetails(formDetails, r.Name))
+                        changed = true;
+                }
+            }
+
+            return changed;
+        }
+
+        private bool UpdateFieldValueInFormDetails(
+            JObject formDetails,
+            string fieldName,
+            JToken newValue,
+            string? fieldType = null)
+        {
+            foreach (var sectionProp in formDetails.Properties())
+            {
+                if (sectionProp.Value is not JArray section) continue;
+
+                foreach (var item in section.OfType<JObject>())
+                {
+                    if (item["name"]?.ToString() == fieldName)
+                    {
+                        if (fieldType == "enclosure")
+                            item["File"] = newValue.DeepClone();
+                        else
+                            item["value"] = newValue.DeepClone();
+                        return true;
+                    }
+
+                    if (item["additionalFields"] is JArray adds)
+                    {
+                        foreach (var add in adds.OfType<JObject>())
+                        {
+                            if (add["name"]?.ToString() != fieldName) continue;
+                            if (fieldType == "enclosure")
+                                add["File"] = newValue.DeepClone();
+                            else
+                                add["value"] = newValue.DeepClone();
+                            return true;
+                        }
+                    }
+
+                    if (item["conditionalAdditionalFields"] is JArray conditional)
+                    {
+                        foreach (var add in conditional.OfType<JObject>())
+                        {
+                            if (add["name"]?.ToString() != fieldName) continue;
+                            if (fieldType == "enclosure")
+                                add["File"] = newValue.DeepClone();
+                            else
+                                add["value"] = newValue.DeepClone();
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private bool RemoveFieldFromFormDetails(JObject formDetails, string fieldName)
+        {
+            bool removed = false;
+
+            foreach (var sectionProp in formDetails.Properties())
+            {
+                if (sectionProp.Value is not JArray section) continue;
+
+                for (int i = section.Count - 1; i >= 0; i--)
+                {
+                    if (section[i] is not JObject item) continue;
+
+                    if (item["name"]?.ToString() == fieldName)
+                    {
+                        section.RemoveAt(i);
+                        removed = true;
+                        continue;
+                    }
+
+                    if (item["additionalFields"] is JArray adds)
+                    {
+                        for (int j = adds.Count - 1; j >= 0; j--)
+                        {
+                            if (adds[j]?["name"]?.ToString() == fieldName)
+                            {
+                                adds.RemoveAt(j);
+                                removed = true;
+                            }
+                        }
+                    }
+
+                    if (item["conditionalAdditionalFields"] is JArray conditional)
+                    {
+                        for (int j = conditional.Count - 1; j >= 0; j--)
+                        {
+                            if (conditional[j]?["name"]?.ToString() == fieldName)
+                            {
+                                conditional.RemoveAt(j);
+                                removed = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return removed;
+        }
+
+        private bool AddFieldToFormDetails(
+            JObject formDetails,
+            string fieldName,
+            JToken newValue,
+            JArray formElements)
+        {
+            string? parentFieldName = null;
+            JObject? childFieldDef = null;
+
+            foreach (var section in formElements.OfType<JObject>())
+            {
+                var fields = section["fields"] as JArray;
+                if (fields == null) continue;
+
+                foreach (var field in fields.OfType<JObject>())
+                {
+                    if (field["additionalFields"] is not JObject addFields) continue;
+
+                    foreach (var bucket in addFields.Properties())
+                    {
+                        if (bucket.Value is not JArray children) continue;
+
+                        var match = children.OfType<JObject>()
+                            .FirstOrDefault(c => c["name"]?.ToString() == fieldName);
+                        if (match != null)
+                        {
+                            parentFieldName = field["name"]?.ToString();
+                            childFieldDef = match;
+                            break;
+                        }
+                    }
+                    if (parentFieldName != null) break;
+                }
+                if (parentFieldName != null) break;
+            }
+
+            if (parentFieldName == null || childFieldDef == null) return false;
+
+            foreach (var sectionProp in formDetails.Properties())
+            {
+                if (sectionProp.Value is not JArray section) continue;
+
+                foreach (var item in section.OfType<JObject>())
+                {
+                    if (item["name"]?.ToString() != parentFieldName) continue;
+
+                    var newChild = new JObject
+                    {
+                        ["name"] = fieldName,
+                        ["label"] = childFieldDef["label"]?.ToString() ?? fieldName,
+                        ["value"] = newValue.DeepClone(),
+                    };
+
+                    if (item["additionalFields"] is JArray existing)
+                    {
+                        if (existing.OfType<JObject>()
+                            .Any(c => c["name"]?.ToString() == fieldName))
+                            return false;
+                        existing.Add(newChild);
+                    }
+                    else
+                    {
+                        item["additionalFields"] = new JArray { newChild };
+                    }
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         public async Task<IActionResult> SubmitDocumentChange(IFormCollection form)
         {
@@ -669,9 +900,11 @@ namespace SahayataNidhi.Controllers.Officer
                 }
 
                 string type = form["type"].ToString();
-                if (string.IsNullOrWhiteSpace(type) || !new[] { "Corrigendum", "Correction", "Amendment" }.Contains(type))
+                if (string.IsNullOrWhiteSpace(type) ||
+                    !new[] { "Corrigendum", "Correction", "Amendment" }.Contains(type))
                 {
-                    return BadRequest("Invalid or missing type. Must be 'Corrigendum', 'Correction', or 'Amendment'.");
+                    return BadRequest(
+                        "Invalid or missing type. Must be 'Corrigendum', 'Correction', or 'Amendment'.");
                 }
 
                 var referenceNumber = form["referenceNumber"].ToString();
@@ -693,7 +926,10 @@ namespace SahayataNidhi.Controllers.Officer
                 }
 
                 var corrigendum = dbcontext.Corrigendum
-                    .FirstOrDefault(c => c.Referencenumber == referenceNumber && c.Corrigendumid == corrigendumId && c.Type == type);
+                    .FirstOrDefault(c =>
+                        c.Referencenumber == referenceNumber &&
+                        c.Corrigendumid == corrigendumId &&
+                        c.Type == type);
 
                 if (corrigendum == null)
                 {
@@ -708,16 +944,28 @@ namespace SahayataNidhi.Controllers.Officer
                     return NotFound("Citizen application not found.");
                 }
 
+                var service = dbcontext.Services
+                    .FirstOrDefault(s => s.Serviceid == citizenApplication.Serviceid);
+
+                if (service == null)
+                {
+                    return NotFound("Service not found.");
+                }
+
                 if (type == "Correction")
                 {
                     var workFlow = JArray.Parse(corrigendum.Workflow ?? "[]");
-                    if (workFlow.Count <= corrigendum.Currentplayer || workFlow[corrigendum.Currentplayer]["designation"]?.ToString() != officer.Role)
+                    if (workFlow.Count <= corrigendum.Currentplayer ||
+                        workFlow[corrigendum.Currentplayer]["designation"]?.ToString() != officer.Role)
                     {
-                        return Json(new { status = false, message = "You are not the current officer authorized to handle this Correction." });
+                        return Json(new
+                        {
+                            status = false,
+                            message = "You are not the current officer authorized to handle this Correction."
+                        });
                     }
                 }
 
-                // Parse JSON objects early for efficient access
                 var formDetails = JObject.Parse(citizenApplication.Formdetails!);
                 var corrigendumFields = JObject.Parse(corrigendum.Corrigendumfields ?? "{}");
 
@@ -741,16 +989,17 @@ namespace SahayataNidhi.Controllers.Officer
                         workFlowCorrigendum[currentPlayer]["status"] = "sanctioned";
                         corrigendum.Status = "Sanctioned";
 
-                        // ==========================================
-                        // APPLY CORRIGENDUM CHANGES TO CITIZEN APPLICATION
-                        // ==========================================
                         bool fieldsChanged = ApplyCorrigendumFieldsToFormDetails(
-                            formDetails, corrigendumFields, referenceNumber);
+                            formDetails,
+                            corrigendumFields,
+                            referenceNumber,
+                            service.Formelement!);
 
                         if (fieldsChanged)
                         {
                             citizenApplication.Formdetails = formDetails.ToString(Formatting.None);
-                            dbcontext.Entry(citizenApplication).Property(c => c.Formdetails).IsModified = true;
+                            dbcontext.Entry(citizenApplication)
+                                .Property(c => c.Formdetails).IsModified = true;
                         }
                     }
                     else if (action == "return")
@@ -770,16 +1019,17 @@ namespace SahayataNidhi.Controllers.Officer
                         workFlowCorrigendum[currentPlayer]["status"] = "verified";
                         corrigendum.Status = "Verified";
 
-                        // ==========================================
-                        // APPLY CORRECTION CHANGES TO CITIZEN APPLICATION
-                        // ==========================================
                         bool fieldsChanged = ApplyCorrigendumFieldsToFormDetails(
-                            formDetails, corrigendumFields, referenceNumber);
+                            formDetails,
+                            corrigendumFields,
+                            referenceNumber,
+                            service.Formelement!);
 
                         if (fieldsChanged)
                         {
                             citizenApplication.Formdetails = formDetails.ToString(Formatting.None);
-                            dbcontext.Entry(citizenApplication).Property(c => c.Formdetails).IsModified = true;
+                            dbcontext.Entry(citizenApplication)
+                                .Property(c => c.Formdetails).IsModified = true;
                         }
                     }
                     else if (action == "reject")
@@ -789,12 +1039,14 @@ namespace SahayataNidhi.Controllers.Officer
                     }
 
                     workFlowCorrigendum[currentPlayer]["remarks"] = remarks;
-                    workFlowCorrigendum[currentPlayer]["completedAt"] = DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt");
+                    workFlowCorrigendum[currentPlayer]["completedAt"] =
+                        DateTime.Now.ToString("dd MMMM yyyy hh:mm:ss tt");
                     corrigendum.Workflow = workFlowCorrigendum.ToString(Formatting.None);
                 }
 
                 // Update History
-                var corrigendumHistory = JsonConvert.DeserializeObject<List<dynamic>>(corrigendum.History ?? "[]") ?? new List<dynamic>();
+                var corrigendumHistory = JsonConvert.DeserializeObject<List<dynamic>>(
+                    corrigendum.History ?? "[]") ?? new List<dynamic>();
                 var newCorrigendumHistory = new
                 {
                     actionTaker = officer.Role + " " + GetOfficerArea(officer.AccessLevel!, formDetails),
@@ -812,11 +1064,38 @@ namespace SahayataNidhi.Controllers.Officer
                     corrigendumFields["Files"] = filesObj;
                 }
 
+                // ─────────────────────────────────────────────────────────
                 // Special Case: Temporary Disability UDID Card Expiry
-                if (corrigendumFields["IfTemporaryDisabilityUdidCardValidUpto"] is JObject fieldObj)
+                //   1) RemovedFields contains IfTemporaryDisabilityUdid…  ⇒
+                //      KindOfDisability changed to PERMANENT ⇒ delete the
+                //      expiring eligibility row.
+                //   2) Field present with new_value ⇒ update the expiry
+                //      (covers date edit AND PERMANENT → TEMPORARY re-add,
+                //      which creates a fresh ApplicationExpirations row).
+                // ─────────────────────────────────────────────────────────
+                bool tempValidUptoRemoved =
+                    corrigendumFields["RemovedFields"] is JObject removedFieldsCheck &&
+                    removedFieldsCheck.Properties().Any(p =>
+                        p.Name == "IfTemporaryDisabilityUdidCardValidUpto");
+
+                if (tempValidUptoRemoved)
+                {
+                    var expiring = dbcontext.ApplicationExpirations
+                        .FirstOrDefault(ae => ae.Referencenumber == referenceNumber);
+                    if (expiring != null)
+                    {
+                        dbcontext.ApplicationExpirations.Remove(expiring);
+                        _logger.LogInformation(
+                            "Removed ApplicationExpirations for {Ref} — " +
+                            "IfTemporaryDisabilityUdidCardValidUpto was removed.",
+                            referenceNumber);
+                    }
+                }
+                else if (corrigendumFields["IfTemporaryDisabilityUdidCardValidUpto"] is JObject fieldObj)
                 {
                     var newValue = fieldObj["new_value"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(newValue) && DateOnly.TryParse(newValue, out var parsedDate))
+                    if (!string.IsNullOrWhiteSpace(newValue) &&
+                        DateOnly.TryParse(newValue, out var parsedDate))
                     {
                         var expiring = dbcontext.ApplicationExpirations
                             .FirstOrDefault(ae => ae.Referencenumber == referenceNumber);
@@ -827,7 +1106,11 @@ namespace SahayataNidhi.Controllers.Officer
                         }
                         else
                         {
-                            _logger.LogWarning($"No expiring eligibility found for reference {referenceNumber}.");
+                            dbcontext.ApplicationExpirations.Add(new ApplicationExpirations
+                            {
+                                Referencenumber = referenceNumber,
+                                ExpirationDate = parsedDate,
+                            });
                         }
                     }
                 }
@@ -852,16 +1135,14 @@ namespace SahayataNidhi.Controllers.Officer
 
                 dbcontext.Corrigendum.Update(corrigendum);
 
-                // ==========================================
-                // 1. SAVE TO DATABASE FIRST (Data Integrity)
-                // ==========================================
                 await dbcontext.SaveChangesAsync();
 
-                // 2. Invalidate cache immediately after successful save
-                InvalidateDashboardCounts(officer.AccessLevel!, officer.AccessCode, officer.Role!, citizenApplication.Serviceid);
+                InvalidateDashboardCounts(
+                    officer.AccessLevel!,
+                    officer.AccessCode,
+                    officer.Role!,
+                    citizenApplication.Serviceid);
 
-                // 3. Refresh denormalized UDID expiry (Layer 2)
-                // The BEFORE trigger on citizen_applications re-reads the formdetails JSON on every UPDATE.
                 try
                 {
                     await dbcontext.Database.ExecuteSqlRawAsync(
@@ -870,27 +1151,23 @@ namespace SahayataNidhi.Controllers.Officer
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to refresh udid_expiry_date for {ReferenceNumber}", referenceNumber);
+                    _logger.LogWarning(ex,
+                        "Failed to refresh udid_expiry_date for {ReferenceNumber}",
+                        referenceNumber);
                 }
 
                 if (action == "sanction")
                 {
-                    // ==========================================
-                    // 4. DISPATCH WEB SERVICE (Non-blocking / Timeout protected)
-                    // ==========================================
-
-                    // Check if the corrigendum contains fields from the UDID group
-                    bool isUdidGroupCorrigendum = corrigendumFields.ContainsKey("UdidCardNumber") ||
-                                                  corrigendumFields.ContainsKey("UdidCardIssueDate") ||
-                                                  corrigendumFields.ContainsKey("KindOfDisability") ||
-                                                  corrigendumFields.ContainsKey("IfTemporaryDisabilityUdidCardValidUpto");
+                    bool isUdidGroupCorrigendum =
+                        corrigendumFields.ContainsKey("UdidCardNumber") ||
+                        corrigendumFields.ContainsKey("UdidCardIssueDate") ||
+                        corrigendumFields.ContainsKey("KindOfDisability") ||
+                        corrigendumFields.ContainsKey("IfTemporaryDisabilityUdidCardValidUpto");
 
                     if (!isUdidGroupCorrigendum)
                     {
                         try
                         {
-                            // Fire all web services configured with the CORRIGENDUM_SANCTIONED event.
-                            // The DB's onaction values are used verbatim.
                             await DispatchWebServicesAsync(
                                 "CORRIGENDUM_SANCTIONED",
                                 null,
@@ -899,34 +1176,32 @@ namespace SahayataNidhi.Controllers.Officer
                                 citizenApplication.Serviceid,
                                 payload =>
                                 {
-                                    // 1. CorrigendumFields: string → nested object; strip Files / additional_values / supporting_document
                                     var rawFields = payload["CorrigendumFields"];
                                     if (!IsEmptyOrMissing(rawFields))
                                     {
-                                        // Only transform if it's still a string — skip if already an object
                                         if (rawFields!.Type == JTokenType.String)
                                         {
-                                            var cleaned = CleanCorrectionFieldsObject(rawFields.ToString());
+                                            var cleaned = CleanCorrectionFieldsObject(
+                                                rawFields.ToString());
                                             payload["CorrigendumFields"] = cleaned ?? new JObject();
                                         }
                                     }
 
-                                    // 2. SanctionedOn: reformat to YYYY-MM-DD (idempotent)
                                     var sanctionedOn = payload["SanctionedOn"];
                                     if (!IsEmptyOrMissing(sanctionedOn))
                                     {
                                         var s = sanctionedOn!.ToString();
                                         if (Regex.IsMatch(s, @"^\d{4}-\d{2}-\d{2}$"))
                                         {
-                                            // already YYYY-MM-DD — leave alone
+                                            // already YYYY-MM-DD
                                         }
                                         else if (DateTime.TryParse(s, out var dt))
                                         {
-                                            payload["SanctionedOn"] = dt.ToString("yyyy-MM-dd");
+                                            payload["SanctionedOn"] =
+                                                dt.ToString("yyyy-MM-dd");
                                         }
                                     }
 
-                                    // 3. Region: always overwrite from the citizen application's Division
                                     var regionCode = citizenApplication.Division;
                                     payload["Region"] = regionCode == 1 ? "Jammu"
                                                     : regionCode == 2 ? "Kashmir"
@@ -940,12 +1215,13 @@ namespace SahayataNidhi.Controllers.Officer
                             _logger.LogError(ex,
                                 "Error in external service call for Corrigendum {CorrigendumId}: {Message}",
                                 corrigendumId, ex.Message);
-                            // Fail-open: external API failure should not roll back the successful DB transaction
                         }
                     }
                     else
                     {
-                        _logger.LogInformation("Skipping DispatchWebServicesAsync for UDID group corrigendum {CorrigendumId}", corrigendumId);
+                        _logger.LogInformation(
+                            "Skipping DispatchWebServicesAsync for UDID group corrigendum {CorrigendumId}",
+                            corrigendumId);
                     }
                 }
 
@@ -954,10 +1230,13 @@ namespace SahayataNidhi.Controllers.Officer
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unhandled exception in HandleCorrigendumAction");
-                return StatusCode(500, new { status = false, response = "An internal error occurred." });
+                return StatusCode(500, new
+                {
+                    status = false,
+                    response = "An internal error occurred."
+                });
             }
         }
-
 
         private static bool ApplyCorrigendumFieldsToFormDetails(JObject formDetails, JObject corrigendumFields, string referenceNumber)
         {
